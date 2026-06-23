@@ -29,6 +29,9 @@ def main():
 @click.option("--test-runner", help="测试框架")
 @click.option("--no-typescript", "use_typescript", flag_value=False, default=None, help="不使用 TypeScript")
 @click.option("--no-lefthook", "use_lefthook", flag_value=False, default=None, help="不安装 Lefthook")
+@click.option("--pretend", is_flag=True, help="模拟执行，不产生文件")
+@click.option("--skip-tasks", is_flag=True, help="跳过钩子任务执行")
+@click.option("--no-cleanup", "cleanup_on_error", flag_value=False, default=True, help="出错时不清理目标目录")
 @click.option("--quiet", is_flag=True, help="静默模式")
 def init(
     project: str | None,
@@ -41,6 +44,9 @@ def init(
     test_runner: str | None,
     use_typescript: bool | None,
     use_lefthook: bool | None,
+    pretend: bool,
+    skip_tasks: bool,
+    cleanup_on_error: bool,
     quiet: bool,
 ):
     """项目环境初始化."""
@@ -49,7 +55,6 @@ def init(
 
     dst_path = Path(project) if project else Path.cwd()
 
-    # 从 answers 文件恢复时，读取之前保存的答案
     if answers_file:
         from auto_engineering.init import AnswersMap
         answers = AnswersMap.from_answers_file(Path(answers_file))
@@ -67,15 +72,20 @@ def init(
         use_lefthook=use_lefthook,
         defaults=defaults,
         force=force,
+        pretend=pretend,
+        skip_tasks=skip_tasks,
+        cleanup_on_error=cleanup_on_error,
         quiet=quiet,
     )
-    # 注入恢复的答案
     if answers:
-        worker._answers = answers
+        worker._previous_answers = answers
 
     try:
         result = worker.execute()
-        click.echo(f"✓ 项目已生成: {result.dst_path}")
+        if pretend:
+            click.echo(f"[DRY RUN] 将生成到: {result.dst_path}")
+        else:
+            click.echo(f"✓ 项目已生成: {result.dst_path}")
     except Exception as e:
         click.echo(f"✗ 初始化失败: {e}", err=True)
         raise SystemExit(1)
