@@ -1,0 +1,11 @@
+_meta:
+  updated_at: '2026-06-23T23:40:14.057775'
+ci_platform: null
+has_git: true
+package_manager: uv
+project_description: ''
+project_name: Auto-engineering
+project_type: ''
+test_runner: pytest
+use_lefthook: false
+use_typescript: false
