@@ -11,8 +11,17 @@ from typing import Any
 
 import yaml
 
+import sys
+import os as _os
+from datetime import datetime
+
 BUILTIN_VARS: dict[str, Any] = {
     "_ae_version": "1.0.0",
+    "current_year": str(datetime.now().year),
+    "_folder_name": "",
+    "_ae_python": sys.executable,
+    "sep": _os.sep,
+    "os": {"linux": "linux", "darwin": "macos", "win32": "windows"}.get(sys.platform, "linux"),
 }
 
 

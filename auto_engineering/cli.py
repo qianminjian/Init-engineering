@@ -59,6 +59,11 @@ def init(
         from auto_engineering.init import AnswersMap
         answers = AnswersMap.from_answers_file(Path(answers_file))
         click.echo(f"从 {answers_file} 恢复答案")
+        if not project_type:
+            try:
+                project_type = answers.get("project_type") or ""
+            except KeyError:
+                pass
     else:
         answers = None
 

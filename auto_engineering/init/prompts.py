@@ -13,6 +13,7 @@
 from typing import Any
 
 import jinja2
+from jinja2 import StrictUndefined
 import click
 
 from .config import Question
@@ -72,7 +73,7 @@ class InteractivePrompt:
     def __init__(self, questions: list[Question], answers: AnswersMap):
         self.questions = questions
         self.answers = answers
-        self._jinja_env = jinja2.Environment()
+        self._jinja_env = jinja2.Environment(undefined=StrictUndefined)
 
     def run(self) -> AnswersMap:
         """执行交互式问答。返回更新后的 AnswersMap。
@@ -198,3 +199,27 @@ def prompt_for_project_type(available_types: list[str]) -> str:
         type=click.Choice(available_types),
         show_choices=True,
     )
+
+
+def prompt_for_nested_template(
+    nested: dict[str, dict[str, str]], no_input: bool = False,
+) -> str | None:
+    """交互式选择嵌套模板变体。
+
+    来源：Cookiecutter main.py:144-146 choose_nested_template()。
+    nested = {"typescript": {"path": "./ts", "title": "TypeScript 版本"}, ...}
+    返回选中的模板路径（相对于当前配置文件的目录），或 None。
+    """
+    choices = {
+        label: cfg.get("title", label) for label, cfg in nested.items()
+    }
+    if no_input:
+        first = next(iter(nested.values()))
+        return first.get("path", "")
+    choice = click.prompt(
+        "请选择模板变体",
+        type=click.Choice(list(choices.keys())),
+        default=next(iter(choices.keys())),
+        show_choices=True,
+    )
+    return nested.get(choice, {}).get("path", "")

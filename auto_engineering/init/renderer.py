@@ -21,10 +21,12 @@
 import shutil
 from collections.abc import Callable
 from pathlib import Path
-from fnmatch import fnmatch
+
+import pathspec
 
 import jinja2
 from jinja2.sandbox import SandboxedEnvironment
+from jinja2 import StrictUndefined
 
 from .errors import TemplateRenderError
 
@@ -62,7 +64,10 @@ class TemplateRenderer:
         self.no_render = no_render or []
         self.overwrite = overwrite
         self.conflict_handler = conflict_handler
-        self.env = SandboxedEnvironment(**(envops or {"keep_trailing_newline": True}))
+        self.env = SandboxedEnvironment(
+            undefined=StrictUndefined,
+            **(envops or {"keep_trailing_newline": True}),
+        )
 
     def render_to(self, dst_dir: Path) -> list[Path]:
         """遍历所有模板目录，渲染到目标目录。返回生成的文件列表。"""
@@ -88,6 +93,11 @@ class TemplateRenderer:
                     rendered_rel = rendered_rel[:-len(self.TEMPLATE_SUFFIX)]
 
                 dst_file = dst_dir / rendered_rel
+
+                # Path traversal guard (参考 Copier _main.py:800-805)
+                dst_dir_real = dst_dir.resolve()
+                if not dst_file.resolve().is_relative_to(dst_dir_real):
+                    raise TemplateRenderError(str(src_file), ValueError("路径穿越"))
 
                 if dst_file.exists() and generated.get(rendered_rel) is None:
                     if not self._should_overwrite(rendered_rel):
@@ -131,28 +141,34 @@ class TemplateRenderer:
         tpl = self.env.from_string(content)
         return tpl.render(**self.context)
 
+    def _path_matcher(self, patterns: list[str]) -> Callable[[str], bool]:
+        """Produce a function that matches against .gitignore-style patterns.
+
+        参考 Copier _main.py:467-471 _path_matcher + pathspec。
+        """
+        spec = pathspec.PathSpec.from_lines(
+            pathspec.patterns.GitWildMatchPattern, patterns
+        )
+        return spec.match_file
+
     def _is_excluded(self, file_path: Path, src_dir: Path) -> bool:
         """检查文件是否被排除。"""
+        matcher = self._path_matcher(self.exclude)
         rel = str(file_path.relative_to(src_dir))
-        for pattern in self.exclude:
-            if fnmatch(rel, pattern):
-                return True
-        return False
+        return matcher(rel)
 
     def _is_no_render(self, rel_path: str) -> bool:
         """检查文件是否应原样复制不渲染。"""
-        for pattern in self.no_render:
-            if fnmatch(rel_path, pattern):
-                return True
-        return False
+        matcher = self._path_matcher(self.no_render)
+        return matcher(rel_path)
 
     def _should_overwrite(self, rel_path: str) -> bool:
         """判断是否覆盖已存在的文件。"""
         if self.overwrite:
             return True
-        for pattern in self.skip_if_exists:
-            if fnmatch(rel_path, pattern):
-                return False
+        matcher = self._path_matcher(self.skip_if_exists)
+        if matcher(rel_path):
+            return False
         if self.conflict_handler:
             return self.conflict_handler(rel_path)
         return False

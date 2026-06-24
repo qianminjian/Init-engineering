@@ -1,0 +1,81 @@
+> 创建：2026-06-24 | 更新：2026-06-24 | 阶段：设计审计 v3 → init 断路修复
+
+## 目标与成功标准
+
+1. **ae init 命令**：用户输入 `ae init my-project --type app-service`，产出完整可运行的项目骨架
+2. **ae dev-loop 命令**：用户输入需求文本，系统自动完成 Architect → Developer → Critic 循环，输出代码变更 + 测试通过
+3. **确定性 Guardrail**：每个 Stage 前后自动检查 Guardrail 条件（结构化 GuardrailResult，pass/block/drop/retry 四态）
+4. **Checkpoint 恢复**：中断后可从 checkpoint 恢复，不丢失进度
+5. **结构化 Agent 输出**：Agent 输出按 output_schema 约束，双层防御解析（schema + regex fallback）
+
+## 范围边界
+
+**做：**
+- init: 多层模板目录组合（_shared + _features + type）、from-answers 恢复、路径穿越防护、内置钩子错误传播
+- LoopEngine（while True + tick/after_tick）+ StageGraph + AgentRuntime
+- 单 Agent 串行执行、SQLite checkpoint、Claude API output_json
+- GuardrailChain + RetryPolicy + CancellationToken + ErrorCode 体系
+
+**不做：**
+- init: 增量模式、嵌套模板交互选择、远程模板（v1.1+）
+- 多 Agent 并行（v2.0）、多 LLM Provider、Web UI
+- CrewAI 风格 Memory/RAG、AutoGen 风格 Pub/Sub、Jinja2 用于 Task 描述
+
+## 设计决策
+
+| # | 决策 | 理由 | 日期 |
+|---|------|------|------|
+| 1 | 三层架构：LoopEngine → StageGraph → AgentRuntime | 控制流/路由/执行三者职责分离 | 2026-06-24 |
+| 2 | 全链路 async | 统一异步模型 | 2026-06-24 |
+| 3 | dataclass 非 Pydantic | 核心模型轻量，LLM 输出用 output_schema | 2026-06-24 |
+| 4 | GuardrailChain 替代 Gate | 参考 CrewAI GuardrailResult + AutoGen DropMessage | 2026-06-24 |
+| 5 | init 审计后优先断路修复 | 3 个断路点使当前 init 代码在真实场景基本不可用 | 2026-06-24 |
+| 6 | AnthropicProvider 封装在 llm/ | 不混入 agent 代码，方便测试 mock | 2026-06-24 |
+
+## 当前状态
+
+**阶段：** dev-loop 设计审计 v3 完成 + init 深度审计完成 → init 断路修复（Phase 4.1）
+
+**审计结论（汇总）：**
+
+| 子系统 | 审计轮次 | 优化点 | 状态 |
+|--------|---------|--------|------|
+| dev-loop | 三轮 | 37 个（17+10+10） | 设计文档已更新，待编码 |
+| init | 一轮深度 | 21 个偏差项（3 P0 / 8 P1 / 7 P2 / 3 P3） | 设计文档已更新，待修复 |
+
+**init 关键发现：** 设计骨架正确（B+），但编排器 `scaffold.py` 只实现了设计意图的 ~60%。3 个断路点：多层模板目录缺失（共享模板永不生成）、from-answers 失效、路径穿越无防护。
+
+**审计报告：**
+- `design/v1.0-LOOP-AUDIT.md` — dev-loop 初版（17 优化点）
+- `design/v1.0-AUDIT-SUPPLEMENT.md` — dev-loop 补充（10 优化点）
+- `design/v1.0-LOOP.md §十一` — dev-loop 第三轮 bug 修复记录
+- `design/v1.0-INIT.md §1.7` — init 实现偏差审计（21 偏差项）
+- `design/v1.0-INIT.md §二` — init 修复实施计划
+
+**下一步：** Phase 4.1 init 断路修复（R1-R3，~1h）→ Phase 4.2 行为纠正（R4-R11，~2h）→ dev-loop Phase 1 编码
+
+**阻塞项：** 无
+
+## 设计演进日志
+
+| 日期 | 变更 | 原因 |
+|------|------|------|
+| 2026-06-24 | init 深度审计：21 个偏差项，设计文档更新 + 修复计划 | 对照设计+实现+Copier/Cookiecutter/Yeoman 源码逐模块检查 |
+| 2026-06-24 | dev-loop 第三轮审计：6 设计 bug + 4 缺失维度 | 挑剔的独立审计角度验证可落地性 |
+| 2026-06-24 | dev-loop 补充审计：10 个优化点 | 对照 CrewAI/AutoGen/LangGraph 源码补充维度 |
+| 2026-06-24 | dev-loop 初始审计：17 个优化点 | 编码前对照源码验证设计质量 |
+
+## 待解决问题
+
+[Q?] 是否需要 streaming 进度输出？— CLI UX 决策
+[Q?] `_features/` 的 ae-feature.yml 声明式配置需要什么字段？— R17 实现时确定
+[Q?] 增量模式何时排期？— 当前计划 P3（v1.1），可提前如果存量项目接入是刚需
+
+## 引用文件
+
+@design/v1.0-SHARED.md — 共享架构基线
+@design/v1.0-LOOP.md — dev-loop 子系统设计（v3.0，§十一 含 bug 修复记录）
+@design/v1.0-LOOP-AUDIT.md — dev-loop 初版审计（17 优化点）
+@design/v1.0-AUDIT-SUPPLEMENT.md — dev-loop 补充审计（10 优化点）
+@design/v1.0-INIT.md — init 子系统设计 + 实现偏差审计（§1.7）+ 修复计划（§二）
+@design/v1.0-TEMPLATES.md — 模板资产定义

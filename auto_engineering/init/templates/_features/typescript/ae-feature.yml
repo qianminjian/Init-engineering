@@ -1,0 +1,5 @@
+name: typescript
+description: typescript language support
+when: "{{ language == 'typescript' }}"
+questions: {}
+tasks_after: []
