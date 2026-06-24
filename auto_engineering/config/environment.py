@@ -114,6 +114,27 @@ class ProjectEnvironment:
                 changed = True
         return changed
 
+    def _warn_undetectable(self, root: Path) -> list[str]:
+        """A5: 列出当前无法自动判定的字段 (供 CLI 层 warning 提示).
+
+        Returns:
+            不可判定字段名列表 (如 ['package_manager', 'test_runner']).
+        """
+        undetectable = []
+        # 复用检测逻辑 — 若检测结果为 None/False,说明无法判定
+        detections = {
+            "package_manager": self._detect_package_manager(root),
+            "test_runner": self._detect_test_runner(root),
+            "ci_platform": self._detect_ci(root),
+            "use_typescript": (root / "tsconfig.json").exists() or None,
+            "use_lefthook": (root / "lefthook.yml").exists() or None,
+            "has_git": (root / ".git").exists() or None,
+        }
+        for field_name, detected in detections.items():
+            if detected is None:
+                undetectable.append(field_name)
+        return undetectable
+
     def save(self, project_root: Path) -> None:
         """写回 .ae-answers.yml。"""
         from datetime import datetime

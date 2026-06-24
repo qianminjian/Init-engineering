@@ -218,6 +218,41 @@ class TestGitBranchFallback:
         assert result.returncode == 0 or "unknown option" in result.stderr.lower()
 
 
+class TestProjectEnvironmentWarnUndetectable:
+    """A5: ProjectEnvironment._warn_undetectable 列出无法自动判定的字段."""
+
+    def test_warn_undetectable_returns_undetectable_fields(self):
+        """RED: 缺必要文件时,返回不可判定字段列表."""
+        from auto_engineering.config.environment import ProjectEnvironment
+
+        # 用 _from_detection 但 root 是空目录 → 多数字段无法判定
+        env = ProjectEnvironment._from_detection(Path("/nonexistent-root"))
+        undetectable = env._warn_undetectable(Path("/nonexistent-root"))
+        # 至少应包含 package_manager 和 test_runner (空目录无法判定)
+        assert isinstance(undetectable, list)
+        assert "package_manager" in undetectable
+        assert "test_runner" in undetectable
+
+    def test_warn_undetectable_partial_when_some_files_present(self):
+        """RED: 部分文件存在时,只列出仍未判定的字段."""
+        import tempfile
+        from auto_engineering.config.environment import ProjectEnvironment
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            # 提供 package-lock.json + pytest.ini 让两个字段可判定
+            (tmp_path / "package-lock.json").write_text("{}")
+            (tmp_path / "pytest.ini").write_text("[pytest]")
+            env = ProjectEnvironment._from_detection(tmp_path)
+            undetectable = env._warn_undetectable(tmp_path)
+            # package_manager + test_runner 已被判定 → 不在列表
+            assert "package_manager" not in undetectable
+            assert "test_runner" not in undetectable
+            # ci_platform / has_git 等仍未判定
+            assert "ci_platform" in undetectable
+            assert "has_git" in undetectable
+
+
 class TestRendererSymlinkHandling:
     """A4: TemplateRenderer 处理 symlink 文件 (设计 §1.3.5).
 

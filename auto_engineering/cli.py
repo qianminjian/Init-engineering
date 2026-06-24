@@ -598,6 +598,13 @@ def status():
         click.echo(f"  Lefthook: {'是' if env.use_lefthook else '否'}")
         click.echo(f"  CI: {env.ci_platform or '无'}")
         click.echo(f"  Git: {'是' if env.has_git else '否'}")
+        # A5: 不可判定字段 warning
+        undetectable = env._warn_undetectable(cwd)
+        if undetectable:
+            click.echo(
+                f"  ⚠ 不可自动判定: {', '.join(undetectable)}",
+                err=True,
+            )
     except Exception as e:
         click.echo(f"  读取项目环境失败: {e}")
 
