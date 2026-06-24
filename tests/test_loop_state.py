@@ -2,8 +2,6 @@
 
 import json
 
-import pytest
-
 from auto_engineering.engine.state import LoopState
 
 

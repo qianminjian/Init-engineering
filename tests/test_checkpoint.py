@@ -88,6 +88,7 @@ def test_checkpoint_store_WAL_模式启用(checkpoint_dir):
 
 # ----- v3.1 B3 修复: CheckpointStore 实现 context manager -----
 
+
 def test_context_manager_yields_store(checkpoint_dir):
     """B3: CheckpointStore 应实现 __enter__/__exit__,with 语句可正常 yield store.
 

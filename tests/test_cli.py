@@ -8,19 +8,17 @@
 from __future__ import annotations
 
 import json
-import signal
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-import click
 import pytest
 from click.testing import CliRunner
 
-from auto_engineering.cli import dev_loop, main
+from auto_engineering.cli import main
 from auto_engineering.errors import AEError, ErrorCode
 
-
 # ---------- 测试 fixtures ----------
+
 
 @pytest.fixture
 def valid_project(tmp_path: Path, monkeypatch):
@@ -29,10 +27,7 @@ def valid_project(tmp_path: Path, monkeypatch):
     (tmp_path / ".git").mkdir()
     answers = tmp_path / ".ae-answers.yml"
     answers.write_text(
-        "project_name: test-app\n"
-        "project_type: cli-tool\n"
-        "package_manager: uv\n"
-        "test_runner: pytest\n"
+        "project_name: test-app\nproject_type: cli-tool\npackage_manager: uv\ntest_runner: pytest\n"
     )
     monkeypatch.chdir(tmp_path)
     return tmp_path
@@ -53,15 +48,14 @@ def mock_loop_engine(monkeypatch):
         total_steps=3,
         checkpoint_id="test-cp-id",
     )
-    monkeypatch.setattr(
-        "auto_engineering.cli._run_loop_engine", runner_mock
-    )
+    monkeypatch.setattr("auto_engineering.cli._run_loop_engine", runner_mock)
     return runner_mock
 
 
 # ============================================================
 # T02-2: ae dev-loop 启动读 .ae-answers.yml 注入 ProjectEnvironment
 # ============================================================
+
 
 class TestT02_2LoadsAeAnswers:
     """T02-2: ae dev-loop 启动时调 load_ae_answers + 注入 env vars."""
@@ -82,6 +76,7 @@ class TestT02_2LoadsAeAnswers:
 # ============================================================
 # T03: --max-tokens / --max-cost CLI flag
 # ============================================================
+
 
 class TestT03MaxTokensBudget:
     """T03: --max-tokens 阈值检查 + BudgetExceeded 异常."""
@@ -125,6 +120,7 @@ class TestT03MaxTokensBudget:
 # T04: 进度输出 — 每 stage 开始/结束输出
 # ============================================================
 
+
 class TestT04ProgressOutput:
     """T04: 进度输出 — 每 stage 开始/结束 click.echo."""
 
@@ -140,12 +136,13 @@ class TestT04ProgressOutput:
 # T05: 错误归类 — AEError 按 code 分 4 类友好提示
 # ============================================================
 
+
 class TestT05ErrorClassification:
     """T05: AEError 按 code 归 4 类 + exit code."""
 
     def test_user_error_exit_code_2(self):
         """RED: USER_ERROR 类错误 → exit code 2."""
-        from auto_engineering.cli import classify_error, ErrorCategory
+        from auto_engineering.cli import ErrorCategory, classify_error
 
         err = AEError(ErrorCode.CONFIG_MISSING_API_KEY, "no key")
         category, exit_code = classify_error(err)
@@ -154,7 +151,7 @@ class TestT05ErrorClassification:
 
     def test_api_error_exit_code_3(self):
         """RED: API_ERROR 类错误 → exit code 3."""
-        from auto_engineering.cli import classify_error, ErrorCategory
+        from auto_engineering.cli import ErrorCategory, classify_error
 
         err = AEError(ErrorCode.LLM_TIMEOUT, "api timeout")
         category, exit_code = classify_error(err)
@@ -163,7 +160,7 @@ class TestT05ErrorClassification:
 
     def test_network_error_exit_code_4(self):
         """RED: NETWORK_ERROR 类错误 → exit code 4."""
-        from auto_engineering.cli import classify_error, ErrorCategory
+        from auto_engineering.cli import ErrorCategory, classify_error
 
         err = AEError(ErrorCode.CHECKPOINT_LOAD_FAILED, "cannot load")
         category, exit_code = classify_error(err)
@@ -172,7 +169,7 @@ class TestT05ErrorClassification:
 
     def test_business_error_exit_code_5(self):
         """RED: BUSINESS_ERROR 类错误 → exit code 5."""
-        from auto_engineering.cli import classify_error, ErrorCategory
+        from auto_engineering.cli import ErrorCategory, classify_error
 
         err = AEError(ErrorCode.GUARDRAIL_BLOCKED, "blocked")
         category, exit_code = classify_error(err)
@@ -183,6 +180,7 @@ class TestT05ErrorClassification:
 # ============================================================
 # T07: Ctrl-C (SIGINT) → CancellationToken + checkpoint + 提示 resume
 # ============================================================
+
 
 class TestT07SigintCancellation:
     """T07: SIGINT handler → CancellationToken.cancel() + 友好提示."""
@@ -208,7 +206,7 @@ class TestT07SigintCancellation:
 
     def test_sigint_cancels_loop(self, valid_project, monkeypatch):
         """RED: SIGINT handler 触发 token.cancel() → 抛 AEError(TASK_CANCELLED)."""
-        from auto_engineering.cli import _install_sigint_handler, CancellationToken
+        from auto_engineering.cli import CancellationToken, _install_sigint_handler
 
         # 注入一个会在 execute 时 cancel 的 mock runner
         token = CancellationToken()
@@ -223,12 +221,17 @@ class TestT07SigintCancellation:
         result = runner.invoke(main, ["dev-loop", "x"])
 
         # 退出码对应 USER_ERROR=2 或 TASK_CANCELLED 分类
-        assert "checkpoint" in result.output.lower() or "resume" in result.output.lower() or "cancelled" in result.output.lower()
+        assert (
+            "checkpoint" in result.output.lower()
+            or "resume" in result.output.lower()
+            or "cancelled" in result.output.lower()
+        )
 
 
 # ============================================================
 # T08: --dry-run 模式
 # ============================================================
+
 
 class TestT08DryRun:
     """T08: --dry-run 只跑 architect → 退出,不写文件/git/checkpoint."""
@@ -262,6 +265,7 @@ class TestT08DryRun:
 # T09: --log-format json
 # ============================================================
 
+
 class TestT09LogFormatJson:
     """T09: --log-format json 输出结构化日志到 stderr."""
 
@@ -277,7 +281,6 @@ class TestT09LogFormatJson:
         # 至少要求 output 中有可解析 JSON 片段
         # 检查 { ... } 包裹的 JSON
         all_output = result.output + stderr_output
-        has_json = False
         for line in all_output.split("\n"):
             line = line.strip()
             if line.startswith("{") and line.endswith("}"):
@@ -286,7 +289,6 @@ class TestT09LogFormatJson:
                     if isinstance(obj, dict) and any(
                         k in obj for k in ("stage", "event", "elapsed", "tokens")
                     ):
-                        has_json = True
                         break
                 except json.JSONDecodeError:
                     pass
@@ -297,6 +299,7 @@ class TestT09LogFormatJson:
 # ============================================================
 # T10: --llm-provider 接受 anthropic/ollama
 # ============================================================
+
 
 class TestT10LlmProvider:
     """T10: --llm-provider 只实装 anthropic,其他提示'未实现'."""
@@ -314,12 +317,17 @@ class TestT10LlmProvider:
         result = runner.invoke(main, ["dev-loop", "x", "--llm-provider", "ollama"])
 
         # 退出码 6 + 友好提示
-        assert result.exit_code == 6 or "not yet implemented" in result.output.lower() or "未实现" in result.output
+        assert (
+            result.exit_code == 6
+            or "not yet implemented" in result.output.lower()
+            or "未实现" in result.output
+        )
 
 
 # ============================================================
 # T11: --project-root
 # ============================================================
+
 
 class TestT11ProjectRoot:
     """T11: --project-root flag 指定项目根."""
@@ -334,17 +342,11 @@ class TestT11ProjectRoot:
         (project_dir / ".git").mkdir()
 
         runner_mock = MagicMock()
-        runner_mock.return_value = LoopRunResult(
-            status="done", total_steps=0, checkpoint_id="x"
-        )
-        monkeypatch.setattr(
-            "auto_engineering.cli._run_loop_engine", runner_mock
-        )
+        runner_mock.return_value = LoopRunResult(status="done", total_steps=0, checkpoint_id="x")
+        monkeypatch.setattr("auto_engineering.cli._run_loop_engine", runner_mock)
 
         runner = CliRunner()
-        result = runner.invoke(main, [
-            "dev-loop", "x", "--project-root", str(project_dir)
-        ])
+        runner.invoke(main, ["dev-loop", "x", "--project-root", str(project_dir)])
 
         # 传入的 project_root 应被传给 runner
         assert runner_mock.called
@@ -357,6 +359,7 @@ class TestT11ProjectRoot:
 # 进度输出 - stage 开始/结束 (辅助 T04)
 # ============================================================
 
+
 class TestProgressStages:
     """T04 补充: stage 开始/结束输出."""
 
@@ -366,8 +369,7 @@ class TestProgressStages:
 
         output_lines = []
         monkeypatch.setattr(
-            "auto_engineering.cli.click.echo",
-            lambda msg, **kw: output_lines.append(msg)
+            "auto_engineering.cli.click.echo", lambda msg, **kw: output_lines.append(msg)
         )
 
         _log_stage_progress(1, 3, "architect")

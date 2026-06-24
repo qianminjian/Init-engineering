@@ -2,14 +2,13 @@
 
 import json
 import tempfile
-from collections import ChainMap
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 import yaml
 
-from auto_engineering.init.answers import AnswersMap, BUILTIN_VARS, _LazyExternalDict
+from auto_engineering.init.answers import BUILTIN_VARS, AnswersMap, _LazyExternalDict
 
 
 class TestBuiltinVars:

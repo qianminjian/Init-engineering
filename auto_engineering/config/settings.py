@@ -8,8 +8,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
-from pathlib import Path
+from dataclasses import dataclass
 
 from auto_engineering.errors import AEError, ErrorCode
 
@@ -27,7 +26,7 @@ class Settings:
     retry_timeout: float = 120.0
 
     @classmethod
-    def from_env(cls) -> "Settings":
+    def from_env(cls) -> Settings:
         """从环境变量加载 Settings.
 
         环境变量映射:

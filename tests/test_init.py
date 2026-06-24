@@ -9,8 +9,9 @@ import pytest
 
 def run_ae(args: list[str]) -> subprocess.CompletedProcess:
     return subprocess.run(
-        ["uv", "run", "ae"] + args,
-        capture_output=True, text=True,
+        ["uv", "run", "ae", *args],
+        capture_output=True,
+        text=True,
     )
 
 
@@ -29,10 +30,19 @@ class TestInitHelp:
         """Verify all 14 flags appear in help."""
         result = run_ae(["init", "--help"])
         flags = [
-            "--type", "--defaults", "--force", "--from-answers",
-            "--package-manager", "--ci", "--test-runner",
-            "--no-typescript", "--no-lefthook",
-            "--pretend", "--skip-tasks", "--no-cleanup", "--quiet",
+            "--type",
+            "--defaults",
+            "--force",
+            "--from-answers",
+            "--package-manager",
+            "--ci",
+            "--test-runner",
+            "--no-typescript",
+            "--no-lefthook",
+            "--pretend",
+            "--skip-tasks",
+            "--no-cleanup",
+            "--quiet",
             "--incremental",
         ]
         for flag in flags:
@@ -43,13 +53,17 @@ class TestInitPretend:
     def test_pretend_no_files_created(self):
         tmp = Path(tempfile.mkdtemp())
         target = tmp / "test-project"
-        result = run_ae([
-            "init", str(target),
-            "--type", "app-service",
-            "--defaults",
-            "--pretend",
-            "--force",
-        ])
+        result = run_ae(
+            [
+                "init",
+                str(target),
+                "--type",
+                "app-service",
+                "--defaults",
+                "--pretend",
+                "--force",
+            ]
+        )
         assert result.returncode == 0
         assert "DRY RUN" in result.stdout
         assert not target.exists()
@@ -57,14 +71,18 @@ class TestInitPretend:
     def test_pretend_with_skip_tasks(self):
         tmp = Path(tempfile.mkdtemp())
         target = tmp / "test-project2"
-        result = run_ae([
-            "init", str(target),
-            "--type", "library",
-            "--defaults",
-            "--pretend",
-            "--skip-tasks",
-            "--force",
-        ])
+        result = run_ae(
+            [
+                "init",
+                str(target),
+                "--type",
+                "library",
+                "--defaults",
+                "--pretend",
+                "--skip-tasks",
+                "--force",
+            ]
+        )
         assert result.returncode == 0
         assert "DRY RUN" in result.stdout
 
@@ -76,13 +94,17 @@ class TestInitMultiLayerTemplates:
         """_shared templates (CLAUDE.md, .gitignore, README, LICENSE) are generated."""
         tmp = Path(tempfile.mkdtemp())
         target = tmp / "test-shared"
-        result = run_ae([
-            "init", str(target),
-            "--type", "app-service",
-            "--defaults",
-            "--skip-tasks",
-            "--force",
-        ])
+        result = run_ae(
+            [
+                "init",
+                str(target),
+                "--type",
+                "app-service",
+                "--defaults",
+                "--skip-tasks",
+                "--force",
+            ]
+        )
         assert result.returncode == 0
         shared_files = ["CLAUDE.md", ".gitignore", "README.md", "LICENSE", ".editorconfig"]
         for fname in shared_files:
@@ -92,32 +114,54 @@ class TestInitMultiLayerTemplates:
         """Language feature templates (typescript) are generated."""
         tmp = Path(tempfile.mkdtemp())
         target = tmp / "test-ts"
-        result = run_ae([
-            "init", str(target),
-            "--type", "app-service",
-            "--defaults",
-            "--skip-tasks",
-            "--force",
-        ])
+        result = run_ae(
+            [
+                "init",
+                str(target),
+                "--type",
+                "app-service",
+                "--defaults",
+                "--skip-tasks",
+                "--force",
+            ]
+        )
         assert result.returncode == 0
-        ts_files = ["tsconfig.json", "index.ts", "index.test.ts",
-                     "package.json", "eslint.config.js", "prettier.config.js"]
+        ts_files = [
+            "tsconfig.json",
+            "index.ts",
+            "index.test.ts",
+            "package.json",
+            "eslint.config.js",
+            "prettier.config.js",
+        ]
         for fname in ts_files:
             assert (target / fname).exists(), f"Missing TS file: {fname}"
 
     def test_all_project_types_generate_shared(self):
         """All 8 project types generate shared templates."""
-        for ptype in ["app-service", "library", "cli-tool", "skill",
-                       "hook", "mcp-server", "spec-doc", "monorepo"]:
+        for ptype in [
+            "app-service",
+            "library",
+            "cli-tool",
+            "skill",
+            "hook",
+            "mcp-server",
+            "spec-doc",
+            "monorepo",
+        ]:
             tmp = Path(tempfile.mkdtemp())
             target = tmp / f"test-{ptype}"
-            result = run_ae([
-                "init", str(target),
-                "--type", ptype,
-                "--defaults",
-                "--skip-tasks",
-                "--force",
-            ])
+            result = run_ae(
+                [
+                    "init",
+                    str(target),
+                    "--type",
+                    ptype,
+                    "--defaults",
+                    "--skip-tasks",
+                    "--force",
+                ]
+            )
             assert result.returncode == 0, f"Failed for type: {ptype}"
             assert (target / "CLAUDE.md").exists(), f"No CLAUDE.md for {ptype}"
 
@@ -131,24 +175,32 @@ class TestFromAnswersRecovery:
         target1 = tmp / "first"
         target2 = tmp / "second"
 
-        result1 = run_ae([
-            "init", str(target1),
-            "--type", "app-service",
-            "--defaults",
-            "--skip-tasks",
-            "--force",
-        ])
+        result1 = run_ae(
+            [
+                "init",
+                str(target1),
+                "--type",
+                "app-service",
+                "--defaults",
+                "--skip-tasks",
+                "--force",
+            ]
+        )
         assert result1.returncode == 0
         answers_file = target1 / ".ae-answers.yml"
         assert answers_file.exists()
 
-        result2 = run_ae([
-            "init", str(target2),
-            "--from-answers", str(answers_file),
-            "--defaults",
-            "--skip-tasks",
-            "--force",
-        ])
+        result2 = run_ae(
+            [
+                "init",
+                str(target2),
+                "--from-answers",
+                str(answers_file),
+                "--defaults",
+                "--skip-tasks",
+                "--force",
+            ]
+        )
         assert result2.returncode == 0
         assert (target2 / "CLAUDE.md").exists()
 
@@ -158,9 +210,9 @@ class TestPathTraversalProtection:
 
     def test_rejects_path_traversal(self):
         """TemplateRenderer should reject paths with ../ escaping dst_dir."""
-        from auto_engineering.init.renderer import TemplateRenderer
-        from auto_engineering.init.errors import TemplateRenderError
         import tempfile
+
+        from auto_engineering.init.renderer import TemplateRenderer
 
         # Create a template dir with a file named to escape
         src_dir = Path(tempfile.mkdtemp())
@@ -180,6 +232,7 @@ class TestPathTraversalProtection:
         (src_dir / ".._escape.txt").unlink()
         src_dir.rmdir()
         import shutil
+
         shutil.rmtree(dst_dir)
 
 
@@ -192,9 +245,10 @@ class TestBuiltinHooksErrorPropagation:
 
     def test_git_init_failure_raises(self):
         """git init in a non-existent writable location should raise."""
-        from auto_engineering.init.scaffold import InitWorker
-        from auto_engineering.init.errors import TaskExecutionError
         import pytest
+
+        from auto_engineering.init.errors import TaskExecutionError
+        from auto_engineering.init.scaffold import InitWorker
 
         worker = InitWorker(
             dst_path=Path("/nonexistent/path/that/cannot/be/created"),
@@ -212,9 +266,11 @@ class TestGitBranchFallback:
     def test_git_init_tries_main_branch(self):
         """git init -b main is attempted first."""
         import subprocess
+
         result = subprocess.run(
             ["git", "init", "-b", "main"],
-            capture_output=True, text=True,
+            capture_output=True,
+            text=True,
         )
         # Just verify the command syntax is valid on this system
         assert result.returncode == 0 or "unknown option" in result.stderr.lower()
@@ -228,12 +284,14 @@ class TestProjectEnvPackageManagerDefault:
         from auto_engineering.config.environment import ProjectEnvironment
 
         env = ProjectEnvironment._from_detection(Path("/nonexistent-root"))
-        assert env.package_manager == "npm", \
+        assert env.package_manager == "npm", (
             f"Default package_manager should be 'npm', got '{env.package_manager}'"
+        )
 
     def test_package_manager_detects_uv_when_lockfile_present(self):
         """REGRESSION: uv.lock 存在时检测为 'uv'."""
         import tempfile
+
         from auto_engineering.config.environment import ProjectEnvironment
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -249,6 +307,7 @@ class TestDetectorSpecDocGlob:
     def test_spec_doc_detected_with_arbitrary_design_md(self):
         """RED: 任何 design/*.md 文件存在时,项目被识别为 spec-doc."""
         import tempfile
+
         from auto_engineering.init.detector import ProjectDetector
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -258,12 +317,14 @@ class TestDetectorSpecDocGlob:
             (tmp_path / "design" / "v2.0.md").write_text("# v2.0 design")
             detector = ProjectDetector(tmp_path)
             candidates = detector.list_candidates()
-            assert "spec-doc" in candidates, \
+            assert "spec-doc" in candidates, (
                 f"spec-doc not detected with design/v2.0.md. Got: {candidates}"
+            )
 
     def test_spec_doc_still_detected_with_beacon_md(self):
         """REGRESSION: design/BEACON.md 仍应识别为 spec-doc."""
         import tempfile
+
         from auto_engineering.init.detector import ProjectDetector
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -293,6 +354,7 @@ class TestProjectEnvironmentWarnUndetectable:
     def test_warn_undetectable_partial_when_some_files_present(self):
         """RED: 部分文件存在时,只列出仍未判定的字段."""
         import tempfile
+
         from auto_engineering.config.environment import ProjectEnvironment
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -320,6 +382,7 @@ class TestRendererSymlinkHandling:
     def test_symlink_file_handled(self):
         """RED: symlink 文件被正确处理,不报错且 dst 端可读."""
         import tempfile
+
         from auto_engineering.init.renderer import TemplateRenderer
 
         src_dir = Path(tempfile.mkdtemp(prefix="ae-symlink-src-"))
@@ -351,12 +414,14 @@ class TestRendererSymlinkHandling:
             assert link_dst.read_text() == "hello target"
         finally:
             import shutil
+
             shutil.rmtree(src_dir, ignore_errors=True)
             shutil.rmtree(dst_dir, ignore_errors=True)
 
     def test_symlink_file_not_double_resolved(self):
         """RED: 渲染路径中对 symlink 的判断存在 (= 不崩)."""
         import tempfile
+
         from auto_engineering.init.renderer import TemplateRenderer
 
         src_dir = Path(tempfile.mkdtemp(prefix="ae-symlink2-"))
@@ -376,10 +441,11 @@ class TestRendererSymlinkHandling:
             # 不崩即可 (copy2 跟随 symlink 会 FileNotFoundError,但 is_symlink 后可走不同分支)
             # 设计意图: 若实现保留 symlink → 不跟随;若实现解析 → 需 FileNotFoundError 容忍
             # 这里仅验证: real.txt 仍能正确复制
-            generated = renderer.render_to(dst_dir)
+            renderer.render_to(dst_dir)
             assert (dst_dir / "real.txt").exists()
         finally:
             import shutil
+
             shutil.rmtree(src_dir, ignore_errors=True)
             shutil.rmtree(dst_dir, ignore_errors=True)
 
@@ -389,7 +455,8 @@ class TestBuiltinHooksGitCommitNonBlocking:
 
     def test_git_commit_failure_does_not_raise(self):
         """RED: _run_builtin_hooks 中 git commit 失败不应抛 TaskExecutionError."""
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import MagicMock, patch
+
         from auto_engineering.init.scaffold import InitWorker
 
         worker = InitWorker(
@@ -414,7 +481,7 @@ class TestBuiltinHooksGitCommitNonBlocking:
         side_effects = [
             success_result,  # git init
             success_result,  # git add
-            failed_commit,   # git commit (FAIL — 应非阻塞)
+            failed_commit,  # git commit (FAIL — 应非阻塞)
         ]
 
         with patch("subprocess.run", side_effect=side_effects) as mock_run:
@@ -433,7 +500,8 @@ class TestInitPhaseTasksCurrentPhase:
 
     def test_phase_tasks_passes_current_phase(self):
         """RED: TaskRunner 必须收到 current_phase='tasks'."""
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import MagicMock, patch
+
         from auto_engineering.init.scaffold import InitWorker
 
         worker = InitWorker(
@@ -457,15 +525,18 @@ class TestInitPhaseTasksCurrentPhase:
         with patch("auto_engineering.init.scaffold.TaskRunner") as MockRunner:
             with patch.object(worker, "_run_builtin_hooks"):
                 import tempfile
+
                 tmpdir = Path(tempfile.mkdtemp())
                 try:
                     worker._phase_tasks(tmpdir)
                     assert MockRunner.called
                     call_kwargs = MockRunner.call_args.kwargs
-                    assert call_kwargs.get("current_phase") == "tasks", \
+                    assert call_kwargs.get("current_phase") == "tasks", (
                         f"current_phase not passed: {call_kwargs}"
+                    )
                 finally:
                     import shutil
+
                     shutil.rmtree(tmpdir, ignore_errors=True)
 
 
@@ -487,19 +558,22 @@ class TestInitIncrementalMode:
 
     def test_incremental_skips_existing_files(self):
         """RED: --incremental + 目标目录已存在某文件 → 跳过该文件,仅补充新文件."""
-        from auto_engineering.init.scaffold import InitWorker
 
         tmp = Path(tempfile.mkdtemp())
         target = tmp / "incremental-target"
 
         # 1) 先空目录跑一次（baseline）
-        result1 = run_ae([
-            "init", str(target),
-            "--type", "app-service",
-            "--defaults",
-            "--skip-tasks",
-            "--force",
-        ])
+        result1 = run_ae(
+            [
+                "init",
+                str(target),
+                "--type",
+                "app-service",
+                "--defaults",
+                "--skip-tasks",
+                "--force",
+            ]
+        )
         assert result1.returncode == 0, f"baseline init failed: {result1.stderr}"
         assert (target / "CLAUDE.md").exists()
         assert (target / "README.md").exists()
@@ -513,13 +587,17 @@ class TestInitIncrementalMode:
         (target / "LICENSE").unlink()
 
         # 3) 第二次跑 --incremental
-        result2 = run_ae([
-            "init", str(target),
-            "--type", "app-service",
-            "--defaults",
-            "--skip-tasks",
-            "--incremental",
-        ])
+        result2 = run_ae(
+            [
+                "init",
+                str(target),
+                "--type",
+                "app-service",
+                "--defaults",
+                "--skip-tasks",
+                "--incremental",
+            ]
+        )
         assert result2.returncode == 0, f"incremental init failed: {result2.stderr}"
 
         # USER_FILE.md 必须保留原内容
@@ -530,7 +608,6 @@ class TestInitIncrementalMode:
 
     def test_incremental_skips_git_dir(self):
         """RED: 增量模式下 .git/ 始终跳过（已有仓库不被覆盖）."""
-        from auto_engineering.init.scaffold import InitWorker
 
         tmp = Path(tempfile.mkdtemp())
         target = tmp / "git-target"
@@ -543,13 +620,17 @@ class TestInitIncrementalMode:
         original_head = head_file.read_text() if head_file.exists() else ""
 
         # 跑 --incremental
-        result = run_ae([
-            "init", str(target),
-            "--type", "app-service",
-            "--defaults",
-            "--skip-tasks",
-            "--incremental",
-        ])
+        result = run_ae(
+            [
+                "init",
+                str(target),
+                "--type",
+                "app-service",
+                "--defaults",
+                "--skip-tasks",
+                "--incremental",
+            ]
+        )
         assert result.returncode == 0, f"init failed: {result.stderr}"
 
         # .git/HEAD 内容必须未变（不覆盖）
@@ -562,24 +643,32 @@ class TestInitIncrementalMode:
         target = tmp / "idempotent-target"
 
         # 第一次
-        result1 = run_ae([
-            "init", str(target),
-            "--type", "app-service",
-            "--defaults",
-            "--skip-tasks",
-            "--incremental",
-        ])
+        result1 = run_ae(
+            [
+                "init",
+                str(target),
+                "--type",
+                "app-service",
+                "--defaults",
+                "--skip-tasks",
+                "--incremental",
+            ]
+        )
         assert result1.returncode == 0
         files_after_first = sorted(p.relative_to(target) for p in target.rglob("*") if p.is_file())
 
         # 第二次
-        result2 = run_ae([
-            "init", str(target),
-            "--type", "app-service",
-            "--defaults",
-            "--skip-tasks",
-            "--incremental",
-        ])
+        result2 = run_ae(
+            [
+                "init",
+                str(target),
+                "--type",
+                "app-service",
+                "--defaults",
+                "--skip-tasks",
+                "--incremental",
+            ]
+        )
         assert result2.returncode == 0
         files_after_second = sorted(p.relative_to(target) for p in target.rglob("*") if p.is_file())
 
@@ -603,8 +692,8 @@ class TestScaffoldPrerequisites:
     """覆盖 scaffold.py:220-223 _check_prerequisites."""
 
     def test_missing_git_raises(self, monkeypatch, tmp_path):
-        from auto_engineering.init.scaffold import InitWorker
         from auto_engineering.init.errors import UnsatisfiedPrerequisiteError
+        from auto_engineering.init.scaffold import InitWorker
 
         # 模拟 git 不存在
         monkeypatch.setattr("shutil.which", lambda cmd: None if cmd == "git" else "/usr/bin/" + cmd)
@@ -632,8 +721,8 @@ class TestScaffoldNonEmptyDir:
     """覆盖 scaffold.py:195-208 _phase_detect 目录存在性分支."""
 
     def test_non_empty_dir_without_force_or_incremental_raises(self, tmp_path):
-        from auto_engineering.init.scaffold import InitWorker
         from auto_engineering.init.errors import TargetDirectoryError
+        from auto_engineering.init.scaffold import InitWorker
 
         existing = tmp_path / "existing"
         existing.mkdir()
@@ -713,7 +802,6 @@ class TestScaffoldCleanupOnError:
     """覆盖 scaffold.py:139-142 异常处理 cleanup_on_error 行为."""
 
     def test_cleanup_removes_created_dst_on_exception(self, tmp_path, monkeypatch):
-        from auto_engineering.init import scaffold as scaffold_mod
         from auto_engineering.init.scaffold import InitWorker
 
         dst = tmp_path / "cleanup-test"
@@ -780,10 +868,11 @@ class TestHooksTaskRunner:
         runner.run([], context={})  # 不抛
 
     def test_when_false_skips_task(self, tmp_path, monkeypatch):
-        from auto_engineering.init.hooks import TaskRunner
         from auto_engineering.init.config import Task
+        from auto_engineering.init.hooks import TaskRunner
 
         called = []
+
         def fake_run(*args, **kwargs):
             called.append(args[0])
 
@@ -795,14 +884,16 @@ class TestHooksTaskRunner:
         assert called == []  # 跳过了
 
     def test_list_cmd_renders_without_shell(self, tmp_path, monkeypatch):
-        from auto_engineering.init.hooks import TaskRunner
         from auto_engineering.init.config import Task
+        from auto_engineering.init.hooks import TaskRunner
 
         captured = {}
+
         def fake_run(cmd, **kwargs):
             captured["cmd"] = cmd
             captured["shell"] = kwargs.get("shell", False)
             from unittest.mock import MagicMock
+
             m = MagicMock()
             m.returncode = 0
             m.stderr = ""

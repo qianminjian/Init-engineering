@@ -11,8 +11,8 @@ from auto_engineering.engine.graph import (
 from auto_engineering.engine.state import LoopState
 from auto_engineering.errors import AEError, ErrorCode
 
-
 # ----- Stage.render_description (v3.0 §3.1 修复验证) -----
+
 
 def test_render_description_普通替换_无空值():
     stage = Stage(
@@ -34,10 +34,7 @@ def test_render_description_空字符串整行删除_首次_critic_feedback():
     stage = Stage(
         name="dev",
         agent_type="dev",
-        description_template=(
-            "按计划实现: {plan}\n"
-            "上一轮审查反馈: {critic_feedback}"
-        ),
+        description_template=("按计划实现: {plan}\n上一轮审查反馈: {critic_feedback}"),
         expected_output="code",
         input_channels=["plan", "critic_feedback"],
     )
@@ -82,6 +79,7 @@ def test_render_description_缺失_channel_静默跳过():
 
 
 # ----- StageGraph.next_stage 路径分支 -----
+
 
 def test_next_stage_首次返回入口_Stage():
     graph = build_dev_loop_graph()
@@ -137,6 +135,7 @@ def test_critic_decision_helper_返回_verdict():
 
 # ----- builder 链式 API -----
 
+
 def test_builder_链式返回_self_支持链式调用():
     g = StageGraph()
     s = Stage(name="a", agent_type="a", description_template="x", expected_output="y")
@@ -145,6 +144,7 @@ def test_builder_链式返回_self_支持链式调用():
 
 
 # ----- v3.1 B5 修复: Stage name collision 防御 -----
+
 
 def test_name_collision_raises():
     """B5: StageGraph.add_stage 拒绝保留名 (__start__/__end__) 作为 Stage name.

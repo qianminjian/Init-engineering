@@ -13,8 +13,8 @@ from .environment import ProjectEnvironment, load_ae_answers, preflight
 from .settings import Settings
 
 __all__ = [
-    "Settings",
     "ProjectEnvironment",
+    "Settings",
     "load_ae_answers",
     "preflight",
 ]

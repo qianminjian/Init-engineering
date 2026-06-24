@@ -6,6 +6,7 @@ from dataclasses import dataclass
 @dataclass
 class GateResult:
     """闸门检查结果。"""
+
     passed: bool
     message: str = ""
 

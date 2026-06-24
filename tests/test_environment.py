@@ -21,9 +21,7 @@ class TestLoadAeAnswers:
         """RED: 存在 .ae-answers.yml 时返回 dict."""
         answers_file = tmp_path / ".ae-answers.yml"
         answers_file.write_text(
-            "project_name: test-project\n"
-            "package_manager: uv\n"
-            "use_typescript: false\n"
+            "project_name: test-project\npackage_manager: uv\nuse_typescript: false\n"
         )
         result = load_ae_answers(tmp_path)
         assert result is not None
@@ -39,10 +37,7 @@ class TestLoadAeAnswers:
     def test_strips_meta_block(self, tmp_path: Path):
         """RED: _meta 块不参与字段合并,作为元数据保留."""
         answers_file = tmp_path / ".ae-answers.yml"
-        answers_file.write_text(
-            "_meta:\n  updated_at: '2026-01-01'\n"
-            "project_name: x\n"
-        )
+        answers_file.write_text("_meta:\n  updated_at: '2026-01-01'\nproject_name: x\n")
         result = load_ae_answers(tmp_path)
         assert result is not None
         assert "_meta" in result

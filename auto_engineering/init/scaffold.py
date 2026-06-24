@@ -1,5 +1,6 @@
 """InitWorker — 5 阶段流水线编排器（参考 Copier Worker）."""
 
+import contextlib
 import shutil
 import subprocess
 import tempfile
@@ -8,20 +9,23 @@ from pathlib import Path
 
 import jinja2
 
-from .config import TemplateConfig, TEMPLATES_ROOT
 from .answers import AnswersMap
-from .prompts import (
-    InteractivePrompt, prompt_for_project_type, prompt_for_nested_template,
-)
-from .renderer import TemplateRenderer
-from .hooks import TaskRunner
+from .config import TEMPLATES_ROOT, TemplateConfig
 from .detector import ProjectDetector
 from .errors import (
-    InitError, TargetDirectoryError, ConfigFileError,
-    UnsatisfiedPrerequisiteError, InitInterruptedError,
+    ConfigFileError,
+    InitInterruptedError,
+    TargetDirectoryError,
     TaskExecutionError,
+    UnsatisfiedPrerequisiteError,
 )
-from ..config.environment import ProjectEnvironment
+from .hooks import TaskRunner
+from .prompts import (
+    InteractivePrompt,
+    prompt_for_nested_template,
+    prompt_for_project_type,
+)
+from .renderer import TemplateRenderer
 
 
 @dataclass
@@ -67,10 +71,8 @@ class InitWorker:
 
     def _cleanup(self) -> None:
         for hook in self._cleanup_hooks:
-            try:
+            with contextlib.suppress(Exception):
                 hook()
-            except Exception:
-                pass
 
     def execute(self) -> InitResult:
         if self.pretend and not self.quiet:
@@ -110,6 +112,7 @@ class InitWorker:
             replay_dir = Path.home() / ".ae-replays" / (self.project_type or "unknown")
             replay_dir.mkdir(parents=True, exist_ok=True)
             from datetime import datetime
+
             replay_file = replay_dir / f"{datetime.now().strftime('%Y%m%d-%H%M%S')}.yml"
             self._answers.write_to(replay_file)
 
@@ -118,7 +121,9 @@ class InitWorker:
                 # A1: Phase 3.5 — 增量合并
                 created, skipped = self._phase_merge(tmpdir, generated)
                 if not self.quiet:
-                    print(f"\n✓ 增量模式：已补充 {len(created)} 个文件，跳过 {len(skipped)} 个已有文件")
+                    print(
+                        f"\n✓ 增量模式：已补充 {len(created)} 个文件，跳过 {len(skipped)} 个已有文件"
+                    )
             else:
                 did_create_dst = not self.dst_path.exists()
                 if did_create_dst:
@@ -149,7 +154,9 @@ class InitWorker:
         )
 
     def _phase_merge(
-        self, tmpdir: Path, generated: list[Path],
+        self,
+        tmpdir: Path,
+        generated: list[Path],
     ) -> tuple[list[Path], list[Path]]:
         """A1: 增量模式合并 — 逐文件复制,跳过已存在 + .git/.
 
@@ -178,16 +185,16 @@ class InitWorker:
 
     def _check_template_version(self) -> None:
         """检查 ae 版本是否满足模板要求的最小版本。"""
+        from packaging.version import parse
+
         from auto_engineering import __version__
-        from packaging.version import Version, parse
 
         installed = parse(__version__)
         if self._template.min_ae_version:
             required = parse(self._template.min_ae_version)
             if installed < required:
                 raise ConfigFileError(
-                    f"模板要求 ae >= {self._template.min_ae_version}，"
-                    f"当前版本 {__version__}"
+                    f"模板要求 ae >= {self._template.min_ae_version}，当前版本 {__version__}"
                 )
 
     def _phase_detect(self) -> None:
@@ -212,8 +219,11 @@ class InitWorker:
             if not self.project_type:
                 if self.defaults:
                     raise ConfigFileError("无法自动检测项目类型，请用 --type 指定")
-                available = [d.name for d in TEMPLATES_ROOT.iterdir()
-                           if d.is_dir() and not d.name.startswith("_")]
+                available = [
+                    d.name
+                    for d in TEMPLATES_ROOT.iterdir()
+                    if d.is_dir() and not d.name.startswith("_")
+                ]
                 self.project_type = prompt_for_project_type(available)
         self._check_prerequisites()
 
@@ -226,13 +236,19 @@ class InitWorker:
         self._template = TemplateConfig.load(self.project_type or "")
         if self._template.nested_templates and not self.defaults:
             chosen = prompt_for_nested_template(
-                self._template.nested_templates, no_input=False,
+                self._template.nested_templates,
+                no_input=False,
             )
             if chosen:
                 self._template.template_dir = self._template.template_dir / chosen
         cli_overrides = {}
-        for key in ["package_manager", "ci_platform", "test_runner",
-                     "use_typescript", "use_lefthook"]:
+        for key in [
+            "package_manager",
+            "ci_platform",
+            "test_runner",
+            "use_typescript",
+            "use_lefthook",
+        ]:
             val = getattr(self, key, None)
             if val is not None:
                 cli_overrides[key] = val
@@ -253,8 +269,15 @@ class InitWorker:
 
     def _phase_render(self, tmpdir: Path) -> list[Path]:
         self._answers.builtins["_folder_name"] = self.dst_path.name
-        str_vars = ["project_name", "project_description", "language",
-                     "package_manager", "test_runner", "ci_platform", "project_type"]
+        str_vars = [
+            "project_name",
+            "project_description",
+            "language",
+            "package_manager",
+            "test_runner",
+            "ci_platform",
+            "project_type",
+        ]
         for var in str_vars:
             if var not in self._answers:
                 self._answers.builtins[var] = ""
@@ -267,8 +290,11 @@ class InitWorker:
 
         language = context.get("language", "typescript")
         lang_feature_map = {
-            "typescript": "typescript", "python": "python",
-            "go": "go", "rust": "rust", "bash": "bash",
+            "typescript": "typescript",
+            "python": "python",
+            "go": "go",
+            "rust": "rust",
+            "bash": "bash",
         }
         if lang_feat := lang_feature_map.get(language):
             feat_dir = TEMPLATES_ROOT / "_features" / lang_feat
@@ -321,50 +347,70 @@ class InitWorker:
     def _run_builtin_hooks(self, tmpdir: Path) -> None:
         # git init with branch fallback (git < 2.28 compatibility)
         result = subprocess.run(
-            ["git", "init", "-b", "main"], cwd=tmpdir,
-            capture_output=True, text=True,
+            ["git", "init", "-b", "main"],
+            cwd=tmpdir,
+            capture_output=True,
+            text=True,
         )
         if result.returncode != 0:
-            if "unknown option" in result.stderr.lower() or "unknown switch" in result.stderr.lower():
+            if (
+                "unknown option" in result.stderr.lower()
+                or "unknown switch" in result.stderr.lower()
+            ):
                 result = subprocess.run(
-                    ["git", "init"], cwd=tmpdir,
-                    capture_output=True, text=True,
+                    ["git", "init"],
+                    cwd=tmpdir,
+                    capture_output=True,
+                    text=True,
                 )
             if result.returncode != 0:
                 raise TaskExecutionError("git init", result.returncode, result.stderr)
 
         pm = self._answers.get("package_manager")
         if pm:
-            result = subprocess.run([pm, "install"], cwd=tmpdir,
-                                    capture_output=True, text=True)
+            result = subprocess.run([pm, "install"], cwd=tmpdir, capture_output=True, text=True)
             if result.returncode != 0:
                 raise TaskExecutionError(
-                    f"{pm} install", result.returncode, result.stderr,
+                    f"{pm} install",
+                    result.returncode,
+                    result.stderr,
                 )
 
         if self._answers.get("use_lefthook"):
-            result = subprocess.run(["lefthook", "install"], cwd=tmpdir,
-                                    capture_output=True, text=True)
+            result = subprocess.run(
+                ["lefthook", "install"], cwd=tmpdir, capture_output=True, text=True
+            )
             if result.returncode != 0:
                 raise TaskExecutionError(
-                    "lefthook install", result.returncode, result.stderr,
+                    "lefthook install",
+                    result.returncode,
+                    result.stderr,
                 )
 
         result = subprocess.run(
-            ["git", "add", "-A"], cwd=tmpdir,
-            capture_output=True, text=True,
+            ["git", "add", "-A"],
+            cwd=tmpdir,
+            capture_output=True,
+            text=True,
         )
         if result.returncode != 0:
             # A3: git add 失败非阻塞 (warning to stderr)
-            print(f"warning: git add failed: {result.stderr.strip()}", file=__import__("sys").stderr)
+            print(
+                f"warning: git add failed: {result.stderr.strip()}", file=__import__("sys").stderr
+            )
 
         result = subprocess.run(
             ["git", "commit", "-m", "chore(init): scaffolded by ae init"],
-            cwd=tmpdir, capture_output=True, text=True,
+            cwd=tmpdir,
+            capture_output=True,
+            text=True,
         )
         if result.returncode != 0:
             # A3: git commit 失败非阻塞 (warning to stderr),不中断后续任务
-            print(f"warning: git commit failed: {result.stderr.strip()}", file=__import__("sys").stderr)
+            print(
+                f"warning: git commit failed: {result.stderr.strip()}",
+                file=__import__("sys").stderr,
+            )
 
 
 def init_project(dst_path: str | Path, project_type: str | None = None, **kwargs) -> InitResult:

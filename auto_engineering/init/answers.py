@@ -3,6 +3,8 @@
 来源：Copier _user_data.py:70-133 AnswersMap + _external_data + LazyDict
 """
 
+import os as _os
+import sys
 from collections import ChainMap
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -10,10 +12,6 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-
-import sys
-import os as _os
-from datetime import datetime
 
 BUILTIN_VARS: dict[str, Any] = {
     "_ae_version": "1.0.0",
@@ -44,6 +42,7 @@ class _LazyExternalDict:
                     data = yaml.safe_load(file_path.read_text())
                 elif file_path.suffix == ".json":
                     import json
+
                     data = json.loads(file_path.read_text())
                 else:
                     data = yaml.safe_load(file_path.read_text())
@@ -95,8 +94,13 @@ class AnswersMap:
     _external_cache: dict[str, Any] = field(default_factory=dict, init=False)
 
     def get(self, key: str) -> Any:
-        for layer in [self.cli_overrides, self.interactive, self.previous,
-                      self.defaults, self.builtins]:
+        for layer in [
+            self.cli_overrides,
+            self.interactive,
+            self.previous,
+            self.defaults,
+            self.builtins,
+        ]:
             val = layer.get(key)
             if val is not None:
                 return val
@@ -106,13 +110,15 @@ class AnswersMap:
 
     def combined(self) -> dict:
         """全量合并。用于 Jinja2 渲染上下文。外挂 _external_data 键（懒加载）。"""
-        result = dict(ChainMap(
-            self.cli_overrides,
-            self.interactive,
-            self.previous,
-            self.defaults,
-            self.builtins,
-        ))
+        result = dict(
+            ChainMap(
+                self.cli_overrides,
+                self.interactive,
+                self.previous,
+                self.defaults,
+                self.builtins,
+            )
+        )
         if self.external:
             result["_external_data"] = _LazyExternalDict(self.external)
         return result
@@ -136,10 +142,14 @@ class AnswersMap:
         """保存已收集的部分答案。Ctrl-C 时调用。"""
         if path is None:
             path = Path.home() / ".ae-partial-answers.yml"
-        path.write_text(yaml.dump({
-            "_meta": {"saved_at": datetime.now().isoformat(), "partial": True},
-            **self.interactive,
-        }))
+        path.write_text(
+            yaml.dump(
+                {
+                    "_meta": {"saved_at": datetime.now().isoformat(), "partial": True},
+                    **self.interactive,
+                }
+            )
+        )
         return path
 
     @classmethod

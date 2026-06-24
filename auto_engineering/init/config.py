@@ -17,8 +17,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import yaml
 import jinja2
+import yaml
 
 # ─── 常量 ────────────────────────────────────────────────────────────────────
 
@@ -26,9 +26,14 @@ TEMPLATES_ROOT = Path(__file__).parent / "templates"
 
 # 默认排除列表（来源: Copier _template.py:DEFAULT_EXCLUDE）
 DEFAULT_EXCLUDE = [
-    "ae-template.yml", "ae-template.yaml",
-    "~*", "*.py[co]", "__pycache__",
-    ".git", ".DS_Store", ".svn",
+    "ae-template.yml",
+    "ae-template.yaml",
+    "~*",
+    "*.py[co]",
+    "__pycache__",
+    ".git",
+    ".DS_Store",
+    ".svn",
 ]
 
 DEFAULT_TEMPLATES_SUFFIX = ".jinja"
@@ -50,13 +55,13 @@ class Question:
     - secret=True 时 default 不能为空（Copier 规则）
     """
 
-    var_name: str                     # 变量名，对应 ae-template.yml 的 key
-    type: str = ""                    # str|bool|int|float|json|yaml|choice，空字符串=自动推导
-    help: str = ""                    # 提示文本
-    default: Any = None               # 默认值
+    var_name: str  # 变量名，对应 ae-template.yml 的 key
+    type: str = ""  # str|bool|int|float|json|yaml|choice，空字符串=自动推导
+    help: str = ""  # 提示文本
+    default: Any = None  # 默认值
     choices: list[str] | dict[str, Any] | None = None
-    when: str | bool = True           # Jinja2 条件
-    validator: str = ""               # Jinja2 校验模板，空=不校验
+    when: str | bool = True  # Jinja2 条件
+    validator: str = ""  # Jinja2 校验模板，空=不校验
     secret: bool = False
     multiselect: bool = False
     placeholder: str = ""
@@ -91,9 +96,7 @@ class Question:
         result = tpl.render(**context).strip()
         return result.lower() not in ("false", "no", "0", "")
 
-    def render_validator(
-        self, value: Any, context: dict, jinja_env: jinja2.Environment
-    ) -> str:
+    def render_validator(self, value: Any, context: dict, jinja_env: jinja2.Environment) -> str:
         """渲染 validator 模板，返回错误信息或空字符串。
 
         来源：Copier _user_data.py Question._get_answer_validation_error()
@@ -170,10 +173,12 @@ class TemplateConfig:
     skip_if_exists: list[str] = field(default_factory=list)
 
     # P1#7: _envops — Jinja2 环境选项（来源: Copier copier.yaml _envops）
-    envops: dict = field(default_factory=lambda: {
-        "autoescape": False,
-        "keep_trailing_newline": True,
-    })
+    envops: dict = field(
+        default_factory=lambda: {
+            "autoescape": False,
+            "keep_trailing_newline": True,
+        }
+    )
 
     # P1#6: _copy_without_render — 标记文件不渲染只复制
     # （来源: Cookiecutter generate.py:39-56）
@@ -188,11 +193,11 @@ class TemplateConfig:
 
     secret_questions: list[str] = field(default_factory=list)
     questions: list[Question] = field(default_factory=list)
-    tasks_before: list[Task] = field(default_factory=list)   # Phase 3 前执行
-    tasks_after: list[Task] = field(default_factory=list)    # Phase 3 后执行
+    tasks_before: list[Task] = field(default_factory=list)  # Phase 3 前执行
+    tasks_after: list[Task] = field(default_factory=list)  # Phase 3 后执行
     external_data: dict[str, str] = field(default_factory=dict)  # P1#8
-    message_before: str = ""           # 渲染前打印
-    message_after: str = ""            # 渲染后打印
+    message_before: str = ""  # 渲染前打印
+    message_after: str = ""  # 渲染后打印
 
     # ─── 加载 ─────────────────────────────────────────────────────────────
 
@@ -228,9 +233,7 @@ class TemplateConfig:
                 elif config_key == "secret_questions":
                     config_kwargs["secret_questions"] = list(value)
                 elif config_key == "envops":
-                    config_kwargs["envops"] = {
-                        **config_kwargs.get("envops", {}), **value
-                    }
+                    config_kwargs["envops"] = {**config_kwargs.get("envops", {}), **value}
                 elif config_key == "no_render":
                     config_kwargs["no_render"] = list(value)
                 elif config_key == "external_data":
@@ -272,6 +275,7 @@ class TemplateConfig:
         !include 后接相对路径（相对于当前配置文件），支持 glob 模式。
         被 include 的文件内容与当前文件合并。
         """
+
         class _IncludeLoader(yaml.SafeLoader):
             pass
 
@@ -302,9 +306,7 @@ class TemplateConfig:
     # ─── 嵌套模板解析 ─────────────────────────────────────────────────────
 
     @staticmethod
-    def _resolve_nested_template(
-        template_dir: Path, nested: dict
-    ) -> Path | None:
+    def _resolve_nested_template(template_dir: Path, nested: dict) -> Path | None:
         """解析嵌套模板选择。
 
         来源：Cookiecutter main.py:144-146 choose_nested_template。
@@ -341,19 +343,14 @@ class TemplateConfig:
             if not isinstance(raw, dict):
                 raw = {"default": raw}
             # 只传入 Question dataclass 定义的字段
-            q_kwargs = {
-                k: v for k, v in raw.items()
-                if k in Question.__dataclass_fields__
-            }
+            q_kwargs = {k: v for k, v in raw.items() if k in Question.__dataclass_fields__}
             questions.append(Question(var_name=var_name, **q_kwargs))
         return questions
 
     # ─── 任务解析 ─────────────────────────────────────────────────────────
 
     @staticmethod
-    def _parse_tasks(
-        tasks_raw: list[dict[str, Any]], config_kwargs: dict[str, Any]
-    ) -> None:
+    def _parse_tasks(tasks_raw: list[dict[str, Any]], config_kwargs: dict[str, Any]) -> None:
         """将 _tasks 列表按默认 stage 分到 tasks_before / tasks_after。
 
         来源：Copier _template.py filter_config 中的 _tasks 处理。
@@ -362,10 +359,7 @@ class TemplateConfig:
         before: list[Task] = []
         after: list[Task] = []
         for t in tasks_raw:
-            task_kwargs = {
-                k: v for k, v in t.items()
-                if k in Task.__dataclass_fields__
-            }
+            task_kwargs = {k: v for k, v in t.items() if k in Task.__dataclass_fields__}
             task = Task(**task_kwargs)
             stage = t.get("stage", "after")
             if stage == "before":

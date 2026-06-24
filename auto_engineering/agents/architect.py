@@ -3,4 +3,5 @@
 
 class ArchitectAgent:
     """技术架构师 Agent。"""
+
     pass

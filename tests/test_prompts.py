@@ -1,6 +1,6 @@
 """Tests for InteractivePrompt — 交互式问答."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import click
 import jinja2
@@ -14,7 +14,6 @@ from auto_engineering.init.prompts import (
     prompt_for_project_type,
 )
 
-
 # ─── Fixtures ────────────────────────────────────────────────────────────────────
 
 
@@ -26,26 +25,19 @@ def jinja_env() -> jinja2.Environment:
 @pytest.fixture
 def basic_questions() -> list[Question]:
     return [
-        Question(var_name="name", type="str", default="test-project",
-                 help="项目名称"),
-        Question(var_name="use_typescript", type="bool", default=True,
-                 help="是否使用 TypeScript"),
-        Question(var_name="port", type="int", default=8080,
-                 help="服务端口"),
-        Question(var_name="version", type="float", default=1.0,
-                 help="版本号"),
+        Question(var_name="name", type="str", default="test-project", help="项目名称"),
+        Question(var_name="use_typescript", type="bool", default=True, help="是否使用 TypeScript"),
+        Question(var_name="port", type="int", default=8080, help="服务端口"),
+        Question(var_name="version", type="float", default=1.0, help="版本号"),
     ]
 
 
 @pytest.fixture
 def complex_questions() -> list[Question]:
     return [
-        Question(var_name="name", type="str", default="test-app",
-                 help="项目名称"),
-        Question(var_name="config_json", type="json", default="{}",
-                 help="JSON 配置"),
-        Question(var_name="config_yaml", type="yaml", default="version: '1.0'",
-                 help="YAML 配置"),
+        Question(var_name="name", type="str", default="test-app", help="项目名称"),
+        Question(var_name="config_json", type="json", default="{}", help="JSON 配置"),
+        Question(var_name="config_yaml", type="yaml", default="version: '1.0'", help="YAML 配置"),
     ]
 
 
@@ -132,16 +124,14 @@ class TestRenderDefault:
 
     def test_str_with_template_renders(self, basic_questions, answers):
         prompt = InteractivePrompt(basic_questions, answers)
-        q = Question(var_name="greeting", type="str",
-                      default="Hello {{ name }}!")
+        q = Question(var_name="greeting", type="str", default="Hello {{ name }}!")
         result = prompt._render_default(q, {"name": "World"})
         assert result == "Hello World!"
 
     def test_list_default_renders_template(self, basic_questions, answers):
         """列表类型的 default 如果是含模板的字符串，也应渲染."""
         prompt = InteractivePrompt(basic_questions, answers)
-        q = Question(var_name="tags", type="yaml",
-                      default="[{{ name }}, 'v2']")
+        q = Question(var_name="tags", type="yaml", default="[{{ name }}, 'v2']")
         result = prompt._render_default(q, {"name": "app"})
         assert result == "[app, 'v2']"
 
@@ -180,8 +170,7 @@ class TestVisibleQuestions:
         """when=False 的问题也会出现在 _visible_questions 中，由 _ask_one 跳过."""
         questions = [
             Question(var_name="use_ts", type="bool", default=True),
-            Question(var_name="ts_config", type="str", default="strict",
-                     when=False),  # 永远跳过
+            Question(var_name="ts_config", type="str", default="strict", when=False),  # 永远跳过
         ]
         answers.interactive["use_ts"] = True
         prompt = InteractivePrompt(questions, answers)
@@ -197,8 +186,9 @@ class TestVisibleQuestions:
         """when 为 Jinja2 模板且求值为 False 时，_visible_questions 包含但 _ask_one 跳过."""
         questions = [
             Question(var_name="use_ts", type="bool", default=True),
-            Question(var_name="ts_strict", type="bool", default=False,
-                     when="{{ use_ts == false }}"),
+            Question(
+                var_name="ts_strict", type="bool", default=False, when="{{ use_ts == false }}"
+            ),
         ]
         answers.defaults["use_ts"] = True
         prompt = InteractivePrompt(questions, answers)
@@ -212,10 +202,8 @@ class TestVisibleQuestions:
 
     def test_when_true_includes(self, basic_questions, answers):
         questions = [
-            Question(var_name="lang", type="choice", choices=["py", "js"],
-                     default="py"),
-            Question(var_name="py_version", type="str", default="3.12",
-                     when="{{ lang == 'py' }}"),
+            Question(var_name="lang", type="choice", choices=["py", "js"], default="py"),
+            Question(var_name="py_version", type="str", default="3.12", when="{{ lang == 'py' }}"),
         ]
         answers.defaults["lang"] = "py"
         prompt = InteractivePrompt(questions, answers)
@@ -227,8 +215,7 @@ class TestVisibleQuestions:
         """when 使用 interactive 层已收集的变量."""
         questions = [
             Question(var_name="name", type="str", default="app"),
-            Question(var_name="suffix", type="str", default="",
-                     when="{{ name != '' }}"),
+            Question(var_name="suffix", type="str", default="", when="{{ name != '' }}"),
         ]
         answers.interactive["name"] = "myapp"
         prompt = InteractivePrompt(questions, answers)
@@ -253,26 +240,22 @@ class TestAskOne:
 
     def test_skip_when_condition_false(self, basic_questions, answers):
         prompt = InteractivePrompt(basic_questions, answers)
-        q = Question(var_name="skipped", type="str", default="nope",
-                     when=False)
+        q = Question(var_name="skipped", type="str", default="nope", when=False)
         prompt._ask_one(q, {})
         assert "skipped" not in answers.interactive
 
     def test_stores_value_in_interactive(self, basic_questions, answers):
         prompt = InteractivePrompt(basic_questions, answers)
-        q = Question(var_name="name", type="str", default="default-name",
-                     help="项目名称")
-        with patch("click.prompt", return_value="my-project"):
-            with patch("click.echo"):
-                prompt._ask_one(q, {})
+        q = Question(var_name="name", type="str", default="default-name", help="项目名称")
+        with patch("click.prompt", return_value="my-project"), patch("click.echo"):
+            prompt._ask_one(q, {})
         assert answers.interactive["name"] == "my-project"
 
     def test_casts_to_int(self, basic_questions, answers):
         prompt = InteractivePrompt(basic_questions, answers)
         q = Question(var_name="port", type="int", default=8000)
-        with patch("click.prompt", return_value="3000"):
-            with patch("click.echo"):
-                prompt._ask_one(q, {})
+        with patch("click.prompt", return_value="3000"), patch("click.echo"):
+            prompt._ask_one(q, {})
         assert answers.interactive["port"] == 3000
         assert isinstance(answers.interactive["port"], int)
 
@@ -280,17 +263,15 @@ class TestAskOne:
         prompt = InteractivePrompt(basic_questions, answers)
         q = Question(var_name="flag", type="bool", default=False)
         # click.confirm returns bool directly
-        with patch("click.confirm", return_value=True):
-            with patch("click.echo"):
-                prompt._ask_one(q, {})
+        with patch("click.confirm", return_value=True), patch("click.echo"):
+            prompt._ask_one(q, {})
         assert answers.interactive["flag"] is True
 
     def test_casts_to_float(self, basic_questions, answers):
         prompt = InteractivePrompt(basic_questions, answers)
         q = Question(var_name="version", type="float", default=1.0)
-        with patch("click.prompt", return_value="2.5"):
-            with patch("click.echo"):
-                prompt._ask_one(q, {})
+        with patch("click.prompt", return_value="2.5"), patch("click.echo"):
+            prompt._ask_one(q, {})
         assert answers.interactive["version"] == 2.5
 
     def test_retry_on_cast_failure(self, basic_questions, answers):
@@ -305,11 +286,14 @@ class TestAskOne:
     def test_retry_on_validator_failure(self, basic_questions, answers):
         """校验失败时应重试."""
         prompt = InteractivePrompt(basic_questions, answers)
-        q = Question(var_name="name", type="str", default="",
-                     validator="{{ '不能为空' if not name else '' }}")
-        with patch("click.prompt", side_effect=["", "valid-name"]):
-            with patch("click.echo"):
-                prompt._ask_one(q, {})
+        q = Question(
+            var_name="name",
+            type="str",
+            default="",
+            validator="{{ '不能为空' if not name else '' }}",
+        )
+        with patch("click.prompt", side_effect=["", "valid-name"]), patch("click.echo"):
+            prompt._ask_one(q, {})
         assert answers.interactive["name"] == "valid-name"
 
     def test_restores_original_default(self, basic_questions, answers):
@@ -317,16 +301,14 @@ class TestAskOne:
         prompt = InteractivePrompt(basic_questions, answers)
         orig_default = "original"
         q = Question(var_name="name", type="str", default=orig_default)
-        with patch("click.prompt", return_value="new-value"):
-            with patch("click.echo"):
-                prompt._ask_one(q, {})
+        with patch("click.prompt", return_value="new-value"), patch("click.echo"):
+            prompt._ask_one(q, {})
         assert q.default == orig_default
 
     def test_echoes_progress(self, basic_questions, answers):
         """有 progress 参数时应输出前缀."""
         prompt = InteractivePrompt(basic_questions, answers)
-        q = Question(var_name="name", type="str", default="test",
-                     help="项目名称")
+        q = Question(var_name="name", type="str", default="test", help="项目名称")
         with patch("click.prompt", return_value="my-name"):
             with patch("click.echo") as mock_echo:
                 prompt._ask_one(q, {}, progress="[1/3]")
@@ -335,36 +317,30 @@ class TestAskOne:
 
     def test_secret_type(self, basic_questions, answers):
         prompt = InteractivePrompt(basic_questions, answers)
-        q = Question(var_name="api_key", type="secret", default="",
-                     secret=True)
-        with patch("click.prompt", return_value="sk-abc123"):
-            with patch("click.echo"):
-                prompt._ask_one(q, {})
+        q = Question(var_name="api_key", type="secret", default="", secret=True)
+        with patch("click.prompt", return_value="sk-abc123"), patch("click.echo"):
+            prompt._ask_one(q, {})
         assert answers.interactive["api_key"] == "sk-abc123"
 
     def test_choice_type(self, basic_questions, answers):
         prompt = InteractivePrompt(basic_questions, answers)
-        q = Question(var_name="lang", type="choice",
-                     choices=["python", "javascript", "go"],
-                     default="python")
-        with patch("click.prompt", return_value="python"):
-            with patch("click.echo"):
-                prompt._ask_one(q, {})
+        q = Question(
+            var_name="lang", type="choice", choices=["python", "javascript", "go"], default="python"
+        )
+        with patch("click.prompt", return_value="python"), patch("click.echo"):
+            prompt._ask_one(q, {})
         assert answers.interactive["lang"] == "python"
 
     def test_json_type_parsed(self, basic_questions, answers):
         prompt = InteractivePrompt(basic_questions, answers)
-        q = Question(var_name="config", type="json",
-                     default="{}")
-        with patch("click.prompt", return_value='{"key": "value"}'):
-            with patch("click.echo"):
-                prompt._ask_one(q, {})
+        q = Question(var_name="config", type="json", default="{}")
+        with patch("click.prompt", return_value='{"key": "value"}'), patch("click.echo"):
+            prompt._ask_one(q, {})
         assert answers.interactive["config"] == {"key": "value"}
 
     def test_yaml_type_parsed(self, basic_questions, answers):
         prompt = InteractivePrompt(basic_questions, answers)
-        q = Question(var_name="spec", type="yaml",
-                     default="version: '1.0'")
+        q = Question(var_name="spec", type="yaml", default="version: '1.0'")
         with patch("click.prompt", return_value="name: app\nversion: '2.0'"):
             with patch("click.echo"):
                 prompt._ask_one(q, {})
@@ -402,15 +378,14 @@ class TestRun:
         """每遍过后应刷新 context，供后续 when 判断使用."""
         questions = [
             Question(var_name="use_ts", type="bool", default=False),
-            Question(var_name="ts_mode", type="str", default="strict",
-                     when="{{ use_ts == true }}"),
+            Question(var_name="ts_mode", type="str", default="strict", when="{{ use_ts == true }}"),
         ]
         prompt = InteractivePrompt(questions, answers)
 
         with patch("click.confirm", return_value=True):
             with patch("click.prompt", return_value="relaxed"):
                 with patch("click.echo"):
-                    result = prompt.run()
+                    prompt.run()
 
         # use_ts=True → ts_mode 的 when 变为 True → 应被追问
         assert "use_ts" in answers.interactive
@@ -439,10 +414,9 @@ class TestRun:
         for q in basic_questions:
             answers.cli_overrides[q.var_name] = f"cli-{q.var_name}"
         prompt = InteractivePrompt(basic_questions, answers)
-        with patch("click.prompt") as mock_prompt:
-            with patch("click.confirm") as mock_confirm:
-                with patch("click.echo"):
-                    prompt.run()
+        with patch("click.prompt") as mock_prompt, patch("click.confirm") as mock_confirm:
+            with patch("click.echo"):
+                prompt.run()
         # 不应调用任何 prompt
         mock_prompt.assert_not_called()
         mock_confirm.assert_not_called()
@@ -451,16 +425,18 @@ class TestRun:
         """when 条件使用 combined() 上下文中的变量."""
         questions = [
             Question(var_name="project_name", type="str", default="test"),
-            Question(var_name="project_slug", type="str",
-                     default="{{ project_name | lower | replace(' ', '-') }}",
-                     when="{{ project_name != '' }}"),
+            Question(
+                var_name="project_slug",
+                type="str",
+                default="{{ project_name | lower | replace(' ', '-') }}",
+                when="{{ project_name != '' }}",
+            ),
         ]
         answers.defaults["project_name"] = "My App"
         prompt = InteractivePrompt(questions, answers)
 
-        with patch("click.prompt", return_value="My App"):
-            with patch("click.echo"):
-                prompt.run()
+        with patch("click.prompt", return_value="My App"), patch("click.echo"):
+            prompt.run()
 
         # project_slug 的 when 条件 project_name != '' 应为 True
         assert "project_slug" in answers.interactive

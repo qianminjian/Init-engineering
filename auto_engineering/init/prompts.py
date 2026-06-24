@@ -12,45 +12,51 @@
 
 from typing import Any
 
+import click
 import jinja2
 from jinja2 import StrictUndefined
-import click
 
-from .config import Question
 from .answers import AnswersMap
-
+from .config import Question
 
 # 问题类型 → click 方法映射
 # 来源：Copier CAST_STR_TO_NATIVE + Cookiecutter read_user_* 系列
 _PROMPT_DISPATCH = {
-    "str":    lambda q, ctx: click.prompt(q.help, default=q.default or ""),
-    "bool":   lambda q, ctx: click.confirm(
+    "str": lambda q, ctx: click.prompt(q.help, default=q.default or ""),
+    "bool": lambda q, ctx: click.confirm(
         q.help,
         default=q.default if isinstance(q.default, bool) else True,
     ),
-    "int":    lambda q, ctx: click.prompt(
-        q.help, type=int, default=q.default or 0,
+    "int": lambda q, ctx: click.prompt(
+        q.help,
+        type=int,
+        default=q.default or 0,
     ),
-    "float":  lambda q, ctx: click.prompt(
-        q.help, type=float, default=q.default or 0.0,
+    "float": lambda q, ctx: click.prompt(
+        q.help,
+        type=float,
+        default=q.default or 0.0,
     ),
     "choice": lambda q, ctx: click.prompt(
         q.help,
         type=click.Choice(
-            list(q.choices) if isinstance(q.choices, list)
-            else list(q.choices.keys())
+            list(q.choices) if isinstance(q.choices, list) else list(q.choices.keys())
         ),
         default=q.default,
         show_choices=True,
     ),
     "secret": lambda q, ctx: click.prompt(
-        q.help, hide_input=True, default=q.default or "",
+        q.help,
+        hide_input=True,
+        default=q.default or "",
     ),
-    "json":   lambda q, ctx: click.prompt(
-        q.help, default=str(q.default or "{}"),
+    "json": lambda q, ctx: click.prompt(
+        q.help,
+        default=str(q.default or "{}"),
     ),
-    "yaml":   lambda q, ctx: click.prompt(
-        q.help, default=str(q.default or ""),
+    "yaml": lambda q, ctx: click.prompt(
+        q.help,
+        default=str(q.default or ""),
     ),
 }
 
@@ -86,7 +92,7 @@ class InteractivePrompt:
 
         # 第一遍：简单类型（非 json/yaml）
         for i, q in enumerate(self._visible_questions("simple")):
-            self._ask_one(q, context, progress=f"[{i+1}/{len(self.questions)}]")
+            self._ask_one(q, context, progress=f"[{i + 1}/{len(self.questions)}]")
             context = self.answers.combined()  # 刷新 context 供后续 when 判断
 
         # 第二遍：复杂类型（json/yaml — 依赖第一遍收集的变量）
@@ -202,7 +208,8 @@ def prompt_for_project_type(available_types: list[str]) -> str:
 
 
 def prompt_for_nested_template(
-    nested: dict[str, dict[str, str]], no_input: bool = False,
+    nested: dict[str, dict[str, str]],
+    no_input: bool = False,
 ) -> str | None:
     """交互式选择嵌套模板变体。
 
@@ -210,9 +217,7 @@ def prompt_for_nested_template(
     nested = {"typescript": {"path": "./ts", "title": "TypeScript 版本"}, ...}
     返回选中的模板路径（相对于当前配置文件的目录），或 None。
     """
-    choices = {
-        label: cfg.get("title", label) for label, cfg in nested.items()
-    }
+    choices = {label: cfg.get("title", label) for label, cfg in nested.items()}
     if no_input:
         first = next(iter(nested.values()))
         return first.get("path", "")

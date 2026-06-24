@@ -5,8 +5,8 @@
 - cookiecutter/hooks.py:80-128 — run_script_with_context()
 """
 
-import subprocess
 import os as subprocess_os
+import subprocess
 from pathlib import Path
 
 import jinja2
@@ -69,8 +69,12 @@ class TaskRunner:
             # 5. 执行
             env = {**subprocess_os.environ, **extra_env}
             result = subprocess.run(
-                cmd, shell=use_shell, cwd=str(wd),
-                capture_output=True, text=True, timeout=300,
+                cmd,
+                shell=use_shell,
+                cwd=str(wd),
+                capture_output=True,
+                text=True,
+                timeout=300,
                 env=env,
             )
             if result.returncode != 0:

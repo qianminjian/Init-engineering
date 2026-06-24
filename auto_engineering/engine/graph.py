@@ -19,11 +19,12 @@ v3.1 P3 设计选择(不修):
         Why: v1.0 范围,Phase 2+ 引入 builder 配置化.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
-from auto_engineering.errors import AEError, ErrorCode
 from auto_engineering.engine.state import LoopState
+from auto_engineering.errors import AEError, ErrorCode
 
 
 @dataclass
@@ -67,10 +68,7 @@ class Stage:
             placeholder = "{" + key + "}"
             if value is None or value == "" or value == [] or value == {}:
                 # 空值:删除包含此 placeholder 的整行
-                result = "\n".join(
-                    line for line in result.split("\n")
-                    if placeholder not in line
-                )
+                result = "\n".join(line for line in result.split("\n") if placeholder not in line)
             else:
                 result = result.replace(placeholder, str(value))
         return result
@@ -81,7 +79,7 @@ class ConditionSpec:
     """条件边规约. 类比 LangGraph BranchSpec(简化: 单一 condition 函数)."""
 
     condition: Callable[[LoopState], str]  # 返回 path_map 的 key
-    path_map: dict[str, str]                # key → Stage name 或 END
+    path_map: dict[str, str]  # key → Stage name 或 END
 
 
 class StageGraph:
@@ -95,7 +93,7 @@ class StageGraph:
 
     def __init__(self):
         self.stages: dict[str, Stage] = {}
-        self.edges: dict[str, str] = {}                        # 固定边
+        self.edges: dict[str, str] = {}  # 固定边
         self.conditional_edges: dict[str, ConditionSpec] = {}  # 条件边
         self._start_stage: str | None = None
 
@@ -196,76 +194,80 @@ def build_dev_loop_graph() -> StageGraph:
     """
     g = StageGraph()
 
-    g.add_stage(Stage(
-        name="architect",
-        agent_type="architect",
-        description_template="分析需求: {requirement}",
-        expected_output="实现计划 (plan.md),含文件清单、分批策略、契约定义",
-        output_schema={
-            "type": "object",
-            "properties": {
-                "plan": {"type": "string"},
-                "file_list": {"type": "array", "items": {"type": "string"}},
-                "batch_plan": {"type": "array"},
-                "contracts": {"type": "object"},
+    g.add_stage(
+        Stage(
+            name="architect",
+            agent_type="architect",
+            description_template="分析需求: {requirement}",
+            expected_output="实现计划 (plan.md),含文件清单、分批策略、契约定义",
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "plan": {"type": "string"},
+                    "file_list": {"type": "array", "items": {"type": "string"}},
+                    "batch_plan": {"type": "array"},
+                    "contracts": {"type": "object"},
+                },
+                "required": ["plan", "file_list"],
             },
-            "required": ["plan", "file_list"],
-        },
-        tools=["read_file", "search_code", "list_dir"],
-        input_channels=["requirement"],
-        output_channels=["plan", "file_list", "batch_plan", "contracts"],
-    ))
+            tools=["read_file", "search_code", "list_dir"],
+            input_channels=["requirement"],
+            output_channels=["plan", "file_list", "batch_plan", "contracts"],
+        )
+    )
 
-    g.add_stage(Stage(
-        name="developer",
-        agent_type="developer",
-        description_template=(
-            "按计划实现: {plan}\n"
-            "上一轮审查反馈: {critic_feedback}"
-        ),
-        expected_output="代码变更 + 测试通过 + git commit",
-        output_schema={
-            "type": "object",
-            "properties": {
-                "files_changed": {"type": "array", "items": {"type": "string"}},
-                "commit_hash": {"type": "string"},
-                "test_results": {"type": "object"},
+    g.add_stage(
+        Stage(
+            name="developer",
+            agent_type="developer",
+            description_template=("按计划实现: {plan}\n上一轮审查反馈: {critic_feedback}"),
+            expected_output="代码变更 + 测试通过 + git commit",
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "files_changed": {"type": "array", "items": {"type": "string"}},
+                    "commit_hash": {"type": "string"},
+                    "test_results": {"type": "object"},
+                },
+                "required": ["files_changed", "commit_hash"],
             },
-            "required": ["files_changed", "commit_hash"],
-        },
-        tools=["read_file", "write_file", "edit_file", "run_bash", "git_commit"],
-        input_channels=["plan", "batch_plan", "critic_feedback"],
-        output_channels=["files_changed", "commit_hash", "test_results"],
-    ))
+            tools=["read_file", "write_file", "edit_file", "run_bash", "git_commit"],
+            input_channels=["plan", "batch_plan", "critic_feedback"],
+            output_channels=["files_changed", "commit_hash", "test_results"],
+        )
+    )
 
-    g.add_stage(Stage(
-        name="critic",
-        agent_type="critic",
-        description_template=(
-            "审查 commit {commit_hash} 的变更。"
-            "对照验收标准: {contracts}"
-        ),
-        expected_output="审查结论 APPROVE 或 MAJOR(含具体问题清单和修复建议)",
-        output_schema={
-            "type": "object",
-            "properties": {
-                "verdict": {"type": "string", "enum": ["APPROVE", "MAJOR"]},
-                "findings": {"type": "array"},
-                "critic_feedback": {"type": "string"},
+    g.add_stage(
+        Stage(
+            name="critic",
+            agent_type="critic",
+            description_template=("审查 commit {commit_hash} 的变更。对照验收标准: {contracts}"),
+            expected_output="审查结论 APPROVE 或 MAJOR(含具体问题清单和修复建议)",
+            output_schema={
+                "type": "object",
+                "properties": {
+                    "verdict": {"type": "string", "enum": ["APPROVE", "MAJOR"]},
+                    "findings": {"type": "array"},
+                    "critic_feedback": {"type": "string"},
+                },
+                "required": ["verdict", "findings"],
             },
-            "required": ["verdict", "findings"],
-        },
-        tools=["read_file", "git_diff", "run_tests"],
-        input_channels=["files_changed", "commit_hash", "plan", "contracts"],
-        output_channels=["verdict", "findings", "critic_feedback"],
-    ))
+            tools=["read_file", "git_diff", "run_tests"],
+            input_channels=["files_changed", "commit_hash", "plan", "contracts"],
+            output_channels=["verdict", "findings", "critic_feedback"],
+        )
+    )
 
     g.add_edge("architect", "developer")
     g.add_edge("developer", "critic")
-    g.add_conditional_edge("critic", _critic_decision, {
-        "APPROVE": g.END,
-        "MAJOR": "developer",
-    })
+    g.add_conditional_edge(
+        "critic",
+        _critic_decision,
+        {
+            "APPROVE": g.END,
+            "MAJOR": "developer",
+        },
+    )
     g.set_start("architect")
 
     return g

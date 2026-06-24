@@ -9,14 +9,14 @@ from pathlib import Path
 
 # 签名顺序很重要：更具体的签名应排在前面（monorepo > app-service）
 FRAMEWORK_SIGNATURES: list[tuple[str, list[str]]] = [
-    ("monorepo",    ["pnpm-workspace.yaml", "lerna.json", "turbo.json", "nx.json"]),
-    ("skill",       [".claude/skills/"]),
-    ("hook",        [".claude/hooks/"]),
+    ("monorepo", ["pnpm-workspace.yaml", "lerna.json", "turbo.json", "nx.json"]),
+    ("skill", [".claude/skills/"]),
+    ("hook", [".claude/hooks/"]),
     # A6: spec-doc 支持 design/*.md glob (任意 design 文档)
-    ("spec-doc",    ["design/BEACON.md", "design/*.md"]),
-    ("mcp-server",  ["package.json"]),
-    ("cli-tool",    ["package.json"]),
-    ("library",     ["pyproject.toml", "setup.py", "Cargo.toml", "go.mod"]),
+    ("spec-doc", ["design/BEACON.md", "design/*.md"]),
+    ("mcp-server", ["package.json"]),
+    ("cli-tool", ["package.json"]),
+    ("library", ["pyproject.toml", "setup.py", "Cargo.toml", "go.mod"]),
     ("app-service", ["package.json"]),
 ]
 
@@ -73,6 +73,7 @@ def _signature_matches(target_dir: Path, sig: str) -> bool:
     # glob 通配符: 用 fnmatch 判断文件名部分
     if "*" in sig or "?" in sig or "[" in sig:
         import fnmatch
+
         rel_dir = sig.rsplit("/", 1)[0] if "/" in sig else ""
         pattern = sig.rsplit("/", 1)[-1]
         base = target_dir / rel_dir if rel_dir else target_dir

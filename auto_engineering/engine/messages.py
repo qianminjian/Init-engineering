@@ -11,5 +11,5 @@ from dataclasses import dataclass
 class Send:
     """动态路由消息. 由 Agent 输出携带,LoopEngine 在下一轮消费 _pending_sends."""
 
-    node: str        # 目标 Stage/Agent 名
-    arg: dict        # 传给目标的参数
+    node: str  # 目标 Stage/Agent 名
+    arg: dict  # 传给目标的参数

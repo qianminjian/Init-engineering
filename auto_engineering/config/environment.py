@@ -31,7 +31,7 @@ class ProjectEnvironment:
     has_git: bool = True
 
     @classmethod
-    def resolve(cls, project_root: Path) -> "ProjectEnvironment":
+    def resolve(cls, project_root: Path) -> ProjectEnvironment:
         """从 .ae-answers.yml + 代码自检测 解析工程环境。"""
         answers_file = project_root / ".ae-answers.yml"
 
@@ -47,14 +47,14 @@ class ProjectEnvironment:
             return env
 
     @classmethod
-    def _from_answers_file(cls, path: Path) -> "ProjectEnvironment":
+    def _from_answers_file(cls, path: Path) -> ProjectEnvironment:
         data = yaml.safe_load(path.read_text()) or {}
-        meta = data.pop("_meta", {})
+        data.pop("_meta", {})
         field_names = {f.name for f in cls.__dataclass_fields__.values()}
         return cls(**{k: v for k, v in data.items() if k in field_names})
 
     @classmethod
-    def _from_detection(cls, root: Path) -> "ProjectEnvironment":
+    def _from_detection(cls, root: Path) -> ProjectEnvironment:
         return cls(
             project_name=root.resolve().name,
             # A7: package_manager 缺检测结果时默认 "npm"
@@ -69,9 +69,12 @@ class ProjectEnvironment:
     @staticmethod
     def _detect_package_manager(root: Path) -> str | None:
         for fname, pm in [
-            ("pnpm-lock.yaml", "pnpm"), ("yarn.lock", "yarn"),
-            ("package-lock.json", "npm"), ("bun.lock", "bun"),
-            ("poetry.lock", "poetry"), ("uv.lock", "uv"),
+            ("pnpm-lock.yaml", "pnpm"),
+            ("yarn.lock", "yarn"),
+            ("package-lock.json", "npm"),
+            ("bun.lock", "bun"),
+            ("poetry.lock", "poetry"),
+            ("uv.lock", "uv"),
         ]:
             if (root / fname).exists():
                 return pm
@@ -80,9 +83,12 @@ class ProjectEnvironment:
     @staticmethod
     def _detect_test_runner(root: Path) -> str | None:
         for cfg, runner in [
-            ("vitest.config.ts", "vitest"), ("vitest.config.js", "vitest"),
-            ("jest.config.ts", "jest"), ("jest.config.js", "jest"),
-            ("pytest.ini", "pytest"), ("pyproject.toml", None),
+            ("vitest.config.ts", "vitest"),
+            ("vitest.config.js", "vitest"),
+            ("jest.config.ts", "jest"),
+            ("jest.config.js", "jest"),
+            ("pytest.ini", "pytest"),
+            ("pyproject.toml", None),
         ]:
             if cfg == "pyproject.toml" and (root / cfg).exists():
                 return "pytest"
@@ -139,6 +145,7 @@ class ProjectEnvironment:
     def save(self, project_root: Path) -> None:
         """写回 .ae-answers.yml。"""
         from datetime import datetime
+
         answers_file = project_root / ".ae-answers.yml"
         data = {
             f.name: getattr(self, f.name)
@@ -196,10 +203,7 @@ def preflight(project_root: Path) -> None:
     # 1. Python 版本
     py_version = sys.version_info
     if (py_version.major, py_version.minor) < (3, 12):
-        errors.append(
-            f"Python 版本过低: 当前 {py_version.major}.{py_version.minor},"
-            f" 需要 ≥ 3.12"
-        )
+        errors.append(f"Python 版本过低: 当前 {py_version.major}.{py_version.minor}, 需要 ≥ 3.12")
 
     # 2. ANTHROPIC_API_KEY
     api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
@@ -222,8 +226,7 @@ def preflight(project_root: Path) -> None:
         free_mb = usage.free / (1024 * 1024)
         if free_mb < 100:
             errors.append(
-                f"磁盘可用空间不足: {free_mb:.1f} MB < 100 MB。"
-                f"ae 检查点/历史可能占用数十 MB。"
+                f"磁盘可用空间不足: {free_mb:.1f} MB < 100 MB。ae 检查点/历史可能占用数十 MB。"
             )
     except OSError as e:
         errors.append(f"无法获取磁盘信息: {e}")

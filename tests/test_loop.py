@@ -10,7 +10,6 @@ from auto_engineering.engine import (
     LoopResult,
     build_dev_loop_graph,
 )
-from auto_engineering.engine.loop import StageResult
 from auto_engineering.errors import AEError, ErrorCode
 from tests.conftest import (
     ScriptedMockRuntime,
@@ -18,15 +17,22 @@ from tests.conftest import (
     run_async,
 )
 
-
 # ----- 端到端路径 -----
 
+
 def test_full_loop_APPROVE_path_3_步完成(checkpoint_dir):
-    runtime = ScriptedMockRuntime({
-        "architect": {"plan": "do it", "file_list": ["x.py"], "batch_plan": [], "contracts": {}},
-        "developer": {"files_changed": ["x.py"], "commit_hash": "abc", "test_results": {}},
-        "critic": {"verdict": "APPROVE", "findings": [], "critic_feedback": ""},
-    })
+    runtime = ScriptedMockRuntime(
+        {
+            "architect": {
+                "plan": "do it",
+                "file_list": ["x.py"],
+                "batch_plan": [],
+                "contracts": {},
+            },
+            "developer": {"files_changed": ["x.py"], "commit_hash": "abc", "test_results": {}},
+            "critic": {"verdict": "APPROVE", "findings": [], "critic_feedback": ""},
+        }
+    )
     engine = LoopEngine(build_dev_loop_graph(), runtime=runtime, checkpoint_dir=checkpoint_dir)
     result: LoopResult = run_async(engine.run("build x", max_steps=10))
 
@@ -48,8 +54,11 @@ def test_full_loop_MAJOR_反馈回路_2_轮_critic(checkpoint_dir):
     assert result.total_steps == 5
     assert result.state.verdict == "APPROVE"
     assert runtime.call_log == [
-        "architect", "developer", "critic",
-        "developer", "critic",
+        "architect",
+        "developer",
+        "critic",
+        "developer",
+        "critic",
     ]
     # 第二轮 critic 的 feedback 覆盖了第一轮的
     assert result.state.critic_feedback == ""  # 第二轮 critic 给空
@@ -69,6 +78,7 @@ def test_full_loop_3_轮_MAJOR_后_APPROVE(checkpoint_dir):
 
 # ----- max_steps 上限 -----
 
+
 def test_loop_hits_step_limit_returns_out_of_steps(checkpoint_dir):
     """max_steps=2 时,只跑 2 步就退出(architect + developer,critic 没机会跑)."""
     runtime = StepLimitedMockRuntime(major_count=999)  # 永远 MAJOR
@@ -80,6 +90,7 @@ def test_loop_hits_step_limit_returns_out_of_steps(checkpoint_dir):
 
 
 # ----- resume -----
+
 
 def test_resume_从_checkpoint_恢复(checkpoint_dir):
     """max_steps=2 跑一次 → resume → 继续到 done."""
@@ -103,6 +114,7 @@ def test_resume_从_checkpoint_恢复(checkpoint_dir):
 
 # ----- 错误路径 -----
 
+
 def test_loop_未传_runtime_抛_AGENT_REGISTRATION_ERROR(checkpoint_dir):
     engine = LoopEngine(build_dev_loop_graph(), runtime=None, checkpoint_dir=checkpoint_dir)
     with pytest.raises(AEError) as exc_info:
@@ -112,7 +124,9 @@ def test_loop_未传_runtime_抛_AGENT_REGISTRATION_ERROR(checkpoint_dir):
 
 def test_resume_无_store_抛_CHECKPOINT_LOAD_FAILED(checkpoint_dir):
     """Engine 没跑过(无 store)时调 resume → 抛错."""
-    engine = LoopEngine(build_dev_loop_graph(), runtime=ScriptedMockRuntime({}), checkpoint_dir=checkpoint_dir)
+    engine = LoopEngine(
+        build_dev_loop_graph(), runtime=ScriptedMockRuntime({}), checkpoint_dir=checkpoint_dir
+    )
     with pytest.raises(AEError) as exc_info:
         run_async(engine.resume("some-uuid"))
     assert exc_info.value.code == ErrorCode.CHECKPOINT_LOAD_FAILED
@@ -120,17 +134,20 @@ def test_resume_无_store_抛_CHECKPOINT_LOAD_FAILED(checkpoint_dir):
 
 # ----- interrupt_after (D4 修复) -----
 
+
 def test_interrupt_after_breaks_loop(checkpoint_dir):
     """D4: while 循环在 status=='interrupt_after' 时必须 break,不再进入下一轮.
 
     旧 v3.0 设计: tick() 不检查 status,while 继续 → interrupt_after 后还会再调度一次 Stage,
     违反中断语义.修复后:after_tick 设置 status='interrupt_after',run() 退出循环.
     """
-    runtime = ScriptedMockRuntime({
-        "architect": {"plan": "p", "file_list": ["x.py"], "batch_plan": [], "contracts": {}},
-        "developer": {"files_changed": ["x.py"], "commit_hash": "abc", "test_results": {}},
-        "critic": {"verdict": "APPROVE", "findings": [], "critic_feedback": ""},
-    })
+    runtime = ScriptedMockRuntime(
+        {
+            "architect": {"plan": "p", "file_list": ["x.py"], "batch_plan": [], "contracts": {}},
+            "developer": {"files_changed": ["x.py"], "commit_hash": "abc", "test_results": {}},
+            "critic": {"verdict": "APPROVE", "findings": [], "critic_feedback": ""},
+        }
+    )
     engine = LoopEngine(
         build_dev_loop_graph(),
         runtime=runtime,
@@ -148,17 +165,20 @@ def test_interrupt_after_breaks_loop(checkpoint_dir):
 
 # ----- v3.1 B6 修复: resume() 校验 checkpoint.status -----
 
+
 def test_resume_with_done_checkpoint_raises(checkpoint_dir):
     """B6: resume() 拒绝从 status='done' 的 checkpoint 恢复.
 
     Why: done 表示循环已正常结束,resume 只会触发空跑或重复终止.
     应抛 AEError 让用户明确知道无需 resume.
     """
-    runtime = ScriptedMockRuntime({
-        "architect": {"plan": "p", "file_list": ["x.py"], "batch_plan": [], "contracts": {}},
-        "developer": {"files_changed": ["x.py"], "commit_hash": "abc", "test_results": {}},
-        "critic": {"verdict": "APPROVE", "findings": [], "critic_feedback": ""},
-    })
+    runtime = ScriptedMockRuntime(
+        {
+            "architect": {"plan": "p", "file_list": ["x.py"], "batch_plan": [], "contracts": {}},
+            "developer": {"files_changed": ["x.py"], "commit_hash": "abc", "test_results": {}},
+            "critic": {"verdict": "APPROVE", "findings": [], "critic_feedback": ""},
+        }
+    )
     engine = LoopEngine(build_dev_loop_graph(), runtime=runtime, checkpoint_dir=checkpoint_dir)
 
     # 第一次 run 完成(状态变成 done)
@@ -168,7 +188,10 @@ def test_resume_with_done_checkpoint_raises(checkpoint_dir):
     # 第二次 resume 应抛错(checkpoint.status='done')
     with pytest.raises(AEError) as exc_info:
         run_async(engine.resume(result.checkpoint_id))
-    assert "done" in str(exc_info.value.message).lower() or "cannot resume" in str(exc_info.value.message).lower()
+    assert (
+        "done" in str(exc_info.value.message).lower()
+        or "cannot resume" in str(exc_info.value.message).lower()
+    )
 
 
 def test_resume_with_pending_checkpoint_works(checkpoint_dir):

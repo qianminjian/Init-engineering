@@ -7,9 +7,9 @@
     CriticAgent     — 代码审查
 """
 
-from .base import BaseAgent
 from .architect import ArchitectAgent
-from .developer import DeveloperAgent
+from .base import BaseAgent
 from .critic import CriticAgent
+from .developer import DeveloperAgent
 
-__all__ = ["BaseAgent", "ArchitectAgent", "DeveloperAgent", "CriticAgent"]
+__all__ = ["ArchitectAgent", "BaseAgent", "CriticAgent", "DeveloperAgent"]

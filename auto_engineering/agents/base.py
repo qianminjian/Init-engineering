@@ -3,4 +3,5 @@
 
 class BaseAgent:
     """Agent 基类。"""
+
     pass

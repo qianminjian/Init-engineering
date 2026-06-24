@@ -19,9 +19,8 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
-from auto_engineering.errors import AEError, ErrorCode
 from auto_engineering.engine.state import LoopState
-
+from auto_engineering.errors import AEError, ErrorCode
 
 CREATE_CHECKPOINTS_TABLE = """
 CREATE TABLE IF NOT EXISTS checkpoints (

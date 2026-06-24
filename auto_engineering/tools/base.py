@@ -1,12 +1,13 @@
 """工具基类."""
 
-from dataclasses import dataclass
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 
 
 @dataclass
 class ToolResult:
     """工具执行结果。"""
+
     success: bool
     content: str
     error: str | None = None
@@ -20,8 +21,7 @@ class BaseTool(ABC):
     parameters: dict = {}
 
     @abstractmethod
-    def execute(self, **kwargs) -> ToolResult:
-        ...
+    def execute(self, **kwargs) -> ToolResult: ...
 
     def to_schema(self) -> dict:
         return {

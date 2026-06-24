@@ -22,20 +22,20 @@ import shutil
 from collections.abc import Callable
 from pathlib import Path
 
-import pathspec
-
 import jinja2
-from jinja2.sandbox import SandboxedEnvironment
+import pathspec
 from jinja2 import StrictUndefined
+from jinja2.sandbox import SandboxedEnvironment
 
 from .errors import TemplateRenderError
 
 try:
     from binaryornot.check import is_binary
 except ImportError:
+
     def is_binary(path):
-        with open(path, 'rb') as f:
-            return b'\x00' in f.read(1024)
+        with open(path, "rb") as f:
+            return b"\x00" in f.read(1024)
 
 
 class TemplateRenderer:
@@ -90,7 +90,7 @@ class TemplateRenderer:
 
                 is_template = rendered_rel.endswith(self.TEMPLATE_SUFFIX)
                 if is_template:
-                    rendered_rel = rendered_rel[:-len(self.TEMPLATE_SUFFIX)]
+                    rendered_rel = rendered_rel[: -len(self.TEMPLATE_SUFFIX)]
 
                 dst_file = dst_dir / rendered_rel
 
@@ -157,9 +157,7 @@ class TemplateRenderer:
 
         参考 Copier _main.py:467-471 _path_matcher + pathspec。
         """
-        spec = pathspec.PathSpec.from_lines(
-            pathspec.patterns.GitWildMatchPattern, patterns
-        )
+        spec = pathspec.PathSpec.from_lines(pathspec.patterns.GitWildMatchPattern, patterns)
         return spec.match_file
 
     def _is_excluded(self, file_path: Path, src_dir: Path) -> bool:
@@ -188,9 +186,9 @@ class TemplateRenderer:
     def _detect_newline(file_path: Path) -> str | None:
         """检测文件的换行符风格。"""
         try:
-            with open(file_path, encoding='utf-8') as f:
+            with open(file_path, encoding="utf-8") as f:
                 f.readline()
-                newline = getattr(f, 'newlines', None)
+                newline = getattr(f, "newlines", None)
                 if isinstance(newline, tuple):
                     newline = newline[0]
                 return newline

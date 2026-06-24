@@ -31,15 +31,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from auto_engineering.engine.checkpoint import Checkpoint, CheckpointStore
+from auto_engineering.engine.graph import Stage, StageGraph
+from auto_engineering.engine.state import LoopState
 from auto_engineering.errors import (
     AEError,
     ErrorCode,
     GuardrailRetrySignal,
     OutputDropped,
 )
-from auto_engineering.engine.checkpoint import Checkpoint, CheckpointStore
-from auto_engineering.engine.graph import Stage, StageGraph
-from auto_engineering.engine.state import LoopState
 
 if TYPE_CHECKING:
     from auto_engineering.runtime.runtime import AgentRuntime
@@ -58,7 +58,7 @@ class StageResult:
 class LoopResult:
     """LoopEngine.run() 的返回值."""
 
-    status: str         # "done" | "out_of_steps" | "drained" | "error"
+    status: str  # "done" | "out_of_steps" | "drained" | "error"
     state: LoopState
     total_steps: int
     checkpoint_id: str
@@ -78,9 +78,7 @@ class LoopInterrupted(Exception):
 
     def __init__(self, checkpoint_id: str):
         self.checkpoint_id = checkpoint_id
-        super().__init__(
-            f"Loop interrupted. Resume with: ae checkpoint resume {checkpoint_id}"
-        )
+        super().__init__(f"Loop interrupted. Resume with: ae checkpoint resume {checkpoint_id}")
 
 
 class LoopDrained(Exception):
@@ -128,9 +126,7 @@ class LoopEngine:
         thread_id = str(uuid.uuid4())
         state = LoopState(requirement=requirement)
         self.checkpoint = Checkpoint.create(thread_id=thread_id, state=state)
-        self.store = CheckpointStore(
-            Path(self.checkpoint_dir) / f"{thread_id}.db"
-        )
+        self.store = CheckpointStore(Path(self.checkpoint_dir) / f"{thread_id}.db")
         self.store.save_checkpoint(self.checkpoint)
         self.step = 0
         self.status = "pending"
@@ -179,7 +175,7 @@ class LoopEngine:
                             f"Stage {self.current_task.name} 重试超过 {self.STAGE_RETRY_LIMIT} 次",
                             original_error=e,
                         ) from e
-                    await asyncio.sleep(2 ** retry_count)
+                    await asyncio.sleep(2**retry_count)
                     continue  # 跳过 after_tick,重试当前 Stage
 
                 self.after_tick(result)
@@ -241,9 +237,7 @@ class LoopEngine:
         self.checkpoint.increment_step()
         self.store.save_checkpoint(self.checkpoint)
         if result.writes:
-            self.store.save_writes(
-                self.checkpoint.id, self.current_task.name, result.writes
-            )
+            self.store.save_writes(self.checkpoint.id, self.current_task.name, result.writes)
         self.step += 1
 
         if self.interrupt_after and self.current_task.name in self.interrupt_after:
