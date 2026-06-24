@@ -28,6 +28,8 @@ class ErrorCode(Enum):
     # Configuration errors (Plan B Phase 01)
     CONFIG_MISSING_API_KEY = "CONFIG_MISSING_API_KEY"
     CONFIG_INVALID_VALUE = "CONFIG_INVALID_VALUE"
+    # Budget tracking (Plan B Phase 02)
+    BUDGET_EXCEEDED = "BUDGET_EXCEEDED"
 
 
 class AEError(Exception):
