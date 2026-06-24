@@ -135,6 +135,7 @@ class LoopEngine:
         self,
         requirement: str = "",
         max_steps: int | None = None,
+        cancellation: Any = None,
     ) -> LoopResult:
         """全链路 async: tick → execute → after_tick.
 
@@ -142,6 +143,12 @@ class LoopEngine:
             - run() 第一次调用: _init_checkpoint(requirement) → 进入 while
             - resume() 后调用: self.checkpoint 已设置,跳过初始化
             - max_steps: 优先用参数,fallback 构造器值
+            - cancellation: 每次 tick 前 check() — 已取消则抛 TASK_CANCELLED + 保存 checkpoint.status="drained"
+
+        Args:
+            requirement   — 需求文本(首次运行时使用)
+            max_steps     — 步数上限(默认构造器值)
+            cancellation  — CancellationToken(可选). 未传则不检查.
         """
         steps = max_steps if max_steps is not None else self.max_steps
 
@@ -157,12 +164,15 @@ class LoopEngine:
         retry_count = 0
         try:
             while True:
+                if cancellation is not None:
+                    cancellation.check()  # 协作式取消点 — Ctrl-C 触发后下次循环抛 TASK_CANCELLED
                 if not self.tick(steps):
                     break
                 try:
                     result = await self.runtime.execute(
                         self.current_task,
                         self.checkpoint.state,
+                        cancellation=cancellation,
                     )
                 except OutputDropped:
                     # 静默丢弃当前 Stage 输出,跳过 after_tick,进入下一轮
