@@ -44,6 +44,7 @@ class ScriptedMockRuntime:
         stage: Any,
         state: Any = None,
         cancellation: Any = None,
+        token_tracker: Any = None,
     ) -> StageResult:
         self.call_log.append(stage.name)
         if stage.name not in self.scripts:
@@ -64,6 +65,7 @@ class StepLimitedMockRuntime:
         stage: Any,
         state: Any = None,
         cancellation: Any = None,
+        token_tracker: Any = None,
     ) -> StageResult:
         self.call_log.append(stage.name)
         if stage.name == "architect":

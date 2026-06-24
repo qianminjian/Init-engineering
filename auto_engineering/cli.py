@@ -297,7 +297,8 @@ def _run_loop_engine(
         )
         try:
             result = _execute_with_progress(
-                engine_dry, requirement, 1, cancellation, progress, max_tokens
+                engine_dry, requirement, 1, cancellation, progress, max_tokens,
+                token_tracker=None,  # dry-run 不累加 token
             )
         except AEError as e:
             if e.code == ErrorCode.TASK_CANCELLED:
@@ -319,7 +320,8 @@ def _run_loop_engine(
     # 真实循环
     try:
         result = _execute_with_progress(
-            engine, requirement, max_steps, cancellation, progress, max_tokens
+            engine, requirement, max_steps, cancellation, progress, max_tokens,
+            token_tracker=token_tracker,
         )
     except AEError as e:
         if e.code == ErrorCode.TASK_CANCELLED:
@@ -341,37 +343,36 @@ def _execute_with_progress(
     cancellation: CancellationToken,
     progress: ProgressLogger,
     max_tokens: int,
+    token_tracker: Any = None,
 ) -> Any:
-    """包装 LoopEngine.run() 加入 stage 进度 + cancellation 检测."""
+    """包装 LoopEngine.run() 接入 stage 进度回调 + cancellation + token_tracker.
 
-    # 由于原 LoopEngine.run() 不接受 cancellation token,我们用 monkey-patch:
-    # 在每次 runtime.execute 后检查 cancellation.这里简化:不阻断循环,
-    # 但通过 status 决定是否中断.
+    Phase 1.4 改造: 不再 pre-echo 假象,而是 hook on_stage_start/on_stage_end 实时输出.
+    """
 
-    # 进度输出: 模拟 3 个 stage 的输出(architect/developer/critic)
-    stage_names = ["architect", "developer", "critic"]
-    total = min(3, max_steps)
+    # Phase 1.4: hook runtime.execute 前后即时输出 stage 进度(无假象)
+    def _on_stage_start(stage_name: str) -> None:
+        _log_stage_progress(0, 0, stage_name)  # 简化(总步数未知)
+        progress.emit("stage_start", stage=stage_name)
 
-    # 这里使用真实 run() (Phase 2);为了输出 stage 进度,在外部手动 echo.
-    # 注: 真实 Stage 进度需要 Runtime hook — Phase 2+ 用 wrapping 实现.
+    def _on_stage_end(stage_name: str, elapsed_sec: float) -> None:
+        tokens = token_tracker.total_tokens if token_tracker else 0
+        _emit_stage_done(stage_name, elapsed_sec, tokens=tokens)
+        progress.emit(
+            "stage_done", stage=stage_name,
+            elapsed=elapsed_sec, tokens=tokens,
+        )
+
     import asyncio
 
-    for i, name in enumerate(stage_names[:total], 1):
-        cancellation.check()  # 检查是否被取消
-        _log_stage_progress(i, total, name)
-        progress.emit("stage_start", stage=name, index=i, total=total)
-
-    # 真实跑(简化:信任 LoopEngine 内部状态)
-    start = time.monotonic()
-    result = asyncio.run(engine.run(requirement, max_steps=max_steps))
-    elapsed = time.monotonic() - start
-
-    # 输出 stage done
-    for i, name in enumerate(stage_names[:total], 1):
-        _emit_stage_done(name, elapsed / total, tokens=0)
-        progress.emit("stage_done", stage=name, elapsed=elapsed / total, tokens=0)
-
-    return result
+    return asyncio.run(engine.run(
+        requirement,
+        max_steps=max_steps,
+        cancellation=cancellation,
+        token_tracker=token_tracker,
+        on_stage_start=_on_stage_start,
+        on_stage_end=_on_stage_end,
+    ))
 
 
 # ============================================================

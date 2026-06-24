@@ -84,7 +84,7 @@ class TestCancellationTokenInLoop:
         captured: list = []
 
         class CapturingRuntime:
-            async def execute(self, stage, state, cancellation=None):
+            async def execute(self, stage, state, cancellation=None, token_tracker=None):
                 captured.append(cancellation)
                 from auto_engineering.engine.loop import StageResult
 

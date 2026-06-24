@@ -26,7 +26,9 @@ v3.1 P3 设计选择(不修):
 """
 
 import asyncio
+import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -136,6 +138,9 @@ class LoopEngine:
         requirement: str = "",
         max_steps: int | None = None,
         cancellation: Any = None,
+        token_tracker: Any = None,
+        on_stage_start: Callable[[str], None] | None = None,
+        on_stage_end: Callable[[str, float], None] | None = None,
     ) -> LoopResult:
         """全链路 async: tick → execute → after_tick.
 
@@ -144,11 +149,16 @@ class LoopEngine:
             - resume() 后调用: self.checkpoint 已设置,跳过初始化
             - max_steps: 优先用参数,fallback 构造器值
             - cancellation: 每次 tick 前 check() — 已取消则抛 TASK_CANCELLED + 保存 checkpoint.status="drained"
+            - token_tracker: 每次 LLM 调用后累加,超 max_tokens 抛 BUDGET_EXCEEDED(由 runtime/BaseAgent 实现)
+            - on_stage_start(stage_name): 每次 stage 开始前调用(cli 用于实时进度输出)
+            - on_stage_end(stage_name, elapsed_sec): 每次 stage 完成后调用
 
         Args:
             requirement   — 需求文本(首次运行时使用)
             max_steps     — 步数上限(默认构造器值)
             cancellation  — CancellationToken(可选). 未传则不检查.
+            token_tracker — TokenTracker(可选). 通过 runtime.execute 传给 BaseAgent.
+            on_stage_start / on_stage_end — 进度回调(可选). cli 用于实时输出 stage_done.
         """
         steps = max_steps if max_steps is not None else self.max_steps
 
@@ -168,14 +178,22 @@ class LoopEngine:
                     cancellation.check()  # 协作式取消点 — Ctrl-C 触发后下次循环抛 TASK_CANCELLED
                 if not self.tick(steps):
                     break
+
+                # Phase 1.4: stage 开始回调(cli 用此输出 stage_start 实时)
+                if on_stage_start is not None:
+                    on_stage_start(self.current_task.name)
+
+                stage_start_time = time.monotonic()
                 try:
                     result = await self.runtime.execute(
                         self.current_task,
                         self.checkpoint.state,
                         cancellation=cancellation,
+                        token_tracker=token_tracker,
                     )
                 except OutputDropped:
-                    # 静默丢弃当前 Stage 输出,跳过 after_tick,进入下一轮
+                    if on_stage_end is not None:
+                        on_stage_end(self.current_task.name, time.monotonic() - stage_start_time)
                     continue
                 except GuardrailRetrySignal as e:
                     retry_count += 1
@@ -186,9 +204,13 @@ class LoopEngine:
                             original_error=e,
                         ) from e
                     await asyncio.sleep(2**retry_count)
+                    if on_stage_end is not None:
+                        on_stage_end(self.current_task.name, time.monotonic() - stage_start_time)
                     continue  # 跳过 after_tick,重试当前 Stage
 
                 self.after_tick(result)
+                if on_stage_end is not None:
+                    on_stage_end(self.current_task.name, time.monotonic() - stage_start_time)
                 retry_count = 0  # 成功后重置
 
                 if self.status == "done":
