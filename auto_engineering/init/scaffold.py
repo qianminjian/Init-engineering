@@ -48,12 +48,15 @@ class InitWorker:
     pretend: bool = False
     skip_tasks: bool = False
     cleanup_on_error: bool = True
+    incremental: bool = False
 
     _current_phase: str = field(init=False, default="")
     _template: TemplateConfig = field(init=False, default=None)
     _answers: AnswersMap = field(init=False, default_factory=AnswersMap)
     _cleanup_hooks: list = field(default_factory=list, init=False)
     _previous_answers: AnswersMap | None = field(init=False, default=None)
+    _created_files: set[str] = field(default_factory=set, init=False)
+    _mode: str = field(init=False, default="fresh")
 
     def __enter__(self):
         return self
@@ -111,15 +114,20 @@ class InitWorker:
             self._answers.write_to(replay_file)
 
             self._current_phase = "finalize"
-            did_create_dst = not self.dst_path.exists()
-            if did_create_dst:
-                self.dst_path.mkdir(parents=True)
-            shutil.copytree(tmpdir, self.dst_path, dirs_exist_ok=True)
-
-            if not self.quiet:
-                print(f"\n✓ 项目已生成: {self.dst_path}")
-                print(f"  文件数: {len(generated)}")
-                print(f"  下一步: cd {self.dst_path.name} && git log")
+            if self._mode == "incremental":
+                # A1: Phase 3.5 — 增量合并
+                created, skipped = self._phase_merge(tmpdir, generated)
+                if not self.quiet:
+                    print(f"\n✓ 增量模式：已补充 {len(created)} 个文件，跳过 {len(skipped)} 个已有文件")
+            else:
+                did_create_dst = not self.dst_path.exists()
+                if did_create_dst:
+                    self.dst_path.mkdir(parents=True)
+                shutil.copytree(tmpdir, self.dst_path, dirs_exist_ok=True)
+                if not self.quiet:
+                    print(f"\n✓ 项目已生成: {self.dst_path}")
+                    print(f"  文件数: {len(generated)}")
+                    print(f"  下一步: cd {self.dst_path.name} && git log")
 
         except InitInterruptedError:
             partial_path = self._answers.save_partial()
@@ -140,6 +148,34 @@ class InitWorker:
             project_type=self.project_type or "",
         )
 
+    def _phase_merge(
+        self, tmpdir: Path, generated: list[Path],
+    ) -> tuple[list[Path], list[Path]]:
+        """A1: 增量模式合并 — 逐文件复制,跳过已存在 + .git/.
+
+        Returns:
+            (created_files, skipped_files)
+        """
+        created: list[Path] = []
+        skipped: list[Path] = []
+        for src_file in tmpdir.rglob("*"):
+            if src_file.is_dir():
+                continue
+            rel = src_file.relative_to(tmpdir)
+            # A1: 跳过 .git/ 目录
+            if any(part == ".git" for part in rel.parts):
+                continue
+            dst_file = self.dst_path / rel
+            if dst_file.exists():
+                skipped.append(dst_file)
+                continue
+            dst_file.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src_file, dst_file)
+            shutil.copymode(src_file, dst_file)
+            self._created_files.add(str(rel))
+            created.append(dst_file)
+        return created, skipped
+
     def _check_template_version(self) -> None:
         """检查 ae 版本是否满足模板要求的最小版本。"""
         from auto_engineering import __version__
@@ -155,12 +191,21 @@ class InitWorker:
                 )
 
     def _phase_detect(self) -> None:
+        # A1: 增量模式检测
         if self.dst_path.exists() and not self.force:
             if any(self.dst_path.iterdir()):
-                raise TargetDirectoryError(
-                    f"目录 {self.dst_path} 非空。使用 --force 强制覆盖，"
-                    f"或在空目录/新目录中运行 ae init"
-                )
+                if self.incremental:
+                    self._mode = "incremental"
+                else:
+                    raise TargetDirectoryError(
+                        f"目录 {self.dst_path} 非空。使用 --force 强制覆盖，"
+                        f"--incremental 增量补充缺失文件，"
+                        f"或在空目录/新目录中运行 ae init"
+                    )
+            else:
+                self._mode = "fresh"
+        else:
+            self._mode = "fresh"
         if not self.project_type:
             detector = ProjectDetector(self.dst_path)
             self.project_type = detector.detect()

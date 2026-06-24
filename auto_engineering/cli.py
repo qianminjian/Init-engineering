@@ -404,6 +404,7 @@ def main():
 @click.option("--skip-tasks", is_flag=True, help="跳过钩子任务执行")
 @click.option("--no-cleanup", "cleanup_on_error", flag_value=False, default=True, help="出错时不清理目标目录")
 @click.option("--quiet", is_flag=True, help="静默模式")
+@click.option("--incremental", is_flag=True, help="增量模式：只补充缺失文件，不覆盖已有文件")
 def init(
     project: str | None,
     project_type: str | None,
@@ -419,6 +420,7 @@ def init(
     skip_tasks: bool,
     cleanup_on_error: bool,
     quiet: bool,
+    incremental: bool,
 ):
     """项目环境初始化."""
     from auto_engineering.init import InitWorker
@@ -451,6 +453,7 @@ def init(
         skip_tasks=skip_tasks,
         cleanup_on_error=cleanup_on_error,
         quiet=quiet,
+        incremental=incremental,
     )
     if answers:
         worker._previous_answers = answers

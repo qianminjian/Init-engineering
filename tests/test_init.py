@@ -24,13 +24,14 @@ class TestInitHelp:
         assert "--no-cleanup" in result.stdout
 
     def test_all_flags_present(self):
-        """Verify all 13 flags appear in help."""
+        """Verify all 14 flags appear in help."""
         result = run_ae(["init", "--help"])
         flags = [
             "--type", "--defaults", "--force", "--from-answers",
             "--package-manager", "--ci", "--test-runner",
             "--no-typescript", "--no-lefthook",
             "--pretend", "--skip-tasks", "--no-cleanup", "--quiet",
+            "--incremental",
         ]
         for flag in flags:
             assert flag in result.stdout, f"Missing flag: {flag}"
@@ -211,6 +212,124 @@ class TestGitBranchFallback:
         )
         # Just verify the command syntax is valid on this system
         assert result.returncode == 0 or "unknown option" in result.stderr.lower()
+
+
+class TestInitIncrementalMode:
+    """A1: --incremental 增量模式完整实现 (§1.3.10).
+
+    验证:
+    - CLI 暴露 --incremental 标志
+    - 目标目录非空 + --incremental → 只补充缺失文件,跳过已有
+    - .git/ 目录始终跳过
+    - 重复运行幂等（第二次不会重复创建已存在的文件）
+    """
+
+    def test_cli_help_shows_incremental_flag(self):
+        """RED: ae init --help 必须包含 --incremental."""
+        result = run_ae(["init", "--help"])
+        assert result.returncode == 0
+        assert "--incremental" in result.stdout
+
+    def test_incremental_skips_existing_files(self):
+        """RED: --incremental + 目标目录已存在某文件 → 跳过该文件,仅补充新文件."""
+        from auto_engineering.init.scaffold import InitWorker
+
+        tmp = Path(tempfile.mkdtemp())
+        target = tmp / "incremental-target"
+
+        # 1) 先空目录跑一次（baseline）
+        result1 = run_ae([
+            "init", str(target),
+            "--type", "app-service",
+            "--defaults",
+            "--skip-tasks",
+            "--force",
+        ])
+        assert result1.returncode == 0, f"baseline init failed: {result1.stderr}"
+        assert (target / "CLAUDE.md").exists()
+        assert (target / "README.md").exists()
+
+        # 在目标目录下添加一个"用户文件"
+        user_file = target / "USER_FILE.md"
+        user_file.write_text("# User's own file\n")
+
+        # 2) 模拟补充一个文件中漏掉的（如模板中新增了 LICENSE，但初始化已生成过）
+        # 删掉 LICENSE 模拟"目标目录应有但目前缺失"的场景
+        (target / "LICENSE").unlink()
+
+        # 3) 第二次跑 --incremental
+        result2 = run_ae([
+            "init", str(target),
+            "--type", "app-service",
+            "--defaults",
+            "--skip-tasks",
+            "--incremental",
+        ])
+        assert result2.returncode == 0, f"incremental init failed: {result2.stderr}"
+
+        # USER_FILE.md 必须保留原内容
+        assert user_file.exists()
+        assert user_file.read_text() == "# User's own file\n"
+        # LICENSE 缺失应被重新生成
+        assert (target / "LICENSE").exists()
+
+    def test_incremental_skips_git_dir(self):
+        """RED: 增量模式下 .git/ 始终跳过（已有仓库不被覆盖）."""
+        from auto_engineering.init.scaffold import InitWorker
+
+        tmp = Path(tempfile.mkdtemp())
+        target = tmp / "git-target"
+
+        # 初始化一个 git 仓库
+        target.mkdir()
+        subprocess.run(["git", "init", "-b", "main"], cwd=target, capture_output=True)
+        # 写一个 commit 对象验证 .git/HEAD 等文件
+        head_file = target / ".git" / "HEAD"
+        original_head = head_file.read_text() if head_file.exists() else ""
+
+        # 跑 --incremental
+        result = run_ae([
+            "init", str(target),
+            "--type", "app-service",
+            "--defaults",
+            "--skip-tasks",
+            "--incremental",
+        ])
+        assert result.returncode == 0, f"init failed: {result.stderr}"
+
+        # .git/HEAD 内容必须未变（不覆盖）
+        if head_file.exists():
+            assert head_file.read_text() == original_head
+
+    def test_incremental_idempotent(self):
+        """RED: --incremental 重复运行结果相同，第二次不会有新文件创建."""
+        tmp = Path(tempfile.mkdtemp())
+        target = tmp / "idempotent-target"
+
+        # 第一次
+        result1 = run_ae([
+            "init", str(target),
+            "--type", "app-service",
+            "--defaults",
+            "--skip-tasks",
+            "--incremental",
+        ])
+        assert result1.returncode == 0
+        files_after_first = sorted(p.relative_to(target) for p in target.rglob("*") if p.is_file())
+
+        # 第二次
+        result2 = run_ae([
+            "init", str(target),
+            "--type", "app-service",
+            "--defaults",
+            "--skip-tasks",
+            "--incremental",
+        ])
+        assert result2.returncode == 0
+        files_after_second = sorted(p.relative_to(target) for p in target.rglob("*") if p.is_file())
+
+        # 文件列表必须一致
+        assert files_after_first == files_after_second
 
 
 class TestAeStatus:
