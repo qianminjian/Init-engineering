@@ -38,11 +38,18 @@
 
 ## 当前状态
 
-**阶段：** Plan A bugfixes 完成 (D1-D6 + B1-B6) → Plan B 准备启动
+**阶段：** init §1.3 接口规范 100% 完成（A1-A7 全部落地 + B1-B3 验证通过 + C1-C2 覆盖补充）
 
-**Plan A 产出：**
-- `d128ba2` fix(loop): D1-D6 v3.0 设计缺陷修复 — design/v1.0-LOOP.md / BEACON.md / engine/loop.py / engine/graph.py / tests/test_loop.py (5 files, +125/-35)
-- `901dfb4` fix(loop): B1-B6 Phase 1 隐藏 bug 修复 — engine/checkpoint.py / engine/graph.py / engine/loop.py / tests/test_checkpoint.py / tests/test_graph.py / tests/test_loop.py / tests/conftest.py (7 files, +167/-1)
+**Plan init-TODO.md 产出（2026-06-24）：**
+- Phase 01（A1-A7）：7 atomic commits `00a94bb`/`961ca2a`/`8387bdd`/`ec2e108`/`92c3d32`/`74e16d7`/`e2044d6`
+  - A1 增量模式（§1.3.10 P0）/ A2 current_phase 传递 / A3 git 非阻塞 / A4 symlink 处理
+  - A5 `_warn_undetectable` / A6 spec-doc glob / A7 package_manager 默认 npm
+- Phase 02（B1-B3）：8 项目类型 E2E 全过 / 增量模式幂等验证 / `--skip-tasks` 隔离 pnpm 缺失环境
+- Phase 03（C1-C2）：hooks.py 31%→88% / scaffold.py 60%→62% / 11+1 新测试
+
+**状态转换节点**：init 子系统从"§1.3 设计-实现偏差 7 项未修复"→"§1.3 100% 完成"
+
+**下一步**：dev-loop 续做（Plan B.02 中断）或 v1.1 增量优化（per v1.0-INIT.md §1.8 P3/P4）
 
 **Plan A 测试**：40 passed (33 原 + 7 新) in 0.12s
 - 新增：B1 interrupt_after_breaks_loop / B3 context_manager_yields_store / B5 name_collision_raises + 2 add_edge tests / B6 resume_with_done_checkpoint_raises + resume_with_pending_checkpoint_works
