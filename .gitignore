@@ -13,5 +13,7 @@ htmlcov/
 .claude/scheduled_tasks.json
 .claude/scheduled_tasks.lock
 
-# 参考源码（CLAUDE.md 硬禁令：禁止全量加载到内存）
+# 参考源码已迁出项目根（见 CLAUDE.md ## 参考源码）
+# 路径：~/Documents/06-Mi-Model-Rule/历史项目或资料备份/auto-eng/references/
+# 此行保留为防御性: 防止未来误在项目根添加 references/ 时不被忽略
 references/

@@ -1,6 +1,5 @@
 {
   "exclude": [
-    "references",
     "_scratch",
     ".serena",
     ".venv",
