@@ -57,7 +57,8 @@ class ProjectEnvironment:
     def _from_detection(cls, root: Path) -> "ProjectEnvironment":
         return cls(
             project_name=root.resolve().name,
-            package_manager=cls._detect_package_manager(root) or "",
+            # A7: package_manager 缺检测结果时默认 "npm"
+            package_manager=cls._detect_package_manager(root) or "npm",
             test_runner=cls._detect_test_runner(root) or "",
             use_typescript=(root / "tsconfig.json").exists(),
             use_lefthook=(root / "lefthook.yml").exists(),

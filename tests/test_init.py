@@ -218,6 +218,29 @@ class TestGitBranchFallback:
         assert result.returncode == 0 or "unknown option" in result.stderr.lower()
 
 
+class TestProjectEnvPackageManagerDefault:
+    """A7: ProjectEnvironment 缺 package_manager 检测时默认 'npm'."""
+
+    def test_package_manager_defaults_to_npm(self):
+        """RED: 缺 package_manager 锁文件时,默认 'npm'."""
+        from auto_engineering.config.environment import ProjectEnvironment
+
+        env = ProjectEnvironment._from_detection(Path("/nonexistent-root"))
+        assert env.package_manager == "npm", \
+            f"Default package_manager should be 'npm', got '{env.package_manager}'"
+
+    def test_package_manager_detects_uv_when_lockfile_present(self):
+        """REGRESSION: uv.lock 存在时检测为 'uv'."""
+        import tempfile
+        from auto_engineering.config.environment import ProjectEnvironment
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "uv.lock").write_text("")
+            env = ProjectEnvironment._from_detection(tmp_path)
+            assert env.package_manager == "uv"
+
+
 class TestDetectorSpecDocGlob:
     """A6: FRAMEWORK_SIGNATURES spec-doc 支持 design/*.md glob."""
 
