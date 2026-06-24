@@ -218,6 +218,80 @@ class TestGitBranchFallback:
         assert result.returncode == 0 or "unknown option" in result.stderr.lower()
 
 
+class TestRendererSymlinkHandling:
+    """A4: TemplateRenderer 处理 symlink 文件 (设计 §1.3.5).
+
+    设计意图 (R18): symlink 文件应保留为 symlink 或解析为 target 内容.
+    验证: link.txt 复制后存在 + (is_symlink 或内容 == target 内容).
+    """
+
+    def test_symlink_file_handled(self):
+        """RED: symlink 文件被正确处理,不报错且 dst 端可读."""
+        import tempfile
+        from auto_engineering.init.renderer import TemplateRenderer
+
+        src_dir = Path(tempfile.mkdtemp(prefix="ae-symlink-src-"))
+        dst_dir = Path(tempfile.mkdtemp(prefix="ae-symlink-dst-"))
+
+        try:
+            real = src_dir / "real.txt"
+            real.write_text("hello target")
+            link = src_dir / "link.txt"
+            link.symlink_to(real)
+
+            renderer = TemplateRenderer(
+                template_dirs=[src_dir],
+                context={},
+                overwrite=True,
+            )
+            generated = renderer.render_to(dst_dir)
+
+            rels = [g.relative_to(dst_dir) for g in generated]
+            assert Path("real.txt") in rels
+            assert Path("link.txt") in rels
+
+            link_dst = dst_dir / "link.txt"
+            real_dst = dst_dir / "real.txt"
+            assert link_dst.exists()
+            assert real_dst.exists()
+            # 设计意图: copy2 + is_symlink → 保留或解析均可
+            # 验证可读且内容 = target 内容
+            assert link_dst.read_text() == "hello target"
+        finally:
+            import shutil
+            shutil.rmtree(src_dir, ignore_errors=True)
+            shutil.rmtree(dst_dir, ignore_errors=True)
+
+    def test_symlink_file_not_double_resolved(self):
+        """RED: 渲染路径中对 symlink 的判断存在 (= 不崩)."""
+        import tempfile
+        from auto_engineering.init.renderer import TemplateRenderer
+
+        src_dir = Path(tempfile.mkdtemp(prefix="ae-symlink2-"))
+        dst_dir = Path(tempfile.mkdtemp(prefix="ae-symlink2-dst-"))
+        try:
+            # 创建 dangling symlink (指向不存在的文件) — 验证 renderer 不崩溃
+            link = src_dir / "broken_link.txt"
+            link.symlink_to(src_dir / "nonexistent.txt")
+            real = src_dir / "real.txt"
+            real.write_text("real content")
+
+            renderer = TemplateRenderer(
+                template_dirs=[src_dir],
+                context={},
+                overwrite=True,
+            )
+            # 不崩即可 (copy2 跟随 symlink 会 FileNotFoundError,但 is_symlink 后可走不同分支)
+            # 设计意图: 若实现保留 symlink → 不跟随;若实现解析 → 需 FileNotFoundError 容忍
+            # 这里仅验证: real.txt 仍能正确复制
+            generated = renderer.render_to(dst_dir)
+            assert (dst_dir / "real.txt").exists()
+        finally:
+            import shutil
+            shutil.rmtree(src_dir, ignore_errors=True)
+            shutil.rmtree(dst_dir, ignore_errors=True)
+
+
 class TestBuiltinHooksGitCommitNonBlocking:
     """A3: git commit 失败非阻塞 — 仅 warning,继续后续任务."""
 

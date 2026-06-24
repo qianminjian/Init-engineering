@@ -110,6 +110,17 @@ class TemplateRenderer:
                     generated[rendered_rel] = dst_file
                     continue
 
+                # A4: symlink 处理 — 保留为 symlink (若 target 存在) 或解析为内容
+                if src_file.is_symlink():
+                    target = src_file.resolve()
+                    if target.exists():
+                        # 复制 symlink 本身 (保留为指向 target 的链接)
+                        dst_file.symlink_to(target)
+                        generated[rendered_rel] = dst_file
+                        continue
+                    # dangling symlink → 跳过 (目标不存在,无法保留/解析)
+                    continue
+
                 if is_template:
                     try:
                         content = self._render(src_file.read_text())
