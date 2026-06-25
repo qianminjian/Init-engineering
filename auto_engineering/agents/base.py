@@ -214,9 +214,7 @@ class BaseAgent:
             return AEError(ErrorCode.LLM_RATE_LIMIT, f"LLM rate limit: {exc}")
         return AEError(ErrorCode.LLM_UNKNOWN_ERROR, f"LLM error: {exc}")
 
-    def _validate_tool_input(
-        self, tool: BaseTool, tool_input: dict, tool_name: str
-    ) -> None:
+    def _validate_tool_input(self, tool: BaseTool, tool_input: dict, tool_name: str) -> None:
         """P1.7: 校验 tool_input 符合 tool.parameters schema.
 
         规则:

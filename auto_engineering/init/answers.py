@@ -183,7 +183,7 @@ class AnswersMap:
         try:
             return self.get(key)
         except KeyError:
-            raise KeyError(key)
+            raise KeyError(key) from None
 
     def __contains__(self, key: str) -> bool:
         try:

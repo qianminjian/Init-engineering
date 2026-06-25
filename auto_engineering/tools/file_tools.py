@@ -8,7 +8,7 @@ P1.5: WriteFileTool/EditFileTool 支持 project_root 白名单验证.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from .base import BaseTool, ToolResult
 
@@ -18,7 +18,7 @@ class ReadFileTool(BaseTool):
 
     name = "read_file"
     description = "Read file content. Supports line range via offset/limit."
-    parameters = {
+    parameters: ClassVar[dict] = {
         "file_path": {"type": "string", "description": "Absolute file path"},
         "offset": {"type": "integer", "description": "Start line (1-based, default 1)"},
         "limit": {"type": "integer", "description": "Lines to read (default 200)"},
@@ -48,7 +48,7 @@ class WriteFileTool(BaseTool):
 
     name = "write_file"
     description = "Create or overwrite a file. Auto-creates parent directories."
-    parameters = {
+    parameters: ClassVar[dict] = {
         "file_path": {"type": "string", "description": "Absolute file path"},
         "content": {"type": "string", "description": "Full file content"},
     }
@@ -83,7 +83,7 @@ class EditFileTool(BaseTool):
 
     name = "edit_file"
     description = "Replace exact string in file. Returns error if old_string not found."
-    parameters = {
+    parameters: ClassVar[dict] = {
         "file_path": {"type": "string", "description": "Absolute file path"},
         "old_string": {"type": "string", "description": "Existing string to replace"},
         "new_string": {"type": "string", "description": "Replacement string"},
@@ -126,7 +126,7 @@ class SearchCodeTool(BaseTool):
 
     name = "search_code"
     description = "Search regex pattern in files. Returns matching lines with file:line:content."
-    parameters = {
+    parameters: ClassVar[dict] = {
         "pattern": {"type": "string", "description": "Regex pattern"},
         "path": {"type": "string", "description": "Directory to search (default '.')"},
         "file_pattern": {"type": "string", "description": "Glob file filter (e.g. '*.py')"},
@@ -167,7 +167,7 @@ class ListDirTool(BaseTool):
 
     name = "list_dir"
     description = "List files and subdirectories in a directory."
-    parameters = {
+    parameters: ClassVar[dict] = {
         "path": {"type": "string", "description": "Directory path (default '.')"},
     }
 

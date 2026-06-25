@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import subprocess
+from typing import ClassVar
 
 from .base import BaseTool, ToolResult
 
@@ -26,7 +27,7 @@ class GitStatusTool(BaseTool):
 
     name = "git_status"
     description = "Show git status. Returns porcelain-format output."
-    parameters = {
+    parameters: ClassVar[dict] = {
         "cwd": {"type": "string", "description": "Repository path (optional)"},
     }
 
@@ -51,7 +52,7 @@ class GitCommitTool(BaseTool):
 
     name = "git_commit"
     description = "Stage all changes and commit with message."
-    parameters = {
+    parameters: ClassVar[dict] = {
         "message": {"type": "string", "description": "Commit message"},
         "cwd": {"type": "string", "description": "Repository path (optional)"},
     }
@@ -91,7 +92,7 @@ class GitDiffTool(BaseTool):
 
     name = "git_diff"
     description = "Show git diff. Default shows unstaged. Set staged=true for staged."
-    parameters = {
+    parameters: ClassVar[dict] = {
         "staged": {"type": "boolean", "description": "Show staged diff (default false)"},
         "target": {"type": "string", "description": "Compare against ref/branch (e.g. HEAD~1)"},
         "cwd": {"type": "string", "description": "Repository path (optional)"},

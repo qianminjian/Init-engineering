@@ -141,7 +141,10 @@ class CheckpointStore:
         self.close()
 
     def list_all(self) -> list[dict]:
-        """列出所有 checkpoints. 返回 [{id, thread_id, step, status, created_at, updated_at}, ...]."""
+        """列出所有 checkpoints.
+
+        返回 [{id, thread_id, step, status, created_at, updated_at}, ...].
+        """
         conn = self._get_conn()
         rows = conn.execute(
             """SELECT id, thread_id, step, status, created_at, updated_at

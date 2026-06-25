@@ -1,7 +1,9 @@
 """工具系统 — Agent 可用的文件/Bash/Git/测试工具.
 
 Phase 0.2 真接后导出:
-    - 10 个 BaseTool 子类实例(ReadFile/WriteFile/EditFile/SearchCode/ListDir/RunBash/GitStatus/GitCommit/GitDiff/RunTests)
+    - 10 个 BaseTool 子类实例
+      (ReadFile/WriteFile/EditFile/SearchCode/ListDir/RunBash/
+       GitStatus/GitCommit/GitDiff/RunTests)
     - ToolRegistry + default_registry 单例
 """
 

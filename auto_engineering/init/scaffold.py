@@ -122,7 +122,8 @@ class InitWorker:
                 created, skipped = self._phase_merge(tmpdir, generated)
                 if not self.quiet:
                     print(
-                        f"\n✓ 增量模式：已补充 {len(created)} 个文件，跳过 {len(skipped)} 个已有文件"
+                        f"\n✓ 增量模式：已补充 {len(created)} 个文件，"
+                        f"跳过 {len(skipped)} 个已有文件"
                     )
             else:
                 did_create_dst = not self.dst_path.exists()
@@ -265,7 +266,7 @@ class InitWorker:
                 self._answers = prompt.run()
             except KeyboardInterrupt:
                 self._answers.save_partial()
-                raise InitInterruptedError()
+                raise InitInterruptedError() from None
 
     def _phase_render(self, tmpdir: Path) -> list[Path]:
         self._answers.builtins["_folder_name"] = self.dst_path.name

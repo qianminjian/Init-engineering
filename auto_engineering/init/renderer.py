@@ -99,9 +99,12 @@ class TemplateRenderer:
                 if not dst_file.resolve().is_relative_to(dst_dir_real):
                     raise TemplateRenderError(str(src_file), ValueError("路径穿越"))
 
-                if dst_file.exists() and generated.get(rendered_rel) is None:
-                    if not self._should_overwrite(rendered_rel):
-                        continue
+                if (
+                    dst_file.exists()
+                    and generated.get(rendered_rel) is None
+                    and not self._should_overwrite(rendered_rel)
+                ):
+                    continue
 
                 dst_file.parent.mkdir(parents=True, exist_ok=True)
 
@@ -125,7 +128,7 @@ class TemplateRenderer:
                     try:
                         content = self._render(src_file.read_text())
                     except jinja2.TemplateError as e:
-                        raise TemplateRenderError(str(src_file), e)
+                        raise TemplateRenderError(str(src_file), e) from e
                     newline = self._detect_newline(src_file)
                     dst_file.write_text(content, newline=newline)
                 elif is_binary(str(src_file)):
@@ -145,7 +148,7 @@ class TemplateRenderer:
             tpl = self.env.from_string(path_str)
             return tpl.render(**self.context)
         except jinja2.TemplateError as e:
-            raise TemplateRenderError(path_str, e)
+            raise TemplateRenderError(path_str, e) from e
 
     def _render(self, content: str) -> str:
         """渲染文件内容。"""

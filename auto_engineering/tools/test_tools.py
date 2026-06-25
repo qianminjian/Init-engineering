@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from typing import ClassVar
 
 from .base import BaseTool, ToolResult
 
@@ -28,7 +29,7 @@ class RunTestsTool(BaseTool):
     description = (
         "Run project tests. Detects runner (pytest/npm/pnpm/yarn/uv) or uses runner parameter."
     )
-    parameters = {
+    parameters: ClassVar[dict] = {
         "scope": {"type": "string", "description": "Test scope: all/unit/integration/coverage"},
         "runner": {"type": "string", "description": "Force runner (pytest/npm/pnpm/yarn/uv)"},
         "cwd": {"type": "string", "description": "Working directory (optional)"},

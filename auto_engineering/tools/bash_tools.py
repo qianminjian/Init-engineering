@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+from typing import ClassVar
 
 from .base import BaseTool, ToolResult
 
@@ -23,14 +24,14 @@ class RunBashTool(BaseTool):
 
     name = "run_bash"
     description = "Execute shell command and return output. Blocks until done or timeout."
-    parameters = {
+    parameters: ClassVar[dict] = {
         "command": {"type": "string", "description": "Shell command to execute"},
         "cwd": {"type": "string", "description": "Working directory (optional)"},
         "timeout": {"type": "integer", "description": "Timeout in seconds (default 120)"},
     }
 
     # 黑名单: 匹配则拒绝执行
-    DANGEROUS_PATTERNS: list[str] = [
+    DANGEROUS_PATTERNS: ClassVar[list[str]] = [
         r"rm\s+-rf\s+/\s*$",  # rm -rf / 或 rm -rf /...
         r"rm\s+-rf\s+/",  # rm -rf /任意位置(保守)
         r"dd\s+if=",  # dd 直接复制设备

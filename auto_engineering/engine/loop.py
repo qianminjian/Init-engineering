@@ -148,8 +148,10 @@ class LoopEngine:
             - run() 第一次调用: _init_checkpoint(requirement) → 进入 while
             - resume() 后调用: self.checkpoint 已设置,跳过初始化
             - max_steps: 优先用参数,fallback 构造器值
-            - cancellation: 每次 tick 前 check() — 已取消则抛 TASK_CANCELLED + 保存 checkpoint.status="drained"
-            - token_tracker: 每次 LLM 调用后累加,超 max_tokens 抛 BUDGET_EXCEEDED(由 runtime/BaseAgent 实现)
+            - cancellation: 每次 tick 前 check() — 已取消则抛 TASK_CANCELLED
+              + 保存 checkpoint.status="drained"
+            - token_tracker: 每次 LLM 调用后累加,超 max_tokens 抛 BUDGET_EXCEEDED
+              (由 runtime/BaseAgent 实现)
             - on_stage_start(stage_name): 每次 stage 开始前调用(cli 用于实时进度输出)
             - on_stage_end(stage_name, elapsed_sec): 每次 stage 完成后调用
 
@@ -274,8 +276,9 @@ class LoopEngine:
 
         if self.interrupt_after and self.current_task.name in self.interrupt_after:
             self.status = "interrupt_after"
-            # v3.1 D4 修复: run() 的 while 循环在 after_tick 之后检测到 status='interrupt_after' 立即 break,
-            # 不再进入下一轮 tick(). 中断语义由 run() 统一处理.
+            # v3.1 D4 修复: run() 的 while 循环在 after_tick 之后检测到
+            # status='interrupt_after' 立即 break,不再进入下一轮 tick().
+            # 中断语义由 run() 统一处理.
 
     async def resume(self, checkpoint_id: str) -> LoopResult:
         """从 checkpoint 恢复. 加载 → 设置 self.checkpoint → run().

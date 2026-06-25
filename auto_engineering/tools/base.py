@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from abc import ABC
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
+from typing import ClassVar
 
 from auto_engineering.errors import ErrorCode
 
@@ -35,11 +36,16 @@ class BaseTool(ABC):
 
     name: str = ""
     description: str = ""
-    parameters: dict = {}
+    parameters: ClassVar[dict] = {}
     project_root: Path | None = None
 
     # 子类可覆盖黑名单(命令)或白名单(path)
-    DANGEROUS_PATTERNS: list[str] = []
+    DANGEROUS_PATTERNS: ClassVar[list[str]] = []
+
+    @abstractmethod
+    async def execute(self, **kwargs) -> ToolResult:
+        """Execute the tool. Must be implemented by subclasses."""
+        ...
 
     def _is_path_safe(self, file_path: str) -> tuple[bool, str]:
         """检查 file_path 是否在 project_root 内.
