@@ -41,7 +41,7 @@
 
 - 名称：Auto-Engineering
 - 类型：Python CLI 应用 — 团队级 Loop 工程 + 多 Agent 协作
-- 版本：1.0.0（设计阶段）
+- 版本：v2.0（v1.0 init/dev-loop 基线 + v1.1 修复 + v2.0 多 Agent 并发）
 - 创建日期：2026-06-23
 
 ## 项目性质
@@ -53,16 +53,33 @@
 ## 架构
 
 ```
-Python 控制流（确定性）        LLM 调用（智能）
-┌──────────────────────┐     ┌──────────────────┐
-│ engine/loop.py        │     │ agents/           │
-│   while True:         │────→│   architect.py   │
-│     tick()            │     │   developer.py   │
-│     agent.execute()   │     │   critic.py      │
-│     gates.check()     │←────│                  │
-│     after_tick()      │     └──────────────────┘
-└──────────────────────┘
+v1.0 主路径 (engine + agents + tools)            v2.0 增量 (loop + gates)
+┌──────────────────────────────┐     ┌──────────────────────────────────┐
+│ engine/loop.py                │     │ loop/                             │
+│   while True:                 │     │   orchestrator.py  (主循环)       │
+│     tick()                    │     │   round.py         (asyncio.gather)│
+│     agent.execute() ──────────┼────→│   plan.py          (Task DAG)     │
+│     gates.check()             │     │   state.py         (Channel 系统) │
+│     after_tick()              │     │   checkpoint.py    (SQLite 持久化)│
+└──────────────────────────────┘     │   convergence.py   (4 级判定)     │
+         │                            └──────────────┬───────────────────┘
+         ▼                                            ▼
+┌──────────────────────────────┐     ┌──────────────────────────────────┐
+│ agents/                       │     │ gates/                            │
+│   architect.py                │     │   base.py (Gate 基类)             │
+│   developer.py                │     │   safety.py / lint.py / type_check│
+│   critic.py                   │     │   test.py / coverage.py / build.py │
+└──────────────────────────────┘     │   contract.py (占位, 单 Agent 跳过)│
+         │                            └──────────────────────────────────┘
+         ▼
+┌──────────────────────────────┐
+│ tools/ + runtime/             │
+│   file/bash/git/test_tools   │
+│   AgentRuntime + MockRuntime │
+└──────────────────────────────┘
 ```
+
+> **v2.0 关键变化**：在 v1.0 基础上**新增** loop/ + gates/ 子系统（不删除 engine/runtime/tools）— 多 Agent asyncio.gather 并发 + 7 道质量门 + Channel 状态系统 + SQLite Checkpoint 持久化 + 4 级收敛判定。详见 `design/v2.0-Design-Loop.md`。
 
 ## 参考源码
 
@@ -81,12 +98,34 @@ Python 控制流（确定性）        LLM 调用（智能）
 
 | 文档 | 内容 | 读取条件 |
 |------|------|---------|
-| `design/v1.0-SHARED.md` | 共享架构、CLI 设计、共享契约、关键决策 | 任何设计讨论时先读 |
-| `design/v1.0-INIT.md` | init 子系统完整设计（~1800 行） | 开发 `ae init` 时 |
-| `design/v1.0-LOOP.md` | dev-loop 子系统完整设计（~550 行） | 开发 `ae dev-loop` 时 |
-| `design/v1.0-TEMPLATES.md` | 43 个模板文件 + 8 个 ae-template.yml | 实现 `init/templates/` 时 |
+| `design/BEACON.md` | 设计基线（目标/范围/决策/当前状态） | 任何设计讨论时先读 |
+| `design/INDEX.md` | 文档索引（含合并日志/归档清单） | 检索文档时 |
+| `design/v1.0-Design-Shared.md` | 共享架构、CLI 设计、共享契约 | v1.0/v1.1 设计讨论时 |
+| `design/v1.0-Design-Init.md` | init 子系统完整设计 + 实现偏差审计（§1.7） | 开发 `ae init` 时 |
+| `design/v1.0-Design-Loop.md` | dev-loop v1.0 设计（v3.0 优化版，~1700 行） | 开发 v1.0 主路径时 |
+| `design/v1.0-Design-Templates.md` | 43 个模板文件 + 8 个 ae-template.yml | 实现 `init/templates/` 时 |
+| `design/v1.1-Audit-Report.md` | 架构审计报告（P0-P2 + 3 附录） | 审计/回归时 |
+| `design/v1.1-Plan-Dev.md` | 整合开发计划（问题清单 + Phase 0-5） | v1.1 计划追溯时 |
+| `design/v2.0-Analysis-Loop.md` | v2.0 多 Agent 并发架构分析（**§八 删除项已取消**） | v2.0 设计推理时 |
+| `design/v2.0-Design-Loop.md` | v2.0 dev-loop 设计基线（基于 v2.0 实际落地） | 开发 v2.0 loop/ + gates/ 时 |
 
-## 核心命令（设计目标）
+## 核心命令
+
+```bash
+# v1.0 主路径（保留）
+ae init <project> --type <type>           # 项目环境初始化
+ae dev-loop <requirement>                 # 单需求开发循环（v1.0 engine）
+ae status                                 # 当前进度（v2.0 增强显示 LoopState）
+
+# v2.0 增量
+ae checkpoint v2 list [--round <n>]       # 列 v2 SQLite checkpoints
+ae checkpoint v2 show <id>                # 看 v2 checkpoint 详情
+ae checkpoint v2 delete <id>              # 删 v2 checkpoint
+ae checkpoint v2 resume <id>              # 从 v2 checkpoint 恢复
+
+# v1.0 checkpoint（旧路径兼容）
+ae checkpoint list|show|delete|resume     # 旧 JSON 文件 checkpoint
+```
 
 ## 管理约束
 
