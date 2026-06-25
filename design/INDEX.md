@@ -4,6 +4,14 @@
 
 ---
 
+## 跨项目资产（位于其他目录）
+
+| 路径 | 用途 | 引用 |
+|------|------|------|
+| `../docs/atdo-runtime-smoke-policy.md` | atdo Plan 报告必须含 runtime smoke 验证（防止虚化测试） | BEACON 决策 18 |
+
+---
+
 ## 文档分类
 
 | 类别 | 文件 | 描述 |

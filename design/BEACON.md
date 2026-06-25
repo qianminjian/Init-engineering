@@ -1,4 +1,4 @@
-> 来源：@design/INDEX.md | 创建：2026-06-24 | 更新：2026-06-25 | 阶段：v2.1 修复完成
+> 来源：@design/INDEX.md | 创建：2026-06-24 | 更新：2026-06-25 | 阶段：v2.1 全部完成（Phase F FINAL）
 
 ## 目标与成功标准
 
@@ -36,11 +36,11 @@
 
 ## 当前状态
 
-**阶段：** v2.1 修复完成（v1.0 init/dev-loop + v1.1 修复 + v2.0 多 Agent 并发 + v2.1 Phase A-D 修复 4 项 P0 阻断 + CLI v2 集成）。Phase E 文档同步执行中。
+**阶段：** v2.1 全部完成（v1.0 init/dev-loop + v1.1 修复 + v2.0 多 Agent 并发 + v2.1 Phase A-D 修复 4 项 P0 阻断 + CLI v2 集成 + Phase E 文档同步 + Phase F atdo 报告虚报防护）。
 
-**最近动作：** 2026-06-25 v2.1 Phase A-D 完成（`e938e72`/`a99b60a`/`739330d`/`4ea0ec9`）— Channel 序列化 + Orchestrator Gate+LLM 集成 + CLI 集成 v2 + load() 重建；v2.0 Phase 01-04（`c3077bf`→`da759cd`）— Channel + TaskDAG + check_file_isolation + 7 Gates + CLI v2。
+**最近动作：** 2026-06-25 v2.1 Phase F 完成 — `docs/atdo-runtime-smoke-policy.md`（永久资产, 44 行）+ `scripts/atdo_smoke.py`（5 维 + runtime_smoke helper, ruff 0 errors, all PASS）+ `_proc-use/_bug-info/atdo-report-fabrication-2026-06-25.md`（虚化案例全记录）+ INDEX.md 引用新 policy。Phase A-D 完成（`e938e72`/`a99b60a`/`739330d`/`4ea0ec9`）— Channel 序列化 + Orchestrator Gate+LLM 集成 + CLI 集成 v2 + load() 重建；v2.0 Phase 01-04（`c3077bf`→`da759cd`）— Channel + TaskDAG + check_file_isolation + 7 Gates + CLI v2。
 
-**下一步：** Phase F atdo 报告虚报防护 (P1.6) → v2.1 全部完成 → 用户 manual gate 决策 v2.1 → 是否启动 v2.2（CLI 集成 E2E 验证 + 文档）？
+**下一步：** v2.1 全部完成 → 用户 manual gate 决策 v2.1 → 是否启动 v2.2（CLI 集成 E2E 验证 + 文档）？
 
 **阻塞项：** 无
 
@@ -54,6 +54,7 @@
 
 | 日期 | 变更 | 原因 |
 |------|------|------|
+| 2026-06-25 | v2.1 Phase F 完成（atdo 报告虚报防护 P1.6 FINAL） | Phase 1 审计：Plan 报告虚化案例全记录 + Runtime Smoke Policy 永久资产 + smoke helper 工具 |
 | 2026-06-25 | v2.1 Phase A-D 修复完成（4 项 P0 阻断） | Phase 1 审计：Channel 序列化缺/Orchestrator 集成缺/CLI 未接 v2/字段不全 |
 | 2026-06-25 | v2.0 全部完成（Phase 01-04）+ 决策 11/12 | v2.0 增量式演进 |
 | 2026-06-25 | v1.1 计划 Phase 0-4 全完成 + 文档命名重构 + R26 init 模板 design 嵌入 | 见 v1.1-Plan-Dev.md §一，9 项全部关闭 |
