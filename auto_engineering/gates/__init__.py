@@ -1,33 +1,23 @@
-"""质量门 — Guardrail 体系(Phase 2 升级).
+"""v2.0 Phase 04 — 7 道 Gate + 向后兼容层.
 
-Phase 2 决策(P0-18): Gate 升级为 Guardrail(4 态:pass/block/drop/retry).
-    - Gate (2 态 passed/failed) → GuardrailResult (4 态)
-    - Gate 基类(Gate.check) → GuardrailHandler Protocol (duck typing)
-    - gates/gates.py 4 个具体 Gate 实现 → gates/builtin.py 5 个 Guardrail
+设计来源: design/v2.0-Analysis-Loop.md §五 Phase 2.
 
-向后兼容:
-    - Gate / GateResult 类保留(其他代码可能 import)
-    - PlanExistsGate / GitCleanGate / TestsPassGate / GitDiffExistsGate 已删除(无外部使用)
+Phase 04 新增:
+    - Gate.run(project_root) 接口 → Verdict
+    - Verdict 数据类(passed / message / gate_name)
+    - 7 道 Gate: safety / lint / type_check / contract / test / coverage / build
 
-核心 API:
-    GuardrailResult        — 4 态结果 (pass/block/drop/retry)
-    DropOutput             — AutoGen DropMessage 风格 sentinel
-    GuardrailHandler       — Protocol,实现 check() 即是 Guardrail
-    GuardrailChain         — 多 Guardrail 链式执行,首个非 pass 短路
-
-内置 Guardrail(gates/builtin):
-    RequirementGuardrail    — requirement 非空
-    PlanExistsGuardrail     — plan 文件存在
-    GitCleanGuardrail       — git status 干净
-    TestsPassGuardrail      — pytest 绿
-    GitDiffExistsGuardrail  — 有 commit 可审查
+向后兼容(Phase 1 / Phase 2):
+    - Gate 基类保留(check 接口保留供 Guardrail 体系使用)
+    - GuardrailResult / DropOutput / GuardrailChain 不动
+    - 5 个内置 Guardrail 不动
 """
 
 from __future__ import annotations
 
-# Gate 基类(向后兼容,Phase 1 遗留)
-from .base import Gate, GateResult
-from .builtin import (
+# v1.1 Guardrail 体系(向后兼容)
+from .base import Gate, GateResult, Verdict  # noqa: F401
+from .builtin import (  # noqa: F401
     GitCleanGuardrail,
     GitDiffExistsGuardrail,
     PlanExistsGuardrail,
@@ -35,15 +25,48 @@ from .builtin import (
     TestsPassGuardrail,
 )
 
-# Guardrail 体系(Phase 2 新)
-from .guardrail import (
+# v2.0 Phase 04 — 7 道 Gate
+from .build import BuildGate  # noqa: F401
+from .contract import ContractGate  # noqa: F401
+from .coverage import CoverageGate  # noqa: F401
+from .lint import LintGate  # noqa: F401
+from .safety import SafetyGate  # noqa: F401
+from .test import TestGate  # noqa: F401
+from .type_check import TypeCheckGate  # noqa: F401
+
+# Guardrail 体系(向后兼容)
+from .guardrail import (  # noqa: F401
     DropOutput,
     GuardrailChain,
     GuardrailHandler,
     GuardrailResult,
 )
 
+# v2.0 7 道 Gate 的注册表(便于 Orchestrator 调度)
+V2_GATES: list[type[Gate]] = [
+    SafetyGate,
+    LintGate,
+    TypeCheckGate,
+    ContractGate,
+    TestGate,
+    CoverageGate,
+    BuildGate,
+]
+
+
 __all__ = [
+    # v2.0 新接口
+    "Verdict",
+    # v2.0 7 道 Gate
+    "SafetyGate",
+    "LintGate",
+    "TypeCheckGate",
+    "ContractGate",
+    "TestGate",
+    "CoverageGate",
+    "BuildGate",
+    "V2_GATES",
+    # 向后兼容
     "DropOutput",
     "Gate",
     "GateResult",
