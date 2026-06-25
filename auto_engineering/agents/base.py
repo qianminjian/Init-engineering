@@ -126,8 +126,12 @@ class BaseAgent:
                         )
                         continue
 
+                    # P1.7: 工具参数 schema 校验
+                    tool = tool_map[tool_name]
+                    self._validate_tool_input(tool, tool_input, tool_name)
+
                     try:
-                        result = await tool_map[tool_name].execute(**tool_input)
+                        result = await tool.execute(**tool_input)
                         # P1.4: error_code 存在 → 工具认定的业务错误,抛 AEError
                         if result.error_code is not None:
                             raise AEError(
@@ -209,6 +213,49 @@ class BaseAgent:
         if exc_name == "RateLimitError":
             return AEError(ErrorCode.LLM_RATE_LIMIT, f"LLM rate limit: {exc}")
         return AEError(ErrorCode.LLM_UNKNOWN_ERROR, f"LLM error: {exc}")
+
+    def _validate_tool_input(
+        self, tool: BaseTool, tool_input: dict, tool_name: str
+    ) -> None:
+        """P1.7: 校验 tool_input 符合 tool.parameters schema.
+
+        规则:
+        - 必填字段缺失 → 抛 INVALID_AGENT_OUTPUT
+        - 类型错误(传 string 给 integer) → 抛 INVALID_AGENT_OUTPUT
+
+        注意: LLM 可能传多余字段,这是正常的(Anthropic 默认允许 extras),不作为错误.
+        """
+        schema = tool.parameters
+        if not schema:
+            return  # 无 schema,跳过校验
+
+        for param_name, param_spec in schema.items():
+            if param_name not in tool_input:
+                # 必填字段缺失
+                if param_spec.get("required", True):
+                    raise AEError(
+                        ErrorCode.INVALID_AGENT_OUTPUT,
+                        f"Tool '{tool_name}' missing required parameter: {param_name}",
+                    )
+                continue
+
+            expected_type = param_spec.get("type", "string")
+            actual = tool_input[param_name]
+            if actual is None:
+                continue
+            # 类型校验(只做基础类型检查)
+            if expected_type == "integer" and not isinstance(actual, int):
+                raise AEError(
+                    ErrorCode.INVALID_AGENT_OUTPUT,
+                    f"Tool '{tool_name}' parameter '{param_name}' must be integer, "
+                    f"got {type(actual).__name__}",
+                )
+            if expected_type == "boolean" and not isinstance(actual, bool):
+                raise AEError(
+                    ErrorCode.INVALID_AGENT_OUTPUT,
+                    f"Tool '{tool_name}' parameter '{param_name}' must be boolean, "
+                    f"got {type(actual).__name__}",
+                )
 
     def _parse_final_response(self, content: str) -> dict:
         """解析 LLM 最终响应为 dict. 双层防御(直接 JSON / fence / 内联块).
