@@ -424,3 +424,144 @@ async def test_orchestrator_cancellation_stops_loop():
     # 至少跑过一轮, 但因为 cancellation 提前停止
     assert len(history) >= 1
     assert len(history) < 10  # 没跑到 max_rounds
+
+
+# ============================================================
+# G. v2.2 Phase H — RoundResult 集成 Gate (P2.4)
+# 设计: RoundResult 真含 gate_results 字段 + run_round 跑 Gate
+#       Orchestrator 不再 _build_history 跑 Gate, 改从 RoundResult 读
+# ============================================================
+
+
+@pytest.mark.asyncio
+async def test_round_result_contains_gate_results_after_run_round(tmp_path):
+    """run_round 接受 gates + project_root → RoundResult.gate_results 非空.
+
+    严禁虚化: 真跑 SafetyGate + LintGate (无 mock), 验证 gate_results 含 verdicts.
+    """
+    from auto_engineering.gates.lint import LintGate
+    from auto_engineering.gates.safety import SafetyGate
+
+    # 真项目根 (一个简单 print 文件, ruff 通过, 无 secret)
+    (tmp_path / "ok.py").write_text('print("hello")\n')
+
+    async def executor(task, ctx):
+        return TaskOutcome(task_id=task.id, status="completed", output="done")
+
+    task = make_task("t1")
+    result = await run_round(
+        tasks=[task],
+        executor=executor,
+        gates=[SafetyGate(), LintGate()],
+        project_root=tmp_path,
+    )
+    # 🔥 RoundResult 真含 gate_results (Phase H 新增)
+    assert result.gate_results != {}, (
+        f"gate_results 应非空, 实际: {result.gate_results}"
+    )
+    assert "safety" in result.gate_results
+    assert "lint" in result.gate_results
+    # SafetyGate/LintGate 通过无 secret + ruff pass 的目录
+    assert result.gate_results["safety"].passed
+    assert result.gate_results["lint"].passed
+
+
+@pytest.mark.asyncio
+async def test_round_result_all_gates_passed_property(tmp_path):
+    """all_gates_passed property: 所有 gate_results[name].passed == True → True."""
+    from auto_engineering.gates.lint import LintGate
+    from auto_engineering.gates.safety import SafetyGate
+
+    (tmp_path / "ok.py").write_text('print("hello")\n')
+
+    async def executor(task, ctx):
+        return TaskOutcome(task_id=task.id, status="completed", output="done")
+
+    task = make_task("t1")
+    result = await run_round(
+        tasks=[task],
+        executor=executor,
+        gates=[SafetyGate(), LintGate()],
+        project_root=tmp_path,
+    )
+    # 所有 Gate 真 pass → all_gates_passed == True
+    assert result.all_gates_passed, (
+        f"all_gates_passed 应 True, gate_results: {result.gate_results}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_round_result_handles_gate_exceptions(tmp_path):
+    """Gate 抛异常时, gate_results 含 passed=False entry, 不传播异常.
+
+    严禁虚化: 用一个真会抛异常的 Gate (run() 抛 RuntimeError),
+    验证 RoundResult 吞掉异常 + 写入 failed Verdict.
+    """
+    from auto_engineering.gates.base import Gate, Verdict
+
+    class BoomGate(Gate):
+        name = "boom"
+
+        def run(self, project_root):  # type: ignore[override]
+            raise RuntimeError("gate crashed intentionally")
+
+    async def executor(task, ctx):
+        return TaskOutcome(task_id=task.id, status="completed", output="done")
+
+    task = make_task("t1")
+    # 不应抛异常 — RoundResult 吞掉 + 写入 failed Verdict
+    result = await run_round(
+        tasks=[task],
+        executor=executor,
+        gates=[BoomGate()],
+        project_root=tmp_path,
+    )
+    assert "boom" in result.gate_results
+    assert result.gate_results["boom"].passed is False
+    # 异常 message 写入 verdict.message
+    assert "gate crashed intentionally" in result.gate_results["boom"].message
+    # all_gates_passed = False (因为有 failed entry)
+    assert result.all_gates_passed is False
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_reads_gate_results_from_round_result(tmp_path):
+    """Orchestrator._build_history 从 RoundResult.gate_results 读 (不再硬编码).
+
+    严禁虚化: 真跑 Orchestrator + SafetyGate + LintGate, 验证
+    RoundHistory.gate_results 从 RoundResult 读 (含 'safety' + 'lint' keys).
+    """
+    from auto_engineering.gates.lint import LintGate
+    from auto_engineering.gates.safety import SafetyGate
+    from auto_engineering.loop.convergence import ConvergenceConfig
+
+    (tmp_path / "ok.py").write_text('print("hello")\n')
+
+    async def executor(task, ctx):
+        return TaskOutcome(task_id=task.id, status="completed", output="done")
+
+    task = make_task("t1")
+    config = OrchestratorConfig(
+        max_rounds=1,
+        convergence_config=ConvergenceConfig(stagnation_threshold=10),
+        gates=[SafetyGate(), LintGate()],
+        project_root=tmp_path,
+    )
+    orch = Orchestrator(
+        requirement="gate integration test",
+        tasks=[task],
+        executor=executor,
+        config=config,
+    )
+    history = await orch.run()
+    # 第一轮的 RoundHistory.gate_results 应从 RoundResult 读
+    assert len(history) == 1
+    assert history[0].gate_results != {}, (
+        f"RoundHistory.gate_results 应从 RoundResult 读, 实际: {history[0].gate_results}"
+    )
+    # 含 'safety' + 'lint' (从 RoundResult.gate_results keys 来)
+    assert "safety" in history[0].gate_results
+    assert "lint" in history[0].gate_results
+    # 都通过
+    assert history[0].gate_results["safety"] is True
+    assert history[0].gate_results["lint"] is True
