@@ -122,7 +122,10 @@ class EditFileTool(BaseTool):
 
 
 class SearchCodeTool(BaseTool):
-    """Grep-like search in project files."""
+    """Grep-like search in project files with optional project_root whitelist.
+
+    P0.2: project_root 限制搜索路径必须在目录内.
+    """
 
     name = "search_code"
     description = "Search regex pattern in files. Returns matching lines with file:line:content."
@@ -132,12 +135,23 @@ class SearchCodeTool(BaseTool):
         "file_pattern": {"type": "string", "description": "Glob file filter (e.g. '*.py')"},
     }
 
+    def __init__(self, project_root: Path | None = None, **kwargs: Any):
+        super().__init__(**kwargs)
+        self.project_root = project_root
+
     async def execute(self, **kwargs) -> ToolResult:
         import re
 
         pattern = kwargs.get("pattern", "")
-        path = Path(kwargs.get("path", "."))
+        path_str = kwargs.get("path", ".")
         file_pattern = kwargs.get("file_pattern")
+
+        # P0.2: 白名单验证
+        safe, err = self._is_path_safe(path_str)
+        if not safe:
+            return ToolResult(success=False, content="", error=err)
+
+        path = Path(path_str)
         try:
             if not path.exists():
                 return ToolResult(success=False, content="", error=f"Path not found: {path}")

@@ -139,6 +139,26 @@ class TestSearchCodeTool:
         assert result.success
         assert "no matches" in result.content.lower()
 
+    def test_search_blocks_path_outside_project_root(self, tmp_path: Path):
+        """P0.2: SearchCodeTool 带 project_root 时拒绝遍历项目外目录."""
+        from auto_engineering.tools import SearchCodeTool
+
+        # tmp_path 是 project_root,尝试搜 /tmp（项目外）
+        tool = SearchCodeTool(project_root=tmp_path)
+        result = run_async(tool.execute(pattern="def", path="/tmp"))
+        assert not result.success
+        assert "outside project_root" in result.error
+
+    def test_search_allows_path_inside_project_root(self, tmp_path: Path):
+        """P0.2: SearchCodeTool 带 project_root 时允许项目内目录."""
+        from auto_engineering.tools import SearchCodeTool
+
+        (tmp_path / "a.py").write_text("def foo(): pass\n")
+        tool = SearchCodeTool(project_root=tmp_path)
+        result = run_async(tool.execute(pattern="def", path=str(tmp_path), file_pattern="*.py"))
+        assert result.success
+        assert "a.py:1:def foo()" in result.content
+
 
 class TestListDirTool:
     """ListDirTool 真接."""
