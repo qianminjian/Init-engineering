@@ -1,0 +1,262 @@
+"""v2.0 Channel 系统 + LoopState 容器测试.
+
+Channel 类型语义(参考 design/v2.0-Analysis-Loop.md §4.4):
+- LastValueChannel[T]: 单写,后续覆盖(Plan 状态、Review 结论)
+- AccumulatingChannel[T]: 多写,append 列表(Task 完成列表、Gate 结果汇总)
+- BarrierChannel: 等待所有 Agent 完成(asyncio.Event,多 Agent 同步点)
+
+本文件独立于 v1.1 tests/test_loop_state.py(后者测试 engine.state.LoopState dataclass).
+"""
+
+import asyncio
+
+import pytest
+
+from auto_engineering.loop.state import (
+    AccumulatingChannel,
+    BarrierChannel,
+    Channel,
+    LastValueChannel,
+    LoopState,
+)
+
+
+# ============================================================
+# LastValueChannel — 单写覆盖语义
+# ============================================================
+
+
+def test_last_value_channel_default_none():
+    """新创建的 LastValueChannel 应为 None."""
+    ch: LastValueChannel[str] = LastValueChannel("plan")
+    assert ch.get() is None
+
+
+def test_last_value_channel_set_overwrites():
+    """LastValueChannel.set() 覆盖已有值."""
+    ch: LastValueChannel[str] = LastValueChannel("plan")
+    ch.set("first")
+    assert ch.get() == "first"
+    ch.set("second")
+    assert ch.get() == "second"
+
+
+def test_last_value_channel_update_returns_value():
+    """update() 写入并返回新值(链式调用友好)."""
+    ch: LastValueChannel[int] = LastValueChannel("count")
+    result = ch.update(42)
+    assert result == 42
+    assert ch.get() == 42
+
+
+def test_last_value_channel_empty():
+    """LastValueChannel.empty() 在未写入时返回 True."""
+    ch: LastValueChannel[str] = LastValueChannel("x")
+    assert ch.empty() is True
+    ch.set("hello")
+    assert ch.empty() is False
+
+
+# ============================================================
+# AccumulatingChannel — 多写 append 语义
+# ============================================================
+
+
+def test_accumulating_channel_default_empty_list():
+    """新创建的 AccumulatingChannel 应为空列表."""
+    ch: AccumulatingChannel[str] = AccumulatingChannel("findings")
+    assert ch.get() == []
+
+
+def test_accumulating_channel_append_multiple():
+    """多次 update 应按顺序追加."""
+    ch: AccumulatingChannel[int] = AccumulatingChannel("results")
+    ch.update(1)
+    ch.update(2)
+    ch.update(3)
+    assert ch.get() == [1, 2, 3]
+
+
+def test_accumulating_channel_initial_values():
+    """AccumulatingChannel 可指定初始值列表."""
+    initial = ["a", "b"]
+    ch: AccumulatingChannel[str] = AccumulatingChannel("logs", initial=initial)
+    assert ch.get() == ["a", "b"]
+    ch.update("c")
+    assert ch.get() == ["a", "b", "c"]
+
+
+def test_accumulating_channel_empty():
+    """AccumulatingChannel.empty() 在列表为空时返回 True."""
+    ch: AccumulatingChannel[str] = AccumulatingChannel("x")
+    assert ch.empty() is True
+    ch.update("item")
+    assert ch.empty() is False
+
+
+# ============================================================
+# BarrierChannel — 同步点
+# ============================================================
+
+
+async def test_barrier_channel_starts_unset():
+    """BarrierChannel 创建后 wait() 阻塞直到达到 expected."""
+    ch: BarrierChannel = BarrierChannel("gate", expected=3)
+    assert ch.empty() is True
+    # 未达 expected → wait_for 应超时
+    with pytest.raises(asyncio.TimeoutError):
+        await asyncio.wait_for(ch.wait(), timeout=0.1)
+
+
+async def test_barrier_channel_complete_unblocks_waiters():
+    """达到 expected 数量后 wait() 返回."""
+    ch: BarrierChannel = BarrierChannel("gate", expected=3)
+    ch.update("writer-1")
+    ch.update("writer-2")
+    # 还差 1,应阻塞
+    with pytest.raises(asyncio.TimeoutError):
+        await asyncio.wait_for(ch.wait(), timeout=0.1)
+    # 第 3 个达到,wait() 应立即返回
+    ch.update("writer-3")
+    await asyncio.wait_for(ch.wait(), timeout=0.1)
+    assert ch.empty() is False
+
+
+async def test_barrier_channel_expected_zero_already_complete():
+    """expected=0 时 wait() 立即返回(已完成的特殊语义)."""
+    ch: BarrierChannel = BarrierChannel("instant", expected=0)
+    await asyncio.wait_for(ch.wait(), timeout=0.1)
+    assert ch.empty() is False
+
+
+# ============================================================
+# Channel 基类 — 抽象接口
+# ============================================================
+
+
+def test_channel_is_abstract():
+    """Channel 是抽象类,不能直接实例化."""
+    with pytest.raises(TypeError):
+        Channel("x")  # type: ignore[abstract]
+
+
+def test_channel_subclass_must_implement_methods():
+    """不实现抽象方法的子类不能实例化."""
+    class BrokenChannel(Channel[int]):
+        pass
+
+    with pytest.raises(TypeError):
+        BrokenChannel("x")  # type: ignore[abstract]
+
+
+# ============================================================
+# LoopState — Pydantic 容器
+# ============================================================
+
+
+def test_loop_state_contains_channels_dict():
+    """LoopState 初始化时 channels 为 dict[str, Channel]."""
+    state = LoopState(
+        channels={
+            "plan": LastValueChannel("plan"),
+            "results": AccumulatingChannel("results"),
+        }
+    )
+    assert "plan" in state.channels
+    assert "results" in state.channels
+
+
+def test_loop_state_get_channel_value():
+    """LoopState.get_channel(name) 返回该 channel 当前值."""
+    state = LoopState(channels={"plan": LastValueChannel("plan")})
+    state.channels["plan"].set("hello")
+    assert state.get_channel("plan") == "hello"
+
+
+def test_loop_state_get_missing_channel_returns_none():
+    """get_channel 缺失字段返回 None,不抛异常."""
+    state = LoopState()
+    assert state.get_channel("nonexistent") is None
+
+
+def test_loop_state_set_channel_value():
+    """LoopState.set_channel(name, value) 写入对应 channel."""
+    state = LoopState(channels={"verdict": LastValueChannel("verdict")})
+    state.set_channel("verdict", "APPROVE")
+    assert state.channels["verdict"].get() == "APPROVE"
+
+
+def test_loop_state_set_channel_missing_raises():
+    """set_channel 对未知 channel 抛 KeyError(显式错误优于静默失败)."""
+    state = LoopState()
+    with pytest.raises(KeyError):
+        state.set_channel("nonexistent", "value")
+
+
+def test_loop_state_mixed_channel_types():
+    """LoopState 同时持有 3 种 channel 类型,各自语义独立."""
+    state = LoopState(
+        channels={
+            "plan": LastValueChannel("plan"),
+            "findings": AccumulatingChannel("findings"),
+            "gate": BarrierChannel("gate", expected=2),
+        }
+    )
+
+    # LastValue 覆盖
+    state.set_channel("plan", "v1")
+    state.set_channel("plan", "v2")
+    assert state.get_channel("plan") == "v2"
+
+    # Accumulating 追加
+    state.channels["findings"].update("finding-1")
+    state.channels["findings"].update("finding-2")
+    assert state.get_channel("findings") == ["finding-1", "finding-2"]
+
+    # Barrier 等待
+    state.channels["gate"].update("agent-1")
+    assert state.channels["gate"].empty() is True
+    state.channels["gate"].update("agent-2")
+    assert state.channels["gate"].empty() is False
+
+
+# ============================================================
+# 并发场景 — AccumulatingChannel 多写
+# ============================================================
+
+
+async def test_accumulating_channel_concurrent_writes():
+    """5 个 asyncio task 并发 update AccumulatingChannel,顺序可能不同但全部保留."""
+    ch: AccumulatingChannel[int] = AccumulatingChannel("concurrent")
+
+    async def writer(idx: int) -> None:
+        await asyncio.sleep(0.001 * idx)  # 模拟交错
+        ch.update(idx)
+
+    await asyncio.gather(*[writer(i) for i in range(5)])
+
+    result = ch.get()
+    assert sorted(result) == [0, 1, 2, 3, 4]
+    assert len(result) == 5
+
+
+async def test_barrier_channel_concurrent_waiters():
+    """3 个 writer 并发 update BarrierChannel,所有 waiter 同步解除阻塞."""
+    barrier: BarrierChannel = BarrierChannel("sync", expected=3)
+
+    async def writer(name: str, delay: float) -> None:
+        await asyncio.sleep(delay)
+        barrier.update(name)
+
+    async def observer() -> None:
+        await barrier.wait()
+
+    # 启动 1 个 observer + 3 个 writer
+    await asyncio.gather(
+        observer(),
+        writer("a", 0.01),
+        writer("b", 0.02),
+        writer("c", 0.03),
+        return_exceptions=False,
+    )
+    assert barrier.empty() is False
