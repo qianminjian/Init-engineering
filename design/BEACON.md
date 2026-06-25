@@ -1,4 +1,4 @@
-> 来源：@design/INDEX.md | 创建：2026-06-24 | 更新：2026-06-25 | 阶段：P1 全部完成（8/8），准备 Phase 2
+> 来源：@design/INDEX.md | 创建：2026-06-24 | 更新：2026-06-25 | 阶段：v1.1 计划 Phase 0-4 全部完成（执行中 Phase 05 = 文档同步 + ruff 债清理）
 
 ## 目标与成功标准
 
@@ -38,7 +38,17 @@
 
 ## 当前状态
 
-**阶段：** init §1.3 接口规范 100% 完成（A1-A7 全部落地 + B1-B3 验证通过 + C1-C2 覆盖补充）
+**阶段：** v1.1 计划 Phase 0-4 全部完成（Phase 0 清理 / Phase 1 P0-P2 修复 / Phase 2 Runtime+Guardrail / Phase 3 Agent+Tools / Phase 4 CLI+可观测性） — Phase 05 文档同步 + ruff 债清理执行中
+
+**最近动作：**
+- 2026-06-25 R26 init 模板 design 嵌入（`36d52cb`）+ 文档命名重构（重命名为 v1.0-Design-* / v1.1-Audit-Report / v1.1-Plan-Dev / v2.0-Analysis-Loop）
+- 2026-06-25 R26+ pytest 内存管理规则沉淀为产品级最佳实践（`efe8583`）
+- 2026-06-25 Phase 01 dev-loop 端到端真接（`ddf176c` verification only / `21cd094` P0.1 Agent Tools 连接 / `cfb6b13` P0.2 SearchCodeTool 路径遍历修复）
+- 2026-06-25 C1+C2 init 子系统 118 测试覆盖 82%（`12eb725`）+ 端到端真实 LLM 验证骨架（`d445105`）
+
+**下一步：** Phase 05（执行中）→ v1.1 收官（v1.1.0 tag）
+
+**阻塞项：** 无
 
 **Plan init-TODO.md 产出（2026-06-24）：**
 - Phase 01（A1-A7）：7 atomic commits `00a94bb`/`961ca2a`/`8387bdd`/`ec2e108`/`92c3d32`/`74e16d7`/`e2044d6`
@@ -48,8 +58,6 @@
 - Phase 03（C1-C2）：hooks.py 31%→88% / scaffold.py 60%→62% / 11+1 新测试
 
 **状态转换节点**：init 子系统从"§1.3 设计-实现偏差 7 项未修复"→"§1.3 100% 完成"
-
-**下一步**：dev-loop 续做（Plan B.02 中断）或 v1.1 增量优化（per v1.0-INIT.md §1.8 P3/P4）
 
 **Plan A 测试**：40 passed (33 原 + 7 新) in 0.12s
 - 新增：B1 interrupt_after_breaks_loop / B3 context_manager_yields_store / B5 name_collision_raises + 2 add_edge tests / B6 resume_with_done_checkpoint_raises + resume_with_pending_checkpoint_works
@@ -75,13 +83,11 @@
 - 同步 `SHARED.md §三/§七` 对齐 v3.0
 
 **审计报告：**
-- `design/v1.0-LOOP-AUDIT.md` — dev-loop 初版（17 优化点）
-- `design/v1.0-AUDIT-SUPPLEMENT.md` — dev-loop 补充（10 优化点）
-- `design/v1.0-LOOP.md §十一` — dev-loop 第三轮 + 第四轮 bug 修复记录
-- `design/v1.0-INIT.md §1.7` — init 实现偏差审计（21 偏差项）
-- `design/v1.0-INIT.md §二` — init 修复实施计划
+- `design/v1.1-Audit-Report.md` — 架构审计（P0-P2 + 3 个附录；合并 LOOP-AUDIT/AUDIT-SUPPLEMENT/P1 完成状态）
+- `design/v1.0-Design-Init.md §1.7` — init 实现偏差审计（21 偏差项）
+- `design/v1.0-Design-Init.md §1.8/§1.9` — init 修复实施计划 + Phase 01 完成状态
 
-**下一步：** Phase 2 编码（Runtime + Guardrail，~430 行）→ Phase 3 (Agent + 工具 ~1100 行) → Phase 4 (CLI + 可观测性 ~400 行)
+**下一步：** v1.1 收官（v1.1.0 tag + 发布说明）
 
 **阻塞项：** 无
 
@@ -89,6 +95,9 @@
 
 | 日期 | 变更 | 原因 |
 |------|------|------|
+| 2026-06-25 | v1.1 计划 Phase 0-4 全部完成（清理 + P0-P2 修复 + Runtime/Guardrail + Agent/Tools + CLI/可观测性） | 见 v1.1-Plan-Dev.md §一问题清单，9 项全部关闭；commit 链 `b6f9a4a`→`3b76826`→`cfb6b13`→`21cd094`→`ddf176c`→`d445105`→`12eb725` |
+| 2026-06-25 | 文档命名重构（v1.0-Design-* / v1.1-* / v2.0-Analysis-*） + INDEX.md 合并日志 | 消除 v1.0/v1.1/v2.0 命名不一致；设计文档可追溯 |
+| 2026-06-25 | R26 init 模板嵌入 design/ + R26+ pytest 内存规则沉淀为产品级实践 | 模板项目开箱即用设计资产管理 + 16G 内存约束 |
 | 2026-06-24 | Plan A bug 修复完成（D1-D6 v3.0 → v3.1） | 第四轮审计发现 6 处设计/代码不一致；D4 interrupt_after TDD 修复，新增 test_interrupt_after_breaks_loop |
 | 2026-06-24 | dev-loop Phase 1 编码完成 | 33 测试全绿；v3.0 → v3.1 三处 bug 修复 |
 | 2026-06-24 | 现状清理：删 crew/contracts/tasks/runtime/registry+messages；同步 SHARED.md v3.0 | 占位符命名与 v3.0 冲突 + 文档间不一致 |
