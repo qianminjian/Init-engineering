@@ -1,4 +1,4 @@
-> 来源：@design/INDEX.md | 创建：2026-06-24 | 更新：2026-06-25 | 阶段：v1.1 计划 Phase 0-4 全部完成（执行中 Phase 05 = 文档同步 + ruff 债清理）
+> 来源：@design/INDEX.md | 创建：2026-06-24 | 更新：2026-06-25 | 阶段：v2.0 全部完成（v1.0 init/dev-loop 基线 + v1.1 修复 + v2.0 多 Agent 并发）
 
 ## 目标与成功标准
 
@@ -7,6 +7,8 @@
 3. **确定性 Guardrail**：每个 Stage 前后自动检查 Guardrail 条件（结构化 GuardrailResult，pass/block/drop/retry 四态）
 4. **Checkpoint 恢复**：中断后可从 checkpoint 恢复，不丢失进度
 5. **结构化 Agent 输出**：Agent 输出按 output_schema 约束，双层防御解析（schema + regex fallback）
+6. **多 Agent 并发**（v2.0）：Round 内多 Agent asyncio.gather 并行执行，文件隔离确定性检查 + 4 级收敛判定 + SQLite Checkpoint 持久化
+7. **7 道 Gate**（v2.0）：safety/lint/type_check/contract/test/coverage/build 全链路质量保证
 
 ## 范围边界
 
@@ -15,10 +17,14 @@
 - LoopEngine（while True + tick/after_tick）+ StageGraph + AgentRuntime
 - 单 Agent 串行执行、SQLite checkpoint、Claude API output_json
 - GuardrailChain + RetryPolicy + CancellationToken + ErrorCode 体系
+- **v2.0：Channel 系统（LastValue/Accumulating/Barrier）+ Task DAG + check_file_isolation + Round asyncio.gather + 7 道 Gate + CLI v2（ae checkpoint v2 / ae status 增强）**
 
 **不做：**
 - init: 增量模式、嵌套模板交互选择、远程模板（v1.1+）
-- 多 Agent 并行（v2.0）、多 LLM Provider、Web UI
+- ~~多 Agent 并行（v2.0）~~ → **已在 v2.0 实现**
+- ~~7 道 Gate~~ → **已在 v2.0 实现**
+- ~~Channel 系统~~ → **已在 v2.0 实现**
+- 多 LLM Provider、Web UI
 - CrewAI 风格 Memory/RAG、AutoGen 风格 Pub/Sub、Jinja2 用于 Task 描述
 
 ## 设计决策
@@ -35,20 +41,38 @@
 | 8 | render_description 空值整行删除 | v3.0 §3.1 注释承诺"条件逻辑在 render_description 中处理"但未实现；developer 模板 "上一轮审查反馈：{critic_feedback}" 首轮产生空行干扰 LLM | 2026-06-24 |
 | 9 | run() 退出前同步 checkpoint.status | v3.0 §2.1 tick() 改 self.status 但不写 checkpoint，LoopResult.status 错位 | 2026-06-24 |
 | 10 | developer→critic 边显式注册 | v3.0 §三 build_dev_loop_graph 漏 add_edge，critic 永不调度 | 2026-06-24 |
+| 11 | **v2.0 是增量式演进，不是删除式重构** | v1.0-LOOP.md §八 提议删除 engine/crew/runtime/tools 三层；v2.0 实际采取增量路径 — 在 engine/runtime/tools 基础上**新增** loop/ 子系统作为 v2.0 主体，避免重写风险 | 2026-06-25 |
+| 12 | **v2.0 删除项取消：保留 engine/runtime/tools 作为旧路径兼容** | Phase 05 决策：CLI 仍 import engine/runtime/tools（旧路径保留），v2.0 loop/ 是叠加而非替代 | 2026-06-25 |
+| 13 | **Channel 系统采用 dataclass + 显式 Channel 基类** | v2.0-Analysis-Loop.md §4.4 提议 Pydantic；实际用 dataclass（决策 3 保持一致） | 2026-06-25 |
+| 14 | **check_file_isolation 是确定性检查，不是 LLM 自检** | v2.0-Analysis-Loop.md §4.3 原则：Orchestrator 规划阶段 Python 代码检查，文件集冲突则拆分/串行，不依赖 Agent 自觉 | 2026-06-25 |
+| 15 | **Gate 3（Contract）单 Agent 跳过，多 Agent 启用** | Phase 04 决策：6 道 Gate 实现 + Gate 3 占位 | 2026-06-25 |
 
 ## 当前状态
 
-**阶段：** v1.1 计划 Phase 0-4 全部完成（Phase 0 清理 / Phase 1 P0-P2 修复 / Phase 2 Runtime+Guardrail / Phase 3 Agent+Tools / Phase 4 CLI+可观测性） — Phase 05 文档同步 + ruff 债清理执行中
+**阶段：** v2.0 全部完成（v1.0 init/dev-loop 基线 + v1.1 修复 + v2.0 多 Agent 并发 + 7 Gates + CLI v2） — Phase 05 文档同步执行中
 
 **最近动作：**
+- 2026-06-25 v2.0 Phase 04 完成（`da759cd`）— 7 道 Gate + CLI v2（ae checkpoint v2 / ae status 增强）+ 27 测试覆盖
+- 2026-06-25 v2.0 Phase 03 完成（`23584b6`）— Round asyncio.gather + Orchestrator 主循环 + Task DAG + check_file_isolation
+- 2026-06-25 v2.0 Phase 02 完成（`704987d`）— 4 级收敛判定 + SQLite Checkpoint 持久化
+- 2026-06-25 v2.0 Phase 01 完成（`3857366`）— Channel 系统 + LoopState 容器
 - 2026-06-25 R26 init 模板 design 嵌入（`36d52cb`）+ 文档命名重构（重命名为 v1.0-Design-* / v1.1-Audit-Report / v1.1-Plan-Dev / v2.0-Analysis-Loop）
 - 2026-06-25 R26+ pytest 内存管理规则沉淀为产品级最佳实践（`efe8583`）
-- 2026-06-25 Phase 01 dev-loop 端到端真接（`ddf176c` verification only / `21cd094` P0.1 Agent Tools 连接 / `cfb6b13` P0.2 SearchCodeTool 路径遍历修复）
-- 2026-06-25 C1+C2 init 子系统 118 测试覆盖 82%（`12eb725`）+ 端到端真实 LLM 验证骨架（`d445105`）
 
-**下一步：** Phase 05（执行中）→ v1.1 收官（v1.1.0 tag）
+**下一步：** Phase 05 收尾 → v2.0 完成 → 用户 manual gate（端到端真跑 ANTHROPIC_API_KEY）
 
 **阻塞项：** 无
+
+**v2.0 落地里程碑：**
+- Phase 01（c3077bf/3857366/73ee4bc）：Channel 系统（LastValue/Accumulating/Barrier）+ LoopState dataclass 容器
+- Phase 02（1dd2ff8/4038ca2/704987d）：ConvergenceJudge 4 级判定 + SQLiteCheckpointStore 事务持久化 + resume 校验
+- Phase 03（4f3d932/3a3edd1/23584b6）：TaskDAG + topological_sort + check_file_isolation + Round.run asyncio.gather + Orchestrator 主循环
+- Phase 04（feb4af8/d864ad8/5a63696/006b8df/da759cd）：7 Gates（safety/lint/type_check/test/coverage/build 6 实现 + contract 占位）+ ae checkpoint v2 + ae status 增强 + 27 测试
+
+**v2.0 删除项取消（Phase 05 Task 5.5 决策）：**
+- ❌ v2.0-Analysis-Loop.md §八 计划删除 `engine/` (4 files) + `crew/` (3 files) + `runtime/` (3 files) + `tools/` (5 files)
+- ✅ 实际：CLI 仍 import `auto_engineering.engine/runtime/tools`（旧路径），v2.0 loop/ 是叠加而非替代
+- 理由：v1.1 实际工作非 stub，删除重写风险 > 增量叠加收益；engine/runtime/tools 与 loop/ 共存，loop/ 是 v2.0+ 的首选路径
 
 **Plan init-TODO.md 产出（2026-06-24）：**
 - Phase 01（A1-A7）：7 atomic commits `00a94bb`/`961ca2a`/`8387bdd`/`ec2e108`/`92c3d32`/`74e16d7`/`e2044d6`
@@ -95,6 +119,7 @@
 
 | 日期 | 变更 | 原因 |
 |------|------|------|
+| 2026-06-25 | v2.0 全部完成（Phase 01-04）+ Phase 05 删除项决策 | 决策 11/12：v2.0 是增量式，loop/ 与 engine/runtime/tools 共存；commit 链 `c3077bf`→`3857366`→`73ee4bc`→`1dd2ff8`→`4038ca2`→`704987d`→`4f3d932`→`3a3edd1`→`23584b6`→`feb4af8`→`d864ad8`→`5a63696`→`006b8df`→`da759cd` |
 | 2026-06-25 | v1.1 计划 Phase 0-4 全部完成（清理 + P0-P2 修复 + Runtime/Guardrail + Agent/Tools + CLI/可观测性） | 见 v1.1-Plan-Dev.md §一问题清单，9 项全部关闭；commit 链 `b6f9a4a`→`3b76826`→`cfb6b13`→`21cd094`→`ddf176c`→`d445105`→`12eb725` |
 | 2026-06-25 | 文档命名重构（v1.0-Design-* / v1.1-* / v2.0-Analysis-*） + INDEX.md 合并日志 | 消除 v1.0/v1.1/v2.0 命名不一致；设计文档可追溯 |
 | 2026-06-25 | R26 init 模板嵌入 design/ + R26+ pytest 内存规则沉淀为产品级实践 | 模板项目开箱即用设计资产管理 + 16G 内存约束 |
@@ -122,7 +147,8 @@
 @design/v1.1-Audit-Report.md — 架构审计报告（P0-P2 + 3个附录）
 @design/v1.1-Plan-Dev.md — 整合开发计划（问题清单 + Phase 0-5）
 @design/his_bak/v1.1-TODO-LIST.md — 当前 TODO 清单（已归档）
-@design/v2.0-Analysis-Loop.md — v2.0 多 Agent 并发架构
+@design/v2.0-Analysis-Loop.md — v2.0 多 Agent 并发架构（**§八 删除项已取消，详见 BEACON.md 决策 11/12**）
+@design/v2.0-Design-Loop.md — v2.0 dev-loop 设计基线（基于 v2.0-Analysis-Loop.md 实际落地）
 @design/his_bak/ — 历史归档（审计报告/执行计划/设计文档）
 @tests/conftest.py — MockRuntime + checkpoint_dir fixture
 
