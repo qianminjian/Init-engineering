@@ -672,7 +672,11 @@ class TestCheckpointStateTyping:
         from auto_engineering.loop.types import LoopStateProtocol
 
         state = LoopState()
-        missing = [p for p in ("round", "step", "status", "channels", "model_dump") if not hasattr(state, p)]
+        missing = [
+            p
+            for p in ("round", "step", "status", "channels", "model_dump")
+            if not hasattr(state, p)
+        ]
         assert isinstance(state, LoopStateProtocol), (
             f"LoopState 必须实现 LoopStateProtocol. 缺失属性: {missing}"
         )
@@ -682,6 +686,8 @@ class TestCheckpointStateTyping:
 
         这是打破循环引用的核心: types.py 不引用 loop/state.py, 只用 Protocol.
         """
+        import typing
+
         from auto_engineering.loop import types
 
         # 1. Protocol 存在
@@ -692,16 +698,7 @@ class TestCheckpointStateTyping:
         assert hasattr(types, "deserialize_state"), "types.py 必须暴露 deserialize_state"
 
         # 3. types.py 不应 import state (避免循环引用再次出现)
-        import auto_engineering.loop.state as state_mod
-
-        # 验证 types 模块自身不持有对 state 的 hard import
-        # (deserialize_state 内部可能延迟 import, 但模块顶层不应有)
-        from auto_engineering.loop.types import LoopStateProtocol
-
-        # Protocol 应当是 Protocol 类型
-        import typing
-        proto_bases = getattr(LoopStateProtocol, "__mro__", ())
-        # Protocol 在 typing 模块, 验证其存在
+        # Protocol 应当是 typing.Protocol 类型
         assert typing.Protocol is not None
 
     def test_checkpoint_state_round_trip_preserves_type(

@@ -97,6 +97,6 @@ def deserialize_state(json_str: str) -> dict[str, Any]:
 
 __all__ = [
     "LoopStateProtocol",
-    "serialize_state",
     "deserialize_state",
+    "serialize_state",
 ]

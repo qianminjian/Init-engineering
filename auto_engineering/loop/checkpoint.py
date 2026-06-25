@@ -31,7 +31,9 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Generic, TypeVar
+from typing import Any, TypeVar
+
+from auto_engineering.loop.types import LoopStateProtocol
 
 # Schema 版本号 (变更时 +1, 用于未来兼容)
 SCHEMA_VERSION = 1
@@ -40,8 +42,6 @@ SCHEMA_VERSION = 1
 # - LoopStateProtocol 在 loop/types.py 定义 (不引用 loop/state)
 # - TypeVar T bound Protocol 让 Checkpoint/SQLiteCheckpointStore 接受具体类型
 # - mypy 看到 state 字段是 LoopStateProtocol (或其子类型), 不是 Any
-from auto_engineering.loop.types import LoopStateProtocol
-
 T = TypeVar("T", bound=LoopStateProtocol)
 
 
@@ -64,7 +64,7 @@ class CheckpointMeta:
 
 
 @dataclass
-class Checkpoint(Generic[T]):
+class Checkpoint[T]:
     """完整 Checkpoint (含 state + history).
 
     Phase 2.2-G: 用 Generic[T] bound LoopStateProtocol 替代 Any.
@@ -125,7 +125,7 @@ class CheckpointSchemaMismatchError(CheckpointError):
 # ============================================================
 
 
-class SQLiteCheckpointStore(Generic[T]):
+class SQLiteCheckpointStore[T]:
     """SQLite Checkpoint 持久化.
 
     Phase 2.2-G: Generic[T] bound LoopStateProtocol — save/load 接受具体类型.
