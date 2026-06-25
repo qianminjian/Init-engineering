@@ -214,11 +214,13 @@ def _emit_stage_done(stage: str, elapsed: float, tokens: int = 0) -> None:
 # ============================================================
 
 
-def _build_runtime(requirement: str) -> Any:
+def _build_runtime(requirement: str, project_root: Any = None) -> Any:
     """根据 ANTHROPIC_API_KEY 构建 runtime.
 
     - 有 API key → AgentRuntime + 注册 architect/developer/critic
     - 无 API key → ScriptedMockRuntime(fallback,测试友好)
+
+    P0.1 fix: project_root 传入 ToolRegistry,使路径白名单沙箱生效(P1.9).
     """
     import os
 
@@ -228,6 +230,17 @@ def _build_runtime(requirement: str) -> Any:
     from auto_engineering.llm.anthropic_provider import AnthropicProvider
     from auto_engineering.runtime.mock import ScriptedMockRuntime
     from auto_engineering.runtime.runtime import AgentRuntime
+    from auto_engineering.tools.bash_tools import RunBashTool
+    from auto_engineering.tools.file_tools import (
+        EditFileTool,
+        ListDirTool,
+        ReadFileTool,
+        SearchCodeTool,
+        WriteFileTool,
+    )
+    from auto_engineering.tools.git_tools import GitCommitTool, GitDiffTool, GitStatusTool
+    from auto_engineering.tools.registry import ToolRegistry
+    from auto_engineering.tools.test_tools import RunTestsTool
 
     api_key = os.environ.get("ANTHROPIC_API_KEY")
     if not api_key:
@@ -255,7 +268,23 @@ def _build_runtime(requirement: str) -> Any:
 
     # 真实 LLM 模式
     llm = AnthropicProvider(api_key=api_key)
-    runtime = AgentRuntime()
+
+    # P1.9: 创建带 project_root 的 registry,使路径白名单生效
+    registry: ToolRegistry | None = None
+    if project_root is not None:
+        registry = ToolRegistry()
+        registry.register(ReadFileTool(project_root=project_root))
+        registry.register(WriteFileTool(project_root=project_root))
+        registry.register(EditFileTool(project_root=project_root))
+        registry.register(SearchCodeTool(project_root=project_root))
+        registry.register(ListDirTool(project_root=project_root))
+        registry.register(RunBashTool(project_root=project_root))
+        registry.register(GitStatusTool(project_root=project_root))
+        registry.register(GitCommitTool(project_root=project_root))
+        registry.register(GitDiffTool(project_root=project_root))
+        registry.register(RunTestsTool(project_root=project_root))
+
+    runtime = AgentRuntime(registry=registry)
     runtime.register("architect", lambda: ArchitectAgent(llm=llm))
     runtime.register("developer", lambda: DeveloperAgent(llm=llm))
     runtime.register("critic", lambda: CriticAgent(llm=llm))
@@ -290,7 +319,7 @@ def _run_loop_engine(
     """
     from auto_engineering.engine import LoopEngine, build_dev_loop_graph
 
-    runtime = _build_runtime(requirement)
+    runtime = _build_runtime(requirement, project_root=project_root)
 
     engine = LoopEngine(
         build_dev_loop_graph(),

@@ -201,6 +201,102 @@ class TestAgentRuntimeBuildContext:
         assert task.id == "t"
         assert task.expected_output == "code"
 
+    def test_build_task_resolves_tool_names_to_base_tool_instances(self):
+        """P0.1: _build_task 用 registry 把 stage.tools (string list) 解析为 BaseTool 实例."""
+        from auto_engineering.tools import ReadFileTool, ToolRegistry
+
+        registry = ToolRegistry()
+        registry.register(ReadFileTool())
+
+        rt = AgentRuntime(registry=registry)
+
+        captured_task: list[Task] = []
+
+        class CaptureAgent:
+            async def execute(self, task, ctx, cancellation=None):
+                captured_task.append(task)
+                return TaskResult(task_id=task.id, values={})
+
+        rt.register("t", lambda: CaptureAgent())
+        stage = Stage(
+            name="t",
+            agent_type="t",
+            description_template="",
+            expected_output="",
+            tools=["read_file"],  # string name
+            output_channels=["files_changed"],
+        )
+        state = LoopState(requirement="r")
+
+        run_async(rt.execute(stage, state))
+
+        task = captured_task[0]
+        # task.tools 应该是 list[BaseTool],不是 list[str]
+        assert len(task.tools) == 1
+        assert hasattr(task.tools[0], "execute")  # 是 BaseTool 实例
+        assert task.tools[0].name == "read_file"
+
+    def test_build_task_skips_unregistered_tools(self):
+        """P0.1: registry 中不存在的工具名被跳过(安全降级)."""
+        from auto_engineering.tools import ReadFileTool, ToolRegistry
+
+        registry = ToolRegistry()
+        registry.register(ReadFileTool())  # 只有 read_file
+
+        rt = AgentRuntime(registry=registry)
+
+        captured_task: list[Task] = []
+
+        class CaptureAgent:
+            async def execute(self, task, ctx, cancellation=None):
+                captured_task.append(task)
+                return TaskResult(task_id=task.id, values={})
+
+        rt.register("t", lambda: CaptureAgent())
+        stage = Stage(
+            name="t",
+            agent_type="t",
+            description_template="",
+            expected_output="",
+            tools=["read_file", "nonexistent_tool", "write_file"],  # write_file 不在 registry
+            output_channels=["files_changed"],
+        )
+        state = LoopState(requirement="r")
+
+        run_async(rt.execute(stage, state))
+
+        task = captured_task[0]
+        # 只解析出 read_file,其余跳过
+        assert len(task.tools) == 1
+        assert task.tools[0].name == "read_file"
+
+    def test_build_task_without_registry_returns_empty_tools(self):
+        """P0.1: 无 registry 时 task.tools 为空列表(向后兼容)."""
+        rt = AgentRuntime()  # 无 registry
+
+        captured_task: list[Task] = []
+
+        class CaptureAgent:
+            async def execute(self, task, ctx, cancellation=None):
+                captured_task.append(task)
+                return TaskResult(task_id=task.id, values={})
+
+        rt.register("t", lambda: CaptureAgent())
+        stage = Stage(
+            name="t",
+            agent_type="t",
+            description_template="",
+            expected_output="",
+            tools=["read_file"],
+            output_channels=["files_changed"],
+        )
+        state = LoopState(requirement="r")
+
+        run_async(rt.execute(stage, state))
+
+        task = captured_task[0]
+        assert task.tools == []
+
 
 class TestAgentProtocol:
     """Agent Protocol 定义.

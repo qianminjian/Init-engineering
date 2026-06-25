@@ -61,12 +61,14 @@ class AgentRuntime:
         _factories: dict[agent_type, Callable[[], Agent]]
         _instances: dict[agent_type, Agent]  延迟实例化缓存
         _expected_class: dict[agent_type, type]  类型检查配置
+        _registry: ToolRegistry  工具注册表(解析 tool name → BaseTool 实例)
     """
 
-    def __init__(self):
+    def __init__(self, registry: Any = None):
         self._factories: dict[str, Callable[[], Agent]] = {}
         self._instances: dict[str, Agent] = {}
         self._expected_class: dict[str, type] = {}
+        self._registry = registry
 
     def register(
         self,
@@ -167,13 +169,26 @@ class AgentRuntime:
         return StageResult(stage=stage.name, writes=result.values, raw=result)
 
     def _build_task(self, stage: Stage, state: LoopState) -> Task:
-        """从 Stage + state 构造 Task. description 已渲染 input_channels."""
+        """从 Stage + state 构造 Task. description 已渲染 input_channels.
+
+        P0.1 fix: 用 registry 解析 stage.tools (string list) → BaseTool 实例列表.
+        如果 registry 为 None 或工具未注册,该工具被忽略(安全降级).
+        """
+        # 解析 tool names → BaseTool instances
+        tools: list[Any] = []
+        if self._registry is not None:
+            for name in stage.tools:
+                tool = self._registry.get(name)
+                if tool is not None:
+                    tools.append(tool)
+                # else: 工具未注册,安全降级跳过
+
         return Task(
             id=stage.name,
             description=stage.render_description(state),
             expected_output=stage.expected_output,
             output_schema=stage.output_schema,
-            tools=list(stage.tools),
+            tools=tools,
             input_channels=list(stage.input_channels),
             output_channels=list(stage.output_channels),
         )

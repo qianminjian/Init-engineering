@@ -84,7 +84,9 @@ class BaseAgent:
             Exception via cancellation.check() — 用户取消
         """
         messages: list[dict] = [{"role": "user", "content": task.description}]
-        tool_map = {t.name: t for t in self.tools}
+        # P0.1: 优先用 task.tools（AgentRuntime 已解析为 BaseTool 实例），降级用 self.tools
+        effective_tools = task.tools if task.tools else self.tools
+        tool_map = {t.name: t for t in effective_tools}
         tool_calls_log: list[dict] = []
 
         for _ in range(self.max_tool_calls + 1):
@@ -98,7 +100,7 @@ class BaseAgent:
                     max_tokens=self.max_tokens,
                     system=self._build_system_prompt(task),
                     messages=messages,
-                    tools=[t.to_schema() for t in self.tools] if self.tools else None,
+                    tools=[t.to_schema() for t in effective_tools] if effective_tools else None,
                 )
             except Exception as exc:  # 详见下面特定异常映射
                 raise self._map_llm_exception(exc) from exc

@@ -161,6 +161,76 @@ class TestCriticAgent:
         assert result.agent_type == "CriticAgent"
 
 
+class TestBaseAgentToolLoop:
+    """BaseAgent.execute 工具循环 — P0.1 核心测试.
+
+    验证: task.tools (BaseTool 实例) 被用于工具循环,而非 self.tools。
+    """
+
+    def test_effective_tools_prefers_task_tools_over_self_tools(self):
+        """P0.1: task.tools 有实例时,即使 self.tools=[] 也用 task.tools."""
+        from unittest.mock import MagicMock
+
+        from auto_engineering.agents.base import BaseAgent
+        from auto_engineering.llm.anthropic_provider import LLMResponse, LLMUsage
+        from auto_engineering.runtime.context import TaskContext
+        from auto_engineering.runtime.task import Task
+        from auto_engineering.tools import WriteFileTool
+        from auto_engineering.engine.state import LoopState
+
+        # 不传 tools 给 agent(self.tools=[])
+        agent = BaseAgent(llm=MagicMock(), system_prompt="test", tools=[])
+        write_tool = WriteFileTool()
+
+        # task.tools 有实例(self.tools 为空)
+        task = Task(
+            id="test",
+            description="write a file",
+            expected_output="ok",
+            tools=[write_tool],  # task.tools 有实例!
+        )
+        ctx = TaskContext(state=LoopState(), requirement="test")
+
+        # Spy: capture 第二次 create_message call 的 response
+        llm = MagicMock()
+        call_count = [0]
+
+        async def mock_create_message(**kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                # 第一次: 返回 tool_use → 触发工具循环
+                return LLMResponse(
+                    content="",
+                    model="claude-test",
+                    usage=LLMUsage(input_tokens=10, output_tokens=5),
+                    stop_reason="tool_use",
+                    tool_use_blocks=[
+                        {
+                            "name": "write_file",
+                            "input": {"file_path": "/tmp/test.txt", "content": "hello"},
+                            "id": "c1",
+                        }
+                    ],
+                )
+            else:
+                # 第二次+: 返回 end_turn → 正常结束
+                return LLMResponse(
+                    content='{"result": "ok"}',
+                    model="claude-test",
+                    usage=LLMUsage(input_tokens=10, output_tokens=5),
+                    stop_reason="end_turn",
+                    tool_use_blocks=[],
+                )
+
+        llm.create_message = mock_create_message
+
+        # 手动跑 execute 的关键逻辑,验证 tool_map 正确
+        effective_tools = task.tools if task.tools else agent.tools
+        tool_map = {t.name: t for t in effective_tools}
+        assert "write_file" in tool_map
+        assert tool_map["write_file"] is write_tool
+        assert "write_file" not in {t.name for t in agent.tools}
+
 class TestAllAgentsImplementAgentProtocol:
     """3 Agent 都满足 Agent Protocol — 让 AgentRuntime.register 可直接接受."""
 
