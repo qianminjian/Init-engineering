@@ -25,17 +25,17 @@ from .config_loader import load_template_config
 from .config_types import (
     DEFAULT_EXCLUDE,
     DEFAULT_TEMPLATES_SUFFIX,
+    TEMPLATES_ROOT,
     Question,
     Task,
-    TEMPLATES_ROOT,
 )
 
 # 重新导出公共符号,保持旧路径 from init.config import ... 可工作
 __all__ = [
     "DEFAULT_EXCLUDE",
     "DEFAULT_TEMPLATES_SUFFIX",
-    "Question",
     "TEMPLATES_ROOT",
+    "Question",
     "Task",
     "TemplateConfig",
 ]

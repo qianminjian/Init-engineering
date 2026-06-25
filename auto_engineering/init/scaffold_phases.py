@@ -32,7 +32,6 @@ from .prompts import (
     prompt_for_nested_template,
     prompt_for_project_type,
 )
-from .renderer import TemplateRenderer
 from .scaffold_hooks import merge_incremental, run_builtin_hooks
 from .scaffold_render import render_to as _render_to
 

@@ -97,7 +97,7 @@ def build_template_dirs(
 
 
 def render_to(
-    answers: "AnswersMap",
+    answers: AnswersMap,
     folder_name: str,
     template_dir: Path,
     subdirectory: str,

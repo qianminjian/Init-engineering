@@ -916,8 +916,8 @@ class TestV22PhaseIModuleSplit:
     """验证 P2.5 模块拆分后公共 API 兼容性。
 
     Phase I 拆分目标：
-    - init/config.py  → init/config_types.py + init/config.py (≤200 行)
-    - init/scaffold.py → init/scaffold_phases.py + init/scaffold_hooks.py + init/scaffold.py (≤200 行)
+    - config.py → config_types.py + config_loader.py + config.py
+    - scaffold.py → scaffold_phases.py + scaffold_hooks.py + scaffold_render.py
     - 旧导入路径 (init.config, init.scaffold) 保留兼容
     """
 
