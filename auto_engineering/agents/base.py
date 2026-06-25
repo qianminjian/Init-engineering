@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -37,6 +38,10 @@ class BaseAgent:
         max_tool_calls  — 工具循环上限(防止 LLM 死循环, 默认 10)
         model           — Claude 模型名
         max_tokens      — 单次响应最大 token
+        contract_gate   — v2.0 multi-agent 契约确认钩子(Phase 06 Task 5.2).
+                          签名: Callable[[Task, TaskContext], bool].
+                          默认 None = auto-approve,不阻塞 execute().
+                          返回 False 时抛 AEError(CONTRACT_REJECTED), LLM 不被调用.
     """
 
     llm: AnthropicProvider
@@ -45,6 +50,7 @@ class BaseAgent:
     max_tool_calls: int = 10
     model: str = "claude-sonnet-4-6"
     max_tokens: int = 4096
+    contract_gate: Callable[[Task, TaskContext], bool] | None = None
 
     async def execute(
         self,
@@ -88,6 +94,16 @@ class BaseAgent:
         effective_tools = task.tools if task.tools else self.tools
         tool_map = {t.name: t for t in effective_tools}
         tool_calls_log: list[dict] = []
+
+        # Phase 06 Task 5.2: 契约确认 gate（two-green gate 的第一绿）
+        # 默认 None = auto-approve；用户/CI 可注入交互式确认 gate.
+        # 返回 False 时抛 CONTRACT_REJECTED,LLM 不被调用.
+        if self.contract_gate is not None and not self.contract_gate(task, ctx):
+            raise AEError(
+                ErrorCode.CONTRACT_REJECTED,
+                f"Contract gate rejected task '{task.id}' for agent "
+                f"'{self.__class__.__name__}'",
+            )
 
         for _ in range(self.max_tool_calls + 1):
             if cancellation is not None:

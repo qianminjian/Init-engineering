@@ -37,6 +37,8 @@ class ErrorCode(Enum):
     LLM_AUTH_ERROR = "LLM_AUTH_ERROR"
     LLM_RATE_LIMIT = "LLM_RATE_LIMIT"
     LLM_UNKNOWN_ERROR = "LLM_UNKNOWN_ERROR"
+    # v2.0 multi-agent: 契约确认 gate 拒绝（Phase 06 Task 5.2）
+    CONTRACT_REJECTED = "CONTRACT_REJECTED"
 
 
 class AEError(Exception):
