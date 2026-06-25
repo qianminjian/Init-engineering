@@ -485,9 +485,10 @@ class TestBuiltinHooksGitCommitNonBlocking:
         ]
 
         with patch("subprocess.run", side_effect=side_effects) as mock_run:
+            from auto_engineering.init.scaffold_hooks import run_builtin_hooks
             # 不应抛 TaskExecutionError — git commit 失败仅 warning
             try:
-                worker._run_builtin_hooks(Path("/tmp/test-a3-dst"))
+                run_builtin_hooks(worker._answers, Path("/tmp/test-a3-dst"))
             except Exception as e:
                 pytest.fail(f"_run_builtin_hooks 不应抛异常，但收到: {e}")
 
@@ -521,10 +522,10 @@ class TestInitPhaseTasksCurrentPhase:
         worker._template.tasks_before = []
         worker._template.tasks_after = []
 
-        # mock TaskRunner 类 + 子任务 _run_builtin_hooks
+        # mock TaskRunner 类 + 子任务 run_builtin_hooks
         with (
-            patch("auto_engineering.init.scaffold.TaskRunner") as MockRunner,
-            patch.object(worker, "_run_builtin_hooks"),
+            patch("auto_engineering.init.scaffold_phases.TaskRunner") as MockRunner,
+            patch("auto_engineering.init.scaffold_phases.run_builtin_hooks"),
         ):
             import tempfile
 
