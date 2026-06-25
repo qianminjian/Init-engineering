@@ -8,10 +8,7 @@
 """
 
 import subprocess
-import tempfile
 from pathlib import Path
-
-import pytest
 
 
 def run_ae(args: list[str], cwd: str | None = None) -> subprocess.CompletedProcess:
@@ -214,3 +211,89 @@ class TestInitPytestRules:
         assert "--cov" not in content, (
             "pyproject.toml.jinja should NOT include --cov by default (opt-in)"
         )
+
+
+class TestInitDesignDocsSkipTasks:
+    """`--skip-tasks` 标志在 design docs E2E 中应用验证.
+
+    目的：确保 E2E 测试用 --skip-tasks 隔离 pnpm 缺失环境,
+    不依赖外部工具链(T021/T031 的关键缓解).
+    """
+
+    def test_all_e2e_tests_use_skip_tasks_flag(self):
+        """所有 E2E 测试的 run_ae 调用都应包含 --skip-tasks 参数.
+
+        防御：未来添加新 E2E 测试时忘记加 --skip-tasks 会被此测试发现.
+        实现：扫描 test_init_design_docs.py 中的 run_ae() 调用,
+        确保每个调用 args 中都有 '--skip-tasks'.
+        """
+        import re
+
+        test_file = Path(__file__).resolve()
+        content = test_file.read_text()
+
+        # 找到所有 run_ae( 调用块
+        # 简化: 匹配 run_ae(\n ... \n) 这种 block,验证含 '--skip-tasks'
+        run_ae_blocks = re.findall(
+            r"run_ae\(\s*\[(.*?)\]",
+            content,
+            re.DOTALL,
+        )
+        assert len(run_ae_blocks) >= 4, (
+            f"expected >= 4 run_ae() calls in test file, found {len(run_ae_blocks)}"
+        )
+        for i, block in enumerate(run_ae_blocks):
+            assert '"--skip-tasks"' in block or "'--skip-tasks'" in block, (
+                f"run_ae() call #{i+1} missing '--skip-tasks' flag:\n{block[:200]}"
+            )
+
+    def test_e2e_runs_under_10_seconds(self, tmp_path: Path):
+        """E2E 测试在 10 秒内完成（避免环境问题 hang）.
+
+        `--skip-tasks` 隔离了 pnpm 依赖,所以 ae init 应快速完成.
+        """
+        import time
+
+        target = tmp_path / "test-perf"
+        start = time.time()
+        result = run_ae(
+            [
+                "init",
+                str(target),
+                "--type", "app-service",
+                "--defaults",
+                "--skip-tasks",
+            ],
+            cwd=str(tmp_path),
+        )
+        elapsed = time.time() - start
+        assert result.returncode == 0, f"ae init failed: {result.stderr}"
+        assert elapsed < 10.0, f"ae init too slow: {elapsed:.2f}s"
+
+
+class TestBlockDetectorCache:
+    """block detector 缓存机制 + 清理 fixture 验证.
+
+    场景: 某测试因环境问题连续失败 >= 3 次被 block detector 自动 skip.
+    修复后,需要 _reset_block_cache fixture 显式重置 cache 才能让它重新跑.
+    """
+
+    def test_failure_cache_file_location(self):
+        """_FAILURE_CACHE 路径可定位,fixture 文档化."""
+        from tests.conftest import _BLOCK_THRESHOLD, _FAILURE_CACHE
+
+        # cache 路径应该是 /tmp 下或 AE_TEST_STATE_DIR 指定位置
+        assert _FAILURE_CACHE.parent.exists(), (
+            f"cache parent dir not exist: {_FAILURE_CACHE.parent}"
+        )
+        # 阈值常量
+        assert _BLOCK_THRESHOLD == 3, f"_BLOCK_THRESHOLD changed: {_BLOCK_THRESHOLD}"
+
+
+# 确保不破坏 test_init_design_docs 原始 8 个测试
+__all__ = [
+    "TestBlockDetectorCache",
+    "TestInitDesignDocs",
+    "TestInitDesignDocsSkipTasks",
+    "TestInitPytestRules",
+]

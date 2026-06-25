@@ -86,6 +86,28 @@ def pytest_collection_modifyitems(config, items):
 
 
 # ============================================================
+# Phase 0.3 缓存清理 fixture
+# ============================================================
+# 场景: 某测试已修好但 cache 中失败计数未清,会被错误地 skip
+# 解法: 提供 _reset_block_cache fixture,显式重置 cache
+
+
+@pytest.fixture
+def _reset_block_cache():
+    """重置 block detector 失败计数 cache.
+
+    使用场景: 修复了某个被 block 的测试,需要让它从 cache 重新跑(不 skip).
+    本 fixture 清理后**只对当前测试生效**,其他测试的 cache 状态保持不变.
+    """
+    failures = _read_failures()
+    saved = dict(failures)  # backup
+    _write_failures({})
+    yield
+    # 恢复原 cache(避免影响其他测试 session)
+    _write_failures(saved)
+
+
+# ============================================================
 # Phase 1 共享 fixtures
 # ============================================================
 
