@@ -942,6 +942,13 @@ def dev_loop(
     tracker = TokenTracker(max_tokens=max_tokens)
 
     if use_v1_path:
+        # P0-II: 无 API key fallback 时友好提示 (仅当用户未显式 --use-v1)
+        if not has_api_key and not use_v1:
+            click.echo(
+                "[提示] 未检测到 ANTHROPIC_API_KEY，已自动使用 v1.0 引擎。"
+                "请设置 ANTHROPIC_API_KEY 以使用 v2.0 引擎。",
+                err=True,
+            )
         # v1.0 路径 (LoopEngine + Architect/Developer/Critic)
         _log_engine_version("v1.0")
         try:
