@@ -449,6 +449,11 @@ class LoopState(BaseModel):
     # 底层 channel 存储 (保留, 用于 Channel 系统 API)
     channels: dict[str, Channel[Any]] = Field(default_factory=dict)
 
+    # Phase 2.3-B: channel_versions 跟踪每个 channel 的版本号
+    # 借鉴 LangGraph Pregel.channel_versions (pregel/main.py:1140, 1736-1740)
+    # 用途: 增量触发 (get_new_channel_versions diff)
+    channel_versions: dict[str, int] = Field(default_factory=dict)
+
     # ============================================================
     # 便捷属性 (Phase 2.1-D 新增)
     # ============================================================
@@ -482,6 +487,10 @@ class LoopState(BaseModel):
     def set_channel(self, name: str, value: Any) -> bool:
         """写入指定 channel. 未知 channel 抛 KeyError(显式错误优于静默失败).
 
+        Phase 2.3-B: 累加 channel_versions[name] (借鉴 LangGraph Pregel 增量触发).
+        - 返回值仍来自 Channel.update(): True 表示有变化
+        - 仅当 update() 返回 True 时累加 version (重复值不增)
+
         Returns:
             bool: Channel 是否报告有变化 (对齐 update() 新签名).
         """
@@ -490,7 +499,10 @@ class LoopState(BaseModel):
                 f"Channel '{name}' not registered in LoopState. "
                 f"Available: {list(self.channels.keys())}"
             )
-        return self.channels[name].update([value])
+        changed = self.channels[name].update([value])
+        if changed:
+            self.channel_versions[name] = self.channel_versions.get(name, 0) + 1
+        return changed
 
     def model_dump(self, **kwargs: Any) -> dict[str, Any]:
         """Pydantic v2 序列化: 自动用 Channel.checkpoint() 替换 Channel 实例.

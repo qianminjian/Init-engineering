@@ -828,8 +828,8 @@ def test_loop_state_channel_versions_serializable():
 def test_channel_copy_preserves_internal_state_independently():
     """Channel.copy() 返回的副本内部状态独立(包含 checkpoint 行为).
 
-    Phase v2.3-B: copy 用于 checkpoint 重建, 必须独立 (Pydantic model_dump 深拷贝检查).
-    验证已有 copy() 不受 set_channel 累加 version 行为影响(注: version 由 LoopState 持有, 不在 Channel 内).
+    Phase v2.3-B: copy 用于 checkpoint 重建, 必须独立 (深拷贝).
+    验证已有 copy() 不受 set_channel 累加 version 行为影响 (version 由 LoopState 持有).
     """
     original: LastValueChannel[str] = LastValueChannel("plan")
     original.set("original")
