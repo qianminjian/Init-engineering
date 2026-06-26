@@ -4,17 +4,18 @@
 
 策略:
     - Protocol 定义结构化子类型 (runtime_checkable)
-    - types.py 不引用 loop.state.LoopState, 只描述"最小接口契约"
+    - types.py 不引用 loop.state.CheckpointEnvelope, 只描述"最小接口契约"
     - checkpoint.py 可用 LoopStateProtocol 作为类型约束
-    - state.py 的 LoopState 通过 duck typing 自动满足 Protocol
+    - state.py 的 CheckpointEnvelope (v2.3 P0-A 重命名, 原 LoopState) 通过 duck typing
+      自动满足 Protocol
 
 API:
-    LoopStateProtocol — LoopState 的最小接口契约
+    LoopStateProtocol — CheckpointEnvelope 的最小接口契约
     serialize_state(state: LoopStateProtocol) -> str  — JSON 序列化
     deserialize_state(json_str: str) -> dict          — JSON 反序列化
 
 Note: deserialize_state 返回 dict, 由 caller (checkpoint._deserialize_state)
-     负责用 deserialize_loop_state() 重建 LoopState 实例. 这是 Phase 2.1-D
+     负责用 deserialize_loop_state() 重建 CheckpointEnvelope 实例. 这是 Phase 2.1-D
      已有的设计, types.py 不重复实现.
 """
 
@@ -26,10 +27,12 @@ from typing import Any, Protocol, runtime_checkable
 
 @runtime_checkable
 class LoopStateProtocol(Protocol):
-    """LoopState 的最小接口契约.
+    """CheckpointEnvelope 的最小接口契约.
 
     任何提供这些字段/方法的类都被视为满足协议 (structural subtyping).
-    LoopState (loop/state.py) 通过 duck typing 自动满足, 无需显式继承.
+    CheckpointEnvelope (loop/state.py) 通过 duck typing 自动满足, 无需显式继承.
+    (v2.3 P0-A: 原名 LoopState, 重命名为 CheckpointEnvelope 消除与
+    engine.state.LoopState 同名双义)
 
     Attributes:
         round: 当前 Round 编号
@@ -57,7 +60,7 @@ def serialize_state(state: LoopStateProtocol) -> str:
     优先使用 state.model_dump (Pydantic v2 风格). 若无, 降级到 __dict__/dict.
 
     Args:
-        state: 满足 LoopStateProtocol 的对象 (典型: LoopState 实例)
+        state: 满足 LoopStateProtocol 的对象 (典型: CheckpointEnvelope 实例)
 
     Returns:
         JSON 字符串 (utf-8 safe, 包含全部业务字段 + channels)
@@ -75,16 +78,16 @@ def serialize_state(state: LoopStateProtocol) -> str:
 def deserialize_state(json_str: str) -> dict[str, Any]:
     """反序列化 JSON string → dict.
 
-    设计取舍: 返回 dict 而非 LoopState 实例, 因为:
+    设计取舍: 返回 dict 而非 CheckpointEnvelope 实例, 因为:
         1. types.py 不应依赖 loop.state (避免循环引用)
         2. caller (SQLiteCheckpointStore._deserialize_state) 已用
            deserialize_loop_state() 重建 Channel 实例 (Phase 2.1-D)
 
     Args:
-        json_str: JSON 字符串 (LoopState 序列化结果)
+        json_str: JSON 字符串 (CheckpointEnvelope 序列化结果)
 
     Returns:
-        dict (LoopState 字段), 或原始字符串 (解析失败时)
+        dict (CheckpointEnvelope 字段), 或原始字符串 (解析失败时)
     """
     try:
         data = json.loads(json_str)

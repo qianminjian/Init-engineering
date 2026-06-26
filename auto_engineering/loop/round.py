@@ -150,7 +150,7 @@ async def run_round(
     Args:
         tasks: 本轮执行的 task 列表 (来自 Plan.parallelism_groups() 的一组)
         executor: 异步函数, 签名 async (task, ctx) -> TaskOutcome
-        ctx: 共享上下文 (传递给 executor, 可以是 LoopState 等)
+        ctx: 共享上下文 (传递给 executor, 可以是 engine.state.LoopState 等)
         cancellation: 可选 CancellationToken
         round_id: 轮次 ID (用于 RoundResult)
         gates: v2.2 Phase H — 可选 Gate 列表, Round 完成后顺序执行

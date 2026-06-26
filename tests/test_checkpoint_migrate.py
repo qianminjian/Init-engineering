@@ -6,7 +6,7 @@
 测试原则 (Phase A 教训):
 - 严禁虚化 (mock), 必须真实集成 SQLiteCheckpointStore
 - 单文件 pytest --timeout=60 跑 (避免内存爆炸)
-- v1.1 JSON 模拟实际 checkpoint.load_checkpoint() 输出的结构 (LoopState.to_dict() + status)
+- v1.1 JSON 模拟实际 checkpoint.load_checkpoint() 输出的结构 (engine.state.LoopState.to_dict() + status)
 """
 
 from __future__ import annotations
@@ -58,12 +58,12 @@ def test_load_v1_checkpoint_handles_missing_optional_fields(tmp_path: Path) -> N
 
 
 # ============================================================
-# I.2 migrate_v1_to_v2: LoopState 转换
+# I.2 migrate_v1_to_v2: CheckpointEnvelope 转换 (v2.3 P0-A: 原 LoopState)
 # ============================================================
 
 
 def test_migrate_v1_to_v2_converts_loop_state(tmp_path: Path) -> None:
-    """migrate_v1_to_v2 把 v1.1 loop_state 转换为 v2.0 LoopState (round/step/status)."""
+    """migrate_v1_to_v2 把 v1.1 loop_state 转换为 v2.0 CheckpointEnvelope (round/step/status)."""
     from auto_engineering.checkpoint.migrate import migrate_v1_to_v2
 
     v1_data = {
@@ -81,7 +81,7 @@ def test_migrate_v1_to_v2_converts_loop_state(tmp_path: Path) -> None:
     assert isinstance(cp_id, str)
     assert len(cp_id) > 0
 
-    # 验证 SQLite 存了正确的 LoopState
+    # 验证 SQLite 存了正确的 CheckpointEnvelope
     from auto_engineering.loop.checkpoint import SQLiteCheckpointStore
 
     store = SQLiteCheckpointStore(str(dst))
@@ -92,10 +92,10 @@ def test_migrate_v1_to_v2_converts_loop_state(tmp_path: Path) -> None:
     assert metas[0].step == 7
 
     loaded = store.load(cp_id)
-    # state 字段是 LoopState 实例 (deserialize_loop_state 重建)
-    from auto_engineering.loop.state import LoopState
+    # state 字段是 CheckpointEnvelope 实例 (deserialize_loop_state 重建, v2.3 P0-A 重命名)
+    from auto_engineering.loop.state import CheckpointEnvelope
 
-    assert isinstance(loaded.state, LoopState)
+    assert isinstance(loaded.state, CheckpointEnvelope)
     assert loaded.state.round == 5
     assert loaded.state.step == 7
     assert loaded.state.status == "drained"
@@ -218,9 +218,9 @@ def test_migrate_round_trip_loadable(tmp_path: Path) -> None:
     assert cp.id == cp_id
     assert cp.round == 4
     assert cp.step == 2
-    from auto_engineering.loop.state import LoopState
+    from auto_engineering.loop.state import CheckpointEnvelope  # v2.3 P0-A 重命名
 
-    assert isinstance(cp.state, LoopState)
+    assert isinstance(cp.state, CheckpointEnvelope)
     assert cp.state.status == "interrupted"
     assert len(cp.history) == 1
     assert cp.history[0]["files_changed"] == 2

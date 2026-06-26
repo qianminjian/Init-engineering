@@ -223,7 +223,7 @@ def _get_new_channel_versions(
 
     Args:
         prev_versions: 上一轮的 channel_versions dict (本轮初基线)
-        current_versions: 本轮末的 channel_versions dict (LoopState.channel_versions)
+        current_versions: 本轮末的 channel_versions dict (CheckpointEnvelope.channel_versions)
 
     Returns:
         set[str]: 被修改 (新增 / 删除 / version 累加) 的 channel 名
@@ -286,7 +286,9 @@ class ConvergenceJudge:
         """评估当前是否应该停止循环.
 
         Args:
-            state: 当前 LoopState (Phase 2 暂不直接读取, 保留接口供 Phase 3+ 使用)
+            state: 当前状态 (v2.3 P0-A: 运行时走 engine.state.LoopState v1.0 dataclass;
+                   CheckpointEnvelope 仅供 checkpoint 持久化. Phase 2 暂不直接读取,
+                   保留接口供 Phase 3+ 使用)
             history: 历史轮次列表 (可为空)
 
         Returns:

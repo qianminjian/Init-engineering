@@ -1,4 +1,4 @@
-> 来源：@design/INDEX.md | 创建：2026-06-24 | 更新：2026-06-26 | 阶段：v2.3 Wave 2 完成（Phase E-J + 内置 LLM SemanticEvaluator + FINAL manual gate）
+> 来源：@design/INDEX.md | 创建：2026-06-24 | 更新：2026-06-26 | 阶段：v2.3 P0-A 完成（Channel 体系归属: checkpoint 专用, LoopState → CheckpointEnvelope 重命名）
 
 ## 目标与成功标准
 
@@ -37,14 +37,23 @@
 | 20 | **v2.3 Wave 2 完成: Orchestrator 集成 LLM SemanticEvaluator (Claude)** | Phase J 实现, 第 4 级语义收敛生效 | 2026-06-26 | ✅ |
 | 21 | **version_utils.get_new_channel_versions 标记 ⚠️ 死代码** | 定义存在 + 有测试, 但 0 生产引用; 文件头标记死代码, 从 __all__ 移除 | 2026-06-26 | ✅ |
 | 22 | **gates/builtin.py 冻结 — 不再主动开发, 保留为向后兼容** | v2.3 P1-I: builtin.py 文件头添加 ⚠️ 冻结标记, 不新增 Guardrail, 仅修复 bug | 2026-06-26 | ✅ |
+| 23 | **P0-A: v2.0 Channel 体系归属 = checkpoint 专用; v2.0 Pydantic LoopState 重命名为 CheckpointEnvelope** | 消除 "LoopState" 同名双义 (engine.state.LoopState v1.0 dataclass 运行时 vs loop.state.LoopState v2.0 Pydantic checkpoint 专用). 详见下方决策 23 展开 | 2026-06-26 | ✅ |
+
+## 决策 23 展开: Channel 体系归属 = checkpoint 专用
+
+**问题:** `loop.state.LoopState` (v2.0 Pydantic) 与 `engine.state.LoopState` (v1.0 dataclass) 同名双义. 实际 v2.0 Orchestrator 走 v1.0, v2.0 Pydantic 仅供 checkpoint / v1.1→v2.0 migrate.
+
+**选择 (b) Channel 仅供 checkpoint 专用** — 不强行改造运行时 (会破坏 13+ 文件 v1.0 契约). Pydantic `LoopState` → `CheckpointEnvelope` (明确语义), `loop.__init__` 移除公共导出 (从 API 消除双义).
+
+**借鉴:** LangGraph `State` (Pregel) 既是 envelope 也是 runtime; v2.0 实现只做了 envelope 角色. 决策 23 把"半成品"明确化, 不强行补另一半.
 
 ## 当前状态
 
-**阶段：** v2.3 Wave 2 完成（v2.0 多 Agent + v2.1 P0 修复 + v2.2 P2 改进 + v2.3 Phase E max_iterations 单一来源 + Phase F exclude_callback + Phase G RoundResult.history + Phase H Orchestrator+AgentRuntime 集成 + Phase I init 拆 8 模块 + Phase J 内置 LLM SemanticEvaluator）。
+**阶段：** v2.3 P0-A 完成（Channel 体系归属: checkpoint 专用, LoopState → CheckpointEnvelope 重命名, 双义消除）。
 
-**最近动作：** 2026-06-26 v2.3 Phase J 完成 — `auto_engineering/loop/semantic_evaluator.py` (ClaudeSemanticEvaluator 接 AnthropicProvider) + `OrchestratorConfig.__post_init__` 默认启用 (有 ANTHROPIC_API_KEY 时) + `tests/test_loop_semantic_evaluator.py` (9 用例) + 5 维 runtime smoke PASS + BEACON 决策 20 记录 v2.3 Wave 2 闭环。P1.6 阻断解除: 第 4 级语义收敛触发从"用户自写"变"开箱即用"。
+**最近动作：** 2026-06-26 v2.3 P0-A 完成 — `auto_engineering/loop/state.py` 内 `LoopState` (v2.0 Pydantic) 重命名为 `CheckpointEnvelope` + `loop/__init__.py` 移除 `LoopState` / `Channel` 公共导出 (消除与 `engine.state.LoopState` 同名双义) + 13 个文件 import / 注释同步更新 (checkpoint/migrate.py, loop/checkpoint.py, loop/types.py, loop/convergence.py, loop/round.py, 5 个测试文件, scripts/atdo_smoke.py, tests/_smoke_phase_d.py) + 5 个测试文件 160+ 用例全 PASS 零回归 + BEACON 决策 23 记录 v2.3 P0-A 闭环。
 
-**下一步：** v2.3 Wave 2 全部完成 → 用户 manual gate 决策 v2.3 → 是否启动 v3.0 (production hardening / 真跑验证 / Web UI)？
+**下一步：** v2.3 P0-A 完成后, v2.3 Wave 2 全部完成 → 用户 manual gate 决策 v2.3 → 是否启动 v3.0 (production hardening / 真跑验证 / Web UI)？
 
 **阻塞项：** 无
 
@@ -58,6 +67,7 @@
 
 | 日期 | 变更 | 原因 |
 |------|------|------|
+| 2026-06-26 | v2.3 P0-A 完成 (LoopState → CheckpointEnvelope 重命名, Channel 体系归属 = checkpoint 专用, BEACON 决策 23) | 消除 LoopState 同名双义 (engine.state v1.0 vs loop.state v2.0). 13 文件 import 同步, 160+ 测试全 PASS |
 | 2026-06-26 | v2.3 Phase J 完成（ClaudeSemanticEvaluator + OrchestratorConfig 默认 + BEACON 决策 20） | Wave 2 FINAL：内置 LLM 评估器 (P1.6)，第 4 级语义收敛开箱即用 |
 | 2026-06-26 | v2.3 Phase E-I 完成 | max_iterations 单一来源 (P1.1) + exclude_callback (P1.2) + RoundResult.history (P1.3) + AgentRuntime 集成 (P1.4) + init 拆 8 模块 |
 | 2026-06-26 | v2.2 Phase J 完成（生产文档 4 件 + BEACON 决策 19） | Wave 3 FINAL：production deployment / troubleshooting / api-reference / e2e-real-run |

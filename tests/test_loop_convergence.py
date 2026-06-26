@@ -46,7 +46,7 @@ from auto_engineering.loop.convergence import (
     detect_stagnation,
     diff_ratio,
 )
-from auto_engineering.loop.state import LoopState
+from auto_engineering.loop.state import CheckpointEnvelope  # v2.3 P0-A 重命名 (原 LoopState, v2.0 Pydantic Checkpoint 数据信封)
 
 # ============================================================
 # Fixtures
@@ -419,7 +419,7 @@ def test_stagnation_triggers_via_judge(make_history) -> None:
 
 def test_checkpoint_save_returns_id(store: SQLiteCheckpointStore) -> None:
     """save() 返回 checkpoint_id (UUID 字符串)."""
-    state = LoopState()
+    state = CheckpointEnvelope()
     cp_id = store.save(state, round=1)
     assert isinstance(cp_id, str)
     assert len(cp_id) > 0
@@ -427,7 +427,7 @@ def test_checkpoint_save_returns_id(store: SQLiteCheckpointStore) -> None:
 
 def test_checkpoint_save_and_load(store: SQLiteCheckpointStore) -> None:
     """save() → load() 往返一致."""
-    state = LoopState()
+    state = CheckpointEnvelope()
     cp_id = store.save(state, round=3, step=2)
     loaded = store.load(cp_id)
     assert loaded.id == cp_id
@@ -443,7 +443,7 @@ def test_checkpoint_load_not_found_raises(store: SQLiteCheckpointStore) -> None:
 
 def test_checkpoint_load_latest(store: SQLiteCheckpointStore) -> None:
     """load_latest() 返回 round 最大的 Checkpoint."""
-    state = LoopState()
+    state = CheckpointEnvelope()
     store.save(state, round=1)
     store.save(state, round=3)
     store.save(state, round=2)
@@ -461,7 +461,7 @@ def test_checkpoint_load_latest_empty_returns_none(
 
 def test_checkpoint_load_by_round(store: SQLiteCheckpointStore) -> None:
     """load_by_round() 按轮次查询."""
-    state = LoopState()
+    state = CheckpointEnvelope()
     store.save(state, round=1)
     store.save(state, round=2, step=5)
     cp = store.load_by_round(round=2)
@@ -472,7 +472,7 @@ def test_checkpoint_load_by_round(store: SQLiteCheckpointStore) -> None:
 
 def test_checkpoint_load_by_round_not_found(store: SQLiteCheckpointStore) -> None:
     """load_by_round() 不存在的轮次 → None."""
-    state = LoopState()
+    state = CheckpointEnvelope()
     store.save(state, round=1)
     assert store.load_by_round(round=99) is None
 
@@ -481,7 +481,7 @@ def test_checkpoint_list_all_returns_sorted(
     store: SQLiteCheckpointStore,
 ) -> None:
     """list_all() 按 round ASC 排序."""
-    state = LoopState()
+    state = CheckpointEnvelope()
     store.save(state, round=3)
     store.save(state, round=1)
     store.save(state, round=2)
@@ -497,7 +497,7 @@ def test_checkpoint_list_empty(store: SQLiteCheckpointStore) -> None:
 
 def test_checkpoint_count(store: SQLiteCheckpointStore) -> None:
     """count() 返回总 Checkpoint 数."""
-    state = LoopState()
+    state = CheckpointEnvelope()
     assert store.count() == 0
     store.save(state, round=1)
     store.save(state, round=2)
@@ -506,7 +506,7 @@ def test_checkpoint_count(store: SQLiteCheckpointStore) -> None:
 
 def test_checkpoint_delete(store: SQLiteCheckpointStore) -> None:
     """delete() 删除指定 ID."""
-    state = LoopState()
+    state = CheckpointEnvelope()
     cp_id = store.save(state, round=1)
     assert store.delete(cp_id) is True
     assert store.count() == 0
@@ -516,7 +516,7 @@ def test_checkpoint_delete(store: SQLiteCheckpointStore) -> None:
 
 def test_checkpoint_clear(store: SQLiteCheckpointStore) -> None:
     """clear() 清空所有 Checkpoint."""
-    state = LoopState()
+    state = CheckpointEnvelope()
     store.save(state, round=1)
     store.save(state, round=2)
     store.clear()
@@ -525,7 +525,7 @@ def test_checkpoint_clear(store: SQLiteCheckpointStore) -> None:
 
 def test_checkpoint_with_history(store: SQLiteCheckpointStore) -> None:
     """save() 带 history → load() 可还原."""
-    state = LoopState()
+    state = CheckpointEnvelope()
     history = [
         RoundHistory(round_id=1, files_changed=5),
         RoundHistory(round_id=2, files_changed=10),
@@ -539,7 +539,7 @@ def test_checkpoint_with_history(store: SQLiteCheckpointStore) -> None:
 
 def test_checkpoint_with_parent_and_tag(store: SQLiteCheckpointStore) -> None:
     """save() 支持 parent_id 和 tag."""
-    state = LoopState()
+    state = CheckpointEnvelope()
     parent_id = store.save(state, round=1)
     cp_id = store.save(state, round=2, parent_id=parent_id, tag="v1.0-milestone")
     loaded = store.load(cp_id)
@@ -549,7 +549,7 @@ def test_checkpoint_with_parent_and_tag(store: SQLiteCheckpointStore) -> None:
 
 def test_checkpoint_explicit_id(store: SQLiteCheckpointStore) -> None:
     """save() 支持显式指定 checkpoint_id."""
-    state = LoopState()
+    state = CheckpointEnvelope()
     store.save(state, round=1, checkpoint_id="my-custom-id-001")
     loaded = store.load("my-custom-id-001")
     assert loaded.id == "my-custom-id-001"
@@ -557,7 +557,7 @@ def test_checkpoint_explicit_id(store: SQLiteCheckpointStore) -> None:
 
 def test_checkpoint_meta_is_lightweight(store: SQLiteCheckpointStore) -> None:
     """CheckpointMeta 不含 state/history (仅元数据)."""
-    state = LoopState()
+    state = CheckpointEnvelope()
     store.save(state, round=1)
     meta = store.list_all()[0]
     assert isinstance(meta, CheckpointMeta)
@@ -581,7 +581,7 @@ def test_checkpoint_concurrent_saves_isolated(tmp_path) -> None:
     def save_worker(thread_id: int) -> None:
         try:
             for i in range(10):
-                cp_id = store.save(LoopState(), round=thread_id * 10 + i)
+                cp_id = store.save(CheckpointEnvelope(), round=thread_id * 10 + i)
                 saved_ids.append(cp_id)
         except Exception as e:
             errors.append(e)
@@ -603,12 +603,12 @@ def test_checkpoint_transaction_atomicity(tmp_path) -> None:
     store = SQLiteCheckpointStore(db_path)
 
     # 初始状态
-    store.save(LoopState(), round=1)
+    store.save(CheckpointEnvelope(), round=1)
     assert store.count() == 1
 
     # 制造一个失败: 模拟 schema_version 冲突 (插入重复主键)
     # 用直接 SQL 插入一个 ID, 然后 save 时用相同 ID 触发主键冲突
-    state = LoopState()
+    state = CheckpointEnvelope()
     cp_id = store.save(state, round=2)
     assert store.count() == 2
 
@@ -627,7 +627,7 @@ def test_checkpoint_transaction_atomicity(tmp_path) -> None:
 
 def test_checkpoint_schema_version_recorded(store: SQLiteCheckpointStore) -> None:
     """save() 记录的 schema_version 等于当前 SCHEMA_VERSION."""
-    state = LoopState()
+    state = CheckpointEnvelope()
     cp_id = store.save(state, round=1)
     loaded = store.load(cp_id)
     assert loaded.schema_version == SCHEMA_VERSION
@@ -639,7 +639,7 @@ def test_checkpoint_schema_mismatch_raises(tmp_path) -> None:
     store = SQLiteCheckpointStore(db_path)
 
     # 用 store 正常建表
-    cp_id = store.save(LoopState(), round=1)
+    cp_id = store.save(CheckpointEnvelope(), round=1)
 
     # 手动修改 schema_version 为旧版本
     conn = sqlite3.connect(str(db_path))
@@ -662,7 +662,7 @@ def test_checkpoint_schema_mismatch_latest_raises(tmp_path) -> None:
     db_path = tmp_path / "schema_latest.db"
     store = SQLiteCheckpointStore(db_path)
 
-    cp_id = store.save(LoopState(), round=1)
+    cp_id = store.save(CheckpointEnvelope(), round=1)
     conn = sqlite3.connect(str(db_path))
     conn.execute(
         "UPDATE checkpoints SET schema_version = 999 WHERE id = ?", (cp_id,)
@@ -695,7 +695,7 @@ def test_end_to_end_save_checkpoint_with_convergence_verdict(
     assert verdict_before.level == LEVEL_STAGNANT
 
     # 阶段 2: 保存为 checkpoint
-    cp_id = store.save(state=LoopState(), round=3, history=history)
+    cp_id = store.save(state=CheckpointEnvelope(), round=3, history=history)
     assert cp_id is not None
 
     # 阶段 3: 重新加载, 用同一 judge 判定
@@ -785,7 +785,7 @@ def test_round_history_gate_results_serialization_roundtrip() -> None:
     ]
 
     store = SQLiteCheckpointStore(":memory:")
-    cp_id = store.save(state=LoopState(), round=1, history=history)
+    cp_id = store.save(state=CheckpointEnvelope(), round=1, history=history)
     loaded = store.load(cp_id)
 
     # 关键: 加载后 history[0].gate_results 仍是 dict[gate_name, Verdict-like]
@@ -890,17 +890,17 @@ class TestCheckpointStateTyping:
     def test_checkpoint_generic_with_loopstate(
         self, store: SQLiteCheckpointStore
     ) -> None:
-        """泛型 Checkpoint[LoopState] 应被接受 (mypy 类型系统视角).
+        """泛型 Checkpoint[CheckpointEnvelope] 应被接受 (mypy 类型系统视角).
 
-        验证: 构造 Checkpoint[LoopState] 不抛 TypeError, .state 保留为 LoopState.
+        验证: 构造 Checkpoint[CheckpointEnvelope] 不抛 TypeError, .state 保留为 CheckpointEnvelope.
         """
         from datetime import UTC, datetime
 
         from auto_engineering.loop.checkpoint import Checkpoint
-        from auto_engineering.loop.state import LoopState
+        from auto_engineering.loop.state import CheckpointEnvelope  # v2.3 P0-A 重命名
 
-        state = LoopState()
-        cp: Checkpoint[LoopState] = Checkpoint(
+        state = CheckpointEnvelope()
+        cp: Checkpoint[CheckpointEnvelope] = Checkpoint(
             id="test-cp",
             round=1,
             step=0,
@@ -909,27 +909,27 @@ class TestCheckpointStateTyping:
             created_at=datetime.now(UTC),
             schema_version=SCHEMA_VERSION,
         )
-        assert isinstance(cp.state, LoopState)
+        assert isinstance(cp.state, CheckpointEnvelope)
         assert cp.state is state, "state 引用应保留 (无深拷贝)"
 
     def test_loopstate_satisfies_protocol(
         self, store: SQLiteCheckpointStore
     ) -> None:
-        """LoopState 必须实现 LoopStateProtocol (runtime_checkable).
+        """CheckpointEnvelope 必须实现 LoopStateProtocol (runtime_checkable).
 
         Protocol 定义: round, step, status, channels, model_dump(**kwargs).
         """
-        from auto_engineering.loop.state import LoopState
+        from auto_engineering.loop.state import CheckpointEnvelope  # v2.3 P0-A 重命名
         from auto_engineering.loop.types import LoopStateProtocol
 
-        state = LoopState()
+        state = CheckpointEnvelope()
         missing = [
             p
             for p in ("round", "step", "status", "channels", "model_dump")
             if not hasattr(state, p)
         ]
         assert isinstance(state, LoopStateProtocol), (
-            f"LoopState 必须实现 LoopStateProtocol. 缺失属性: {missing}"
+            f"CheckpointEnvelope 必须实现 LoopStateProtocol. 缺失属性: {missing}"
         )
 
     def test_types_module_exposes_protocol_and_helpers(self) -> None:
@@ -955,22 +955,22 @@ class TestCheckpointStateTyping:
     def test_checkpoint_state_round_trip_preserves_type(
         self, store: SQLiteCheckpointStore
     ) -> None:
-        """运行时集成: save(LoopState) → load(id) → state 仍是 LoopState 实例.
+        """运行时集成: save(CheckpointEnvelope) → load(id) → state 仍是 CheckpointEnvelope 实例.
 
         验证 Phase 2.1-D load() 重建 Channel 的能力未受 Protocol 重构影响.
         """
-        from auto_engineering.loop.state import LoopState
+        from auto_engineering.loop.state import CheckpointEnvelope  # v2.3 P0-A 重命名
 
-        state = LoopState(round=5, step=3, status="running")
+        state = CheckpointEnvelope(round=5, step=3, status="running")
         # 不需要 channel - 验证 state 字段类型和基础字段即可
-        # (LoopState 重建能力由 Phase 2.1-D 保障, 此处只验证 Protocol 重构不影响)
+        # (CheckpointEnvelope 重建能力由 Phase 2.1-D 保障, 此处只验证 Protocol 重构不影响)
 
         cp_id = store.save(state=state, round=5, history=[])
         loaded = store.load(cp_id)
 
-        # 关键: 加载后 state 应是 LoopState (不是 dict)
-        assert isinstance(loaded.state, LoopState), (
-            f"加载后 state 必须是 LoopState, 实际: {type(loaded.state).__name__}"
+        # 关键: 加载后 state 应是 CheckpointEnvelope (不是 dict)
+        assert isinstance(loaded.state, CheckpointEnvelope), (
+            f"加载后 state 必须是 CheckpointEnvelope, 实际: {type(loaded.state).__name__}"
         )
         assert loaded.state.round == 5
         assert loaded.state.step == 3
@@ -1146,7 +1146,7 @@ class TestRoundResultHistory:
         )
         from auto_engineering.loop.plan import Task
         from auto_engineering.loop.round import TaskOutcome
-        from auto_engineering.loop.state import LoopState
+        from auto_engineering.loop.state import CheckpointEnvelope  # v2.3 P0-A 重命名
 
         async def noop(task, ctx):
             return TaskOutcome(
@@ -1182,7 +1182,7 @@ class TestRoundResultHistory:
         )
 
         # 持久化 round-trip
-        state = LoopState(round=1, step=0, status="running")
+        state = CheckpointEnvelope(round=1, step=0, status="running")
         cp_id = store.save(state=state, round=1, history=orch.history)
         loaded = store.load(cp_id)
 

@@ -3,11 +3,11 @@
 设计来源: design/v2.0-Analysis-Loop.md §4.4 + §五 Phase 1.2
 
 核心要点:
-    - SQLite 持久化 LoopState + history
+    - SQLite 持久化 CheckpointEnvelope (v2.0 Checkpoint 数据信封) + history
     - Schema 版本号 (兼容未来 schema 变更, 旧版可迁移或拒绝)
     - 事务保证 (save/load 原子性)
     - 并发安全: file 模式每线程独立 connection, ":memory:" 模式用单 connection + 锁
-    - JSON 序列化 LoopState (Pydantic model_dump)
+    - JSON 序列化 CheckpointEnvelope (Pydantic model_dump)
 
 API:
     store = SQLiteCheckpointStore(db_path)
@@ -20,6 +20,11 @@ API:
 Note: SQLite ":memory:" 数据库是 per-connection 的, 跨 connection 不共享数据.
     本实现在 ":memory:" 模式下用单 connection + threading.Lock 序列化访问,
     满足测试场景的并发隔离需求.
+
+v2.3 P0-A: 旧名 LoopState (v2.0 Pydantic) 重命名为 CheckpointEnvelope, 消除与
+    engine.state.LoopState (v1.0 dataclass) 同名双义. 本文件 import 仅用
+    LoopStateProtocol (types.py, 鸭子类型), 不直接 import CheckpointEnvelope.
+    调用方 (e.g. checkpoint/migrate.py) 显式指定 T = CheckpointEnvelope.
 """
 
 from __future__ import annotations
@@ -43,6 +48,7 @@ SCHEMA_VERSION = 1
 # - LoopStateProtocol 在 loop/types.py 定义 (不引用 loop/state)
 # - TypeVar T bound Protocol 让 Checkpoint/SQLiteCheckpointStore 接受具体类型
 # - mypy 看到 state 字段是 LoopStateProtocol (或其子类型), 不是 Any
+# - v2.3 P0-A: 典型具体类型是 CheckpointEnvelope (原 LoopState, v2.0 Pydantic)
 T = TypeVar("T", bound=LoopStateProtocol)
 
 
@@ -70,14 +76,14 @@ class Checkpoint[T]:
 
     Phase 2.2-G: 用 Generic[T] bound LoopStateProtocol 替代 Any.
     - 类型安全: mypy 看到 state 字段是 LoopStateProtocol, 访问 .round/.step 不报 Any
-    - 打破循环: checkpoint.py 不再 import LoopState, 只用 Protocol 接口
-    - 使用: Checkpoint[LoopState](...) — caller 显式指定 T
+    - 打破循环: checkpoint.py 不再 import 具体 LoopState 类, 只用 Protocol 接口
+    - 使用: Checkpoint[CheckpointEnvelope](...) — caller 显式指定 T
     """
 
     id: str
     round: int
     step: int
-    state: T  # LoopStateProtocol (caller 决定具体类型, 典型 LoopState)
+    state: T  # LoopStateProtocol (caller 决定具体类型, 典型 CheckpointEnvelope)
     history: list[RoundHistory]  # v2.3 Phase M (P2.3): 强类型, 非 list[dict]
     created_at: datetime
     schema_version: int
@@ -162,7 +168,8 @@ class SQLiteCheckpointStore[T]:
     """SQLite Checkpoint 持久化.
 
     Phase 2.2-G: Generic[T] bound LoopStateProtocol — save/load 接受具体类型.
-    使用: SQLiteCheckpointStore[LoopState](db_path) — 类型安全.
+    使用: SQLiteCheckpointStore[CheckpointEnvelope](db_path) — 类型安全.
+    (v2.3 P0-A: 原 LoopState 重命名为 CheckpointEnvelope, 详见 BEACON 决策 23.)
 
     线程安全策略:
         - ":memory:" 模式: 单 connection + threading.Lock
@@ -264,7 +271,7 @@ class SQLiteCheckpointStore[T]:
 
     @staticmethod
     def _serialize_state(state: LoopStateProtocol) -> str:
-        """序列化 LoopState → JSON string.
+        """序列化 CheckpointEnvelope → JSON string.
 
         Phase 2.2-G: 接受 LoopStateProtocol (替代 Any).
         优先 Pydantic v2 model_dump, 降级到 __dict__/dict.
@@ -282,11 +289,12 @@ class SQLiteCheckpointStore[T]:
 
     @staticmethod
     def _deserialize_state(state_json: str) -> Any:
-        """反序列化 JSON → LoopState 实例 (Phase 2.1-D 修复 + Phase 2.2-G 类型契约).
+        """反序列化 JSON → CheckpointEnvelope 实例 (Phase 2.1-D 修复 + Phase 2.2-G 类型契约).
 
-        Phase 2.1-D: 返回 LoopState 实例, channels 是 Channel 实例.
+        Phase 2.1-D: 返回 CheckpointEnvelope 实例, channels 是 Channel 实例.
         Phase 2.2-G: 输入是 LoopStateProtocol 序列化结果 (model_dump JSON),
-                      返回 LoopState 实例 (调用 deserialize_loop_state 重建 Channel).
+                      返回 CheckpointEnvelope 实例 (调用 deserialize_loop_state 重建 Channel).
+        (v2.3 P0-A: 原 LoopState 重命名为 CheckpointEnvelope.)
 
         Fallback: 若反序列化失败, 返回原始 dict (向后兼容, 不抛异常中断 load).
         """
@@ -325,9 +333,10 @@ class SQLiteCheckpointStore[T]:
         """保存 Checkpoint.
 
         Phase 2.2-G: state 参数类型是 T (bound LoopStateProtocol), 替代 Any.
+        (v2.3 P0-A: 原 LoopState 重命名为 CheckpointEnvelope.)
 
         Args:
-            state: 满足 LoopStateProtocol 的对象 (典型: LoopState 实例)
+            state: 满足 LoopStateProtocol 的对象 (典型: CheckpointEnvelope 实例)
             round: 当前轮次
             step: 当前 step (L1 Inner Loop 内 iteration 计数)
             history: RoundHistory 列表 (可为空)
@@ -678,7 +687,7 @@ class SQLiteCheckpointStore[T]:
             raise CheckpointSchemaMismatchError(
                 found=schema_version, expected=SCHEMA_VERSION
             )
-        # 反序列化 (Phase 2.1-D: 返回 LoopState 实例, channels 是 Channel 实例)
+        # 反序列化 (Phase 2.1-D: 返回 CheckpointEnvelope 实例, channels 是 Channel 实例)
         state = SQLiteCheckpointStore._deserialize_state(row["state_json"])
         history = json.loads(row["history_json"])
         created_at = datetime.fromisoformat(row["created_at"])

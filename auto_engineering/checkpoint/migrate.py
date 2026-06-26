@@ -6,7 +6,7 @@
 v1.1 JSON 格式 (来自 engine/checkpoint.py + engine/state.py):
     {
         "status": "running" | "drained" | ...,
-        "loop_state": {<LoopState.to_dict() output>},
+        "loop_state": {<engine.state.LoopState.to_dict() output>},
         "history": [
             {
                 "round_id": int,
@@ -23,9 +23,14 @@ v2.0 SQLite Schema (loop/checkpoint.py): SQLiteCheckpointStore 表 checkpoints
 (含 state_json + history_json).
 
 迁移策略:
-    - LoopState: 提取 v1.1 loop_state.round/step/status + 其他字段注入 metrics/tasks/channels
-      (尽力兼容, 未知字段写入 channels 作为 LastValueChannel 留存)
+    - CheckpointEnvelope: 提取 v1.1 loop_state.round/step/status + 其他字段注入
+      metrics/tasks/channels (尽力兼容, 未知字段写入 channels 作为 LastValueChannel 留存)
     - history: 逐项转换为 v2.0 RoundHistory (gate_results 字段保留为 dict[str, bool])
+
+v2.3 P0-A: 旧名 LoopState (v2.0 Pydantic) 重命名为 CheckpointEnvelope. migrate.py 是
+    v2.0 Pydantic CheckpointEnvelope 的真实用户之一 (另一是 v2.0 Checkpoint 持久化).
+    运行时 Orchestrator / Runtime / Gates 不使用 CheckpointEnvelope, 走
+    engine.state.LoopState (v1.0 dataclass). 详见 BEACON.md 决策 23.
 """
 
 from __future__ import annotations
@@ -36,7 +41,7 @@ from typing import Any
 
 from auto_engineering.loop.checkpoint import SQLiteCheckpointStore
 from auto_engineering.loop.convergence import RoundHistory
-from auto_engineering.loop.state import LastValueChannel, LoopState
+from auto_engineering.loop.state import CheckpointEnvelope, LastValueChannel
 
 
 def load_v1_checkpoint(path: Path) -> dict[str, Any]:
@@ -54,22 +59,22 @@ def load_v1_checkpoint(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text())
 
 
-def _v1_loop_state_to_v2(v1_data: dict[str, Any]) -> LoopState:
-    """v1.1 loop_state → v2.0 LoopState.
+def _v1_loop_state_to_v2(v1_data: dict[str, Any]) -> CheckpointEnvelope:
+    """v1.1 loop_state (engine.state.LoopState dataclass) → v2.0 CheckpointEnvelope.
 
     v1.1 loop_state 是 dataclass LoopState.to_dict() 输出 (含 requirement/plan/file_list/...等).
-    v2.0 LoopState 是 Pydantic model (含 round/step/status/tasks/task_results/channels/metrics).
+    v2.0 CheckpointEnvelope 是 Pydantic model (含 round/step/status/tasks/task_results/channels/metrics).
 
     字段映射:
         - round/step/status: 直接映射 (v2.0 标准字段)
-        - 其他 v1.1 字段 (requirement/plan/file_list/...): 写入 LoopState.channels
+        - 其他 v1.1 字段 (requirement/plan/file_list/...): 写入 CheckpointEnvelope.channels
           (LastValueChannel), 保留供 v2.0 后续读出 (无信息丢失)
 
     Args:
         v1_data: v1.1 checkpoint dict (含 loop_state 子键)
 
     Returns:
-        LoopState (v2.0 Pydantic 实例)
+        CheckpointEnvelope (v2.0 Pydantic 实例, 即 v2.0 Checkpoint 数据信封)
     """
     loop_state_v1 = v1_data.get("loop_state", {})
 
@@ -88,7 +93,7 @@ def _v1_loop_state_to_v2(v1_data: dict[str, Any]) -> LoopState:
         ch.set(v)
         channels[k] = ch
 
-    return LoopState(
+    return CheckpointEnvelope(
         round=round_v,
         step=step_v,
         status=status_v,
@@ -139,7 +144,7 @@ def migrate_v1_to_v2(src_json: Path, dst_sqlite: Path) -> str:
 
     步骤:
         1. 读 v1.1 JSON (load_v1_checkpoint)
-        2. 构造 v2.0 LoopState (尽力兼容字段)
+        2. 构造 v2.0 CheckpointEnvelope (尽力兼容字段)
         3. 构造 v2.0 RoundHistory 列表
         4. SQLiteCheckpointStore.save(state, round, step, history) 真存到 SQLite
         5. 返回 checkpoint_id
@@ -158,7 +163,7 @@ def migrate_v1_to_v2(src_json: Path, dst_sqlite: Path) -> str:
     """
     v1_data = load_v1_checkpoint(src_json)
 
-    # 1. 构造 v2.0 LoopState
+    # 1. 构造 v2.0 CheckpointEnvelope
     state = _v1_loop_state_to_v2(v1_data)
 
     # 2. 构造 v2.0 RoundHistory 列表

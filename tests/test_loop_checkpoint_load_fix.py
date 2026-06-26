@@ -4,7 +4,8 @@
 
 Phase A 已修复 save() 不抛异常, 但 load() 半完成:
 - 实际: store.load(id).state 返回 dict (JSON 反序列化结果)
-- 期望: store.load(id).state 返回 LoopState 实例, channels 是 Channel 实例
+- 期望: store.load(id).state 返回 CheckpointEnvelope 实例, channels 是 Channel 实例
+    (v2.3 P0-A: 原 LoopState 重命名为 CheckpointEnvelope)
 
 测试约束 (遵循 pytest-memory-management.md):
 - 单文件 pytest --no-cov --timeout=60
@@ -17,19 +18,20 @@ from auto_engineering.loop.checkpoint import SQLiteCheckpointStore
 from auto_engineering.loop.state import (
     AccumulatingChannel,
     BarrierChannel,
+    CheckpointEnvelope,
     LastValueChannel,
-    LoopState,
 )
 
 
 def test_load_returns_loopstate_instance_not_dict():
-    """SQLiteCheckpointStore.load(cp_id).state 必须返回 LoopState 实例, 不是 dict.
+    """SQLiteCheckpointStore.load(cp_id).state 必须返回 CheckpointEnvelope 实例, 不是 dict.
 
-    Phase A 缺陷修复: 旧实现返回 dict, 集成代码需手动重建 LoopState.
-    新实现: load() 直接返回 LoopState, channels 已是 Channel 实例.
+    Phase A 缺陷修复: 旧实现返回 dict, 集成代码需手动重建.
+    新实现: load() 直接返回 CheckpointEnvelope, channels 已是 Channel 实例.
+    (v2.3 P0-A: 原 LoopState 重命名为 CheckpointEnvelope)
     """
     store = SQLiteCheckpointStore(":memory:")
-    state = LoopState(
+    state = CheckpointEnvelope(
         round=1,
         step=2,
         status="running",
@@ -40,8 +42,8 @@ def test_load_returns_loopstate_instance_not_dict():
     cp_id = store.save(state, round=1)
     loaded = store.load(cp_id)
 
-    assert isinstance(loaded.state, LoopState), (
-        f"load() returns {type(loaded.state).__name__}, expected LoopState"
+    assert isinstance(loaded.state, CheckpointEnvelope), (
+        f"load() returns {type(loaded.state).__name__}, expected CheckpointEnvelope"
     )
 
 
@@ -52,7 +54,7 @@ def test_load_returns_channels_as_channel_instances():
     集成代码需手动遍历重建. 新实现直接给出 Channel 实例.
     """
     store = SQLiteCheckpointStore(":memory:")
-    state = LoopState(
+    state = CheckpointEnvelope(
         round=1,
         channels={
             "plan": LastValueChannel("plan"),
@@ -69,7 +71,7 @@ def test_load_returns_channels_as_channel_instances():
     cp_id = store.save(state, round=1)
     loaded = store.load(cp_id)
 
-    assert isinstance(loaded.state, LoopState)
+    assert isinstance(loaded.state, CheckpointEnvelope)
     # 每个 channel 是对应类型实例 (非 dict)
     assert isinstance(loaded.state.channels["plan"], LastValueChannel)
     assert isinstance(loaded.state.channels["logs"], AccumulatingChannel)
@@ -79,7 +81,7 @@ def test_load_returns_channels_as_channel_instances():
 def test_load_restores_channel_values_via_get():
     """load 后 channels[name].get() 返回保存时的真值 (非 None/空)."""
     store = SQLiteCheckpointStore(":memory:")
-    state = LoopState(
+    state = CheckpointEnvelope(
         round=1,
         channels={
             "plan": LastValueChannel("plan"),
@@ -101,7 +103,7 @@ def test_load_restores_channel_values_via_get():
 
 
 def test_load_restores_loopstate_business_fields():
-    """load 后 LoopState.round/step/status/tasks 等字段正确恢复."""
+    """load 后 CheckpointEnvelope.round/step/status/tasks 等字段正确恢复."""
     store = SQLiteCheckpointStore(":memory:")
 
     tasks_dict = {
@@ -118,7 +120,7 @@ def test_load_restores_loopstate_business_fields():
             "status": "pending",
         },
     }
-    state = LoopState(
+    state = CheckpointEnvelope(
         round=2,
         step=3,
         status="running",
@@ -136,7 +138,7 @@ def test_load_restores_loopstate_business_fields():
 def test_load_then_update_works_correctly():
     """load 后修改 channel 不影响原状态 (独立副本语义)."""
     store = SQLiteCheckpointStore(":memory:")
-    state = LoopState(channels={"plan": LastValueChannel("plan")})
+    state = CheckpointEnvelope(channels={"plan": LastValueChannel("plan")})
     state.channels["plan"].update(["original"])
 
     cp_id = store.save(state, round=1)
@@ -151,7 +153,7 @@ def test_load_then_update_works_correctly():
 def test_load_preserves_barrier_expected_field():
     """load 后 BarrierChannel.expected 正确恢复 (否则 wait() 行为不对)."""
     store = SQLiteCheckpointStore(":memory:")
-    state = LoopState(
+    state = CheckpointEnvelope(
         channels={"sync": BarrierChannel("sync", expected=5)},
     )
     state.channels["sync"].update([None])  # count=1, expected=5
@@ -168,21 +170,21 @@ def test_load_preserves_barrier_expected_field():
 
 
 def test_load_empty_state_returns_loopstate_with_defaults():
-    """空 LoopState (无 channels) load 后仍是 LoopState 实例."""
+    """空 CheckpointEnvelope (无 channels) load 后仍是 CheckpointEnvelope 实例."""
     store = SQLiteCheckpointStore(":memory:")
-    state = LoopState(round=1)
+    state = CheckpointEnvelope(round=1)
 
     cp_id = store.save(state, round=1)
     loaded = store.load(cp_id)
 
-    assert isinstance(loaded.state, LoopState)
+    assert isinstance(loaded.state, CheckpointEnvelope)
     assert loaded.state.channels == {}
 
 
 def test_load_latest_returns_loopstate_instance():
-    """load_latest().state 也必须是 LoopState 实例."""
+    """load_latest().state 也必须是 CheckpointEnvelope 实例."""
     store = SQLiteCheckpointStore(":memory:")
-    state = LoopState(
+    state = CheckpointEnvelope(
         round=1,
         channels={"plan": LastValueChannel("plan")},
     )
@@ -191,5 +193,5 @@ def test_load_latest_returns_loopstate_instance():
 
     latest = store.load_latest()
     assert latest is not None
-    assert isinstance(latest.state, LoopState)
+    assert isinstance(latest.state, CheckpointEnvelope)
     assert latest.state.channels["plan"].get() == "latest"

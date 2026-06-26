@@ -1,4 +1,4 @@
-"""v2.0 Channel 系统 + LoopState 容器测试.
+"""v2.0 Channel 系统 + CheckpointEnvelope 容器测试.
 
 Channel 类型语义(参考 design/v2.0-Analysis-Loop.md §4.4):
 - LastValueChannel[T]: 单写,后续覆盖(Plan 状态、Review 结论)
@@ -6,6 +6,7 @@ Channel 类型语义(参考 design/v2.0-Analysis-Loop.md §4.4):
 - BarrierChannel: 等待所有 Agent 完成(asyncio.Event,多 Agent 同步点)
 
 本文件独立于 v1.1 tests/test_loop_state.py(后者测试 engine.state.LoopState dataclass).
+v2.3 P0-A: 原 LoopState (v2.0 Pydantic) 重命名为 CheckpointEnvelope.
 """
 
 import asyncio
@@ -17,8 +18,8 @@ from auto_engineering.loop.state import (
     AccumulatingChannel,
     BarrierChannel,
     Channel,
+    CheckpointEnvelope,
     LastValueChannel,
-    LoopState,
 )
 
 # ============================================================
@@ -162,13 +163,13 @@ def test_channel_subclass_must_implement_methods():
 
 
 # ============================================================
-# LoopState — Pydantic 容器
+# CheckpointEnvelope — Pydantic 容器 (v2.3 P0-A 重命名, 原 LoopState)
 # ============================================================
 
 
 def test_loop_state_contains_channels_dict():
-    """LoopState 初始化时 channels 为 dict[str, Channel]."""
-    state = LoopState(
+    """CheckpointEnvelope 初始化时 channels 为 dict[str, Channel]."""
+    state = CheckpointEnvelope(
         channels={
             "plan": LastValueChannel("plan"),
             "results": AccumulatingChannel("results"),
@@ -179,35 +180,35 @@ def test_loop_state_contains_channels_dict():
 
 
 def test_loop_state_get_channel_value():
-    """LoopState.get_channel(name) 返回该 channel 当前值."""
-    state = LoopState(channels={"plan": LastValueChannel("plan")})
+    """CheckpointEnvelope.get_channel(name) 返回该 channel 当前值."""
+    state = CheckpointEnvelope(channels={"plan": LastValueChannel("plan")})
     state.channels["plan"].set("hello")
     assert state.get_channel("plan") == "hello"
 
 
 def test_loop_state_get_missing_channel_returns_none():
     """get_channel 缺失字段返回 None,不抛异常."""
-    state = LoopState()
+    state = CheckpointEnvelope()
     assert state.get_channel("nonexistent") is None
 
 
 def test_loop_state_set_channel_value():
-    """LoopState.set_channel(name, value) 写入对应 channel."""
-    state = LoopState(channels={"verdict": LastValueChannel("verdict")})
+    """CheckpointEnvelope.set_channel(name, value) 写入对应 channel."""
+    state = CheckpointEnvelope(channels={"verdict": LastValueChannel("verdict")})
     state.set_channel("verdict", "APPROVE")
     assert state.channels["verdict"].get() == "APPROVE"
 
 
 def test_loop_state_set_channel_missing_raises():
     """set_channel 对未知 channel 抛 KeyError(显式错误优于静默失败)."""
-    state = LoopState()
+    state = CheckpointEnvelope()
     with pytest.raises(KeyError):
         state.set_channel("nonexistent", "value")
 
 
 def test_loop_state_mixed_channel_types():
-    """LoopState 同时持有 3 种 channel 类型,各自语义独立."""
-    state = LoopState(
+    """CheckpointEnvelope 同时持有 3 种 channel 类型,各自语义独立."""
+    state = CheckpointEnvelope(
         channels={
             "plan": LastValueChannel("plan"),
             "findings": AccumulatingChannel("findings"),
@@ -511,7 +512,7 @@ def test_sqlite_checkpoint_store_saves_loopstate_with_channels():
     from auto_engineering.loop.checkpoint import SQLiteCheckpointStore
 
     store = SQLiteCheckpointStore(":memory:")
-    state = LoopState(
+    state = CheckpointEnvelope(
         channels={
             "plan": LastValueChannel("plan"),
             "logs": AccumulatingChannel("logs"),
@@ -535,13 +536,13 @@ def test_sqlite_checkpoint_store_round_trips_channels():
     """SQLiteCheckpointStore save → load:channels 内容一致.
 
     真实场景: 重启后从 Checkpoint 恢复,Channel 状态必须能重建.
-    Phase 2.1-D 修复: load() 返回 LoopState 实例 (channels 是 Channel 实例),
+    Phase 2.1-D 修复: load() 返回 CheckpointEnvelope 实例 (channels 是 Channel 实例),
     通过 .get() 读取真实值.
     """
     from auto_engineering.loop.checkpoint import SQLiteCheckpointStore
 
     store = SQLiteCheckpointStore(":memory:")
-    state = LoopState(
+    state = CheckpointEnvelope(
         channels={
             "plan": LastValueChannel("plan"),
             "logs": AccumulatingChannel("logs"),
@@ -556,9 +557,9 @@ def test_sqlite_checkpoint_store_round_trips_channels():
 
     cp_id = store.save(state, round=1)
 
-    # 加载并验证(Phase 2.1-D: state 是 LoopState 实例, channels 是 Channel 实例)
+    # 加载并验证(Phase 2.1-D: state 是 CheckpointEnvelope 实例, channels 是 Channel 实例)
     loaded = store.load(cp_id).state
-    assert isinstance(loaded, LoopState)
+    assert isinstance(loaded, CheckpointEnvelope)
     # LastValueChannel.get() -> raw value
     assert loaded.channels["plan"].get() == "expected plan value"
     # AccumulatingChannel.get() -> list of values
@@ -577,13 +578,13 @@ def test_checkpoint_round_trip_restores_channels_via_from_checkpoint():
     3. 调用 channel.from_checkpoint(value) 恢复
     4. 验证 Channel 状态完全恢复
 
-    Phase 2.1-D: load() 直接返回 LoopState 实例 (channels 已是 Channel 实例),
+    Phase 2.1-D: load() 直接返回 CheckpointEnvelope 实例 (channels 已是 Channel 实例),
     无需手动 from_checkpoint.
     """
     from auto_engineering.loop.checkpoint import SQLiteCheckpointStore
 
     store = SQLiteCheckpointStore(":memory:")
-    state = LoopState(
+    state = CheckpointEnvelope(
         channels={
             "plan": LastValueChannel("plan"),
             "logs": AccumulatingChannel("logs"),
@@ -598,9 +599,9 @@ def test_checkpoint_round_trip_restores_channels_via_from_checkpoint():
 
     cp_id = store.save(state, round=1)
 
-    # Phase 2.1-D: load() 直接返回 LoopState, channels 已是 Channel 实例
+    # Phase 2.1-D: load() 直接返回 CheckpointEnvelope, channels 已是 Channel 实例
     loaded = store.load(cp_id).state
-    assert isinstance(loaded, LoopState)
+    assert isinstance(loaded, CheckpointEnvelope)
     restored_plan = loaded.channels["plan"]
     restored_logs = loaded.channels["logs"]
     restored_sync = loaded.channels["sync"]
@@ -749,25 +750,25 @@ def test_barrier_channel_update_empty_sequence_no_change():
 
 # ============================================================
 # Phase v2.3-B: channel_versions 触发机制 (P0.2)
-# 设计: LoopState.channel_versions: dict[str, int], 借鉴 LangGraph Pregel.channel_versions
+# 设计: CheckpointEnvelope.channel_versions: dict[str, int], 借鉴 LangGraph Pregel.channel_versions
 # 参考: langgraph/libs/langgraph/langgraph/pregel/main.py:1140, 1736-1740
 # 用途: 跟踪每个 channel 的版本号, 实现增量触发 (_get_new_channel_versions diff)
 # ============================================================
 
 
 def test_loop_state_channel_versions_init_empty():
-    """LoopState() 默认 channel_versions 为空 dict.
+    """CheckpointEnvelope() 默认 channel_versions 为空 dict.
 
     借鉴 LangGraph Pregel: 初始无 channel 被修改, versions 为空.
     """
-    state = LoopState()
+    state = CheckpointEnvelope()
     assert state.channel_versions == {}
     assert isinstance(state.channel_versions, dict)
 
 
 def test_loop_state_set_channel_increments_version():
     """set_channel 首次写入时 channel_versions[name] 累加为 1, 返回 True."""
-    state = LoopState(channels={"plan": LastValueChannel("plan")})
+    state = CheckpointEnvelope(channels={"plan": LastValueChannel("plan")})
     assert state.channel_versions == {}  # 初始空
     result = state.set_channel("plan", "v1")
     assert result is True
@@ -776,7 +777,7 @@ def test_loop_state_set_channel_increments_version():
 
 def test_loop_state_set_channel_no_change_returns_false():
     """重复写入相同值不累加 version, 返回 False (无变化信号)."""
-    state = LoopState(channels={"plan": LastValueChannel("plan")})
+    state = CheckpointEnvelope(channels={"plan": LastValueChannel("plan")})
     state.set_channel("plan", "v1")  # 1
     assert state.channel_versions == {"plan": 1}
 
@@ -788,7 +789,7 @@ def test_loop_state_set_channel_no_change_returns_false():
 
 def test_loop_state_set_channel_change_returns_true_and_version():
     """写入新值时累加 version, 返回 True."""
-    state = LoopState(channels={"plan": LastValueChannel("plan")})
+    state = CheckpointEnvelope(channels={"plan": LastValueChannel("plan")})
     state.set_channel("plan", "v1")  # version=1
     state.set_channel("plan", "v1")  # 重复,version 不变
     result = state.set_channel("plan", "v2")  # 新值,version+1
@@ -798,7 +799,7 @@ def test_loop_state_set_channel_change_returns_true_and_version():
 
 def test_loop_state_multiple_channels_track_separately():
     """多个 channel 各自累加 version, 互不影响."""
-    state = LoopState(
+    state = CheckpointEnvelope(
         channels={
             "plan": LastValueChannel("plan"),
             "logs": AccumulatingChannel("logs"),
@@ -816,7 +817,7 @@ def test_loop_state_channel_versions_serializable():
     """channel_versions 字段必须可 JSON 序列化 (Pydantic model_dump)."""
     import json
 
-    state = LoopState(channels={"plan": LastValueChannel("plan")})
+    state = CheckpointEnvelope(channels={"plan": LastValueChannel("plan")})
     state.set_channel("plan", "v1")
     state.set_channel("plan", "v2")
     dumped = state.model_dump()
@@ -829,7 +830,7 @@ def test_channel_copy_preserves_internal_state_independently():
     """Channel.copy() 返回的副本内部状态独立(包含 checkpoint 行为).
 
     Phase v2.3-B: copy 用于 checkpoint 重建, 必须独立 (深拷贝).
-    验证已有 copy() 不受 set_channel 累加 version 行为影响 (version 由 LoopState 持有).
+    验证已有 copy() 不受 set_channel 累加 version 行为影响 (version 由 CheckpointEnvelope 持有).
     """
     original: LastValueChannel[str] = LastValueChannel("plan")
     original.set("original")

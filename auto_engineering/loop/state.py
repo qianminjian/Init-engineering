@@ -1,11 +1,21 @@
-"""v2.0 Channel 系统 + LoopState 容器.
+"""v2.0 Channel 系统 + CheckpointEnvelope (v2.0 Checkpoint 数据结构).
 
 参考 LangGraph Channel 系统(LastValue / Topic / NamedBarrierValue).
 简化: 三种类型覆盖 LOOP 子系统的核心语义, 不引入 Pregel 的版本触发机制.
 
 设计来源: design/v2.0-Analysis-Loop.md §4.4 状态管理
 Phase 2.1-A 增强: LangGraph 对齐的 copy/checkpoint/from_checkpoint 序列化三件套.
-Phase 2.1-D 增强: LoopState 8 字段 + Task 字段补全 + load() 重建 Channel 实例.
+Phase 2.1-D 增强: CheckpointEnvelope 8 字段 + Task 字段补全 + load() 重建 Channel 实例.
+
+CheckpointEnvelope (原名 LoopState, v2.3 P0-A 重命名):
+    v2.0 Checkpoint 持久化的数据结构 (Pydantic BaseModel).
+    仅供 checkpoint 持久化 / migrate (v1.1→v2.0) 使用.
+    运行时 Orchestrator 不使用此类型 (走 engine.state.LoopState v1.0 dataclass).
+    详见 BEACON.md 决策 23 (Channel 体系归属: checkpoint 专用).
+
+    重命名原因: 消除 "LoopState" 同名双义 — engine.state.LoopState (v1.0 dataclass,
+    运行时生产代码用) vs loop.state.LoopState (v2.0 Pydantic, checkpoint 专用).
+    新名 "CheckpointEnvelope" 明确语义: v2.0 Checkpoint 数据信封.
 """
 
 from __future__ import annotations
@@ -25,7 +35,7 @@ T = TypeVar("T")
 class Channel[T](ABC):
     """Channel 抽象基类.
 
-    所有 Channel 持有 name(用于在 LoopState 中标识)和内部 value.
+    所有 Channel 持有 name(用于在 CheckpointEnvelope 中标识)和内部 value.
     子类必须实现: get / update / empty / copy / checkpoint / from_checkpoint.
     """
 
@@ -91,7 +101,7 @@ class LastValueChannel(Channel[T]):
     """单写覆盖语义.
 
     每次 update 覆盖前一值. 适用于: Plan 状态、Review 结论、
-    单一权威输出. v1.1 dataclass LoopState 的核心字段都可映射为此类型.
+    单一权威输出. v1.1 dataclass LoopState (engine.state) 的核心字段都可映射为此类型.
     """
 
     def __init__(self, name: str) -> None:
@@ -353,7 +363,7 @@ class BarrierChannel(Channel[Any]):
 
 
 # ============================================================
-# LoopState 辅助类型 (Phase 2.1-D)
+# CheckpointEnvelope 辅助类型 (Phase 2.1-D)
 # 设计文档: design/v2.0-Design-Loop.md §3.1
 # ============================================================
 
@@ -375,7 +385,7 @@ class Signal:
 
 @dataclass
 class GateVerdict:
-    """Gate 验证结果 (LoopState.gate_results value).
+    """Gate 验证结果 (CheckpointEnvelope.gate_results value).
 
     Attributes:
         passed: Gate 是否通过
@@ -389,7 +399,7 @@ class GateVerdict:
 
 
 class MetricsSnapshot(BaseModel):
-    """指标快照 (LoopState.metrics).
+    """指标快照 (CheckpointEnvelope.metrics).
 
     Attributes:
         values: 指标名 → 值
@@ -409,10 +419,15 @@ class MetricsSnapshot(BaseModel):
         return self.values.get(key, default)
 
 
-class LoopState(BaseModel):
-    """v2.0 多 Agent 共享状态容器 (Phase 2.1-D 补全字段).
+class CheckpointEnvelope(BaseModel):
+    """v2.0 Checkpoint 数据信封 (Phase 2.1-D 补全字段).
 
     设计文档 §3.1: 8 个核心字段 + 底层 channels 存储.
+
+    v2.3 P0-A 重命名: 原名 LoopState → CheckpointEnvelope.
+    语义: v2.0 Checkpoint 持久化的数据结构 (Pydantic BaseModel),
+    仅供 SQLite checkpoint store + migrate (v1.1→v2.0) 使用.
+    运行时 Orchestrator / Runtime / Gates 走 engine.state.LoopState (v1.0 dataclass).
 
     Attributes:
         round: 当前 Round 编号 (0 = 未开始)
@@ -496,7 +511,7 @@ class LoopState(BaseModel):
         """
         if name not in self.channels:
             raise KeyError(
-                f"Channel '{name}' not registered in LoopState. "
+                f"Channel '{name}' not registered in CheckpointEnvelope. "
                 f"Available: {list(self.channels.keys())}"
             )
         changed = self.channels[name].update([value])
@@ -526,16 +541,16 @@ class LoopState(BaseModel):
 
 
 # ============================================================
-# 反序列化: checkpoint dict → LoopState (Phase 2.1-D 修复 Phase A)
+# 反序列化: checkpoint dict → CheckpointEnvelope (Phase 2.1-D 修复 Phase A)
 # ============================================================
 
 
-def deserialize_loop_state(data: dict[str, Any]) -> LoopState:
-    """从 checkpoint dict 重建 LoopState (channels 重建为 Channel 实例).
+def deserialize_loop_state(data: dict[str, Any]) -> CheckpointEnvelope:
+    """从 checkpoint dict 重建 CheckpointEnvelope (channels 重建为 Channel 实例).
 
     这是 SQLiteCheckpointStore.load() 的核心辅助:
     - data 是 JSON 反序列化后的 dict (含 8 业务字段 + channels)
-    - 业务字段直接传入 LoopState 构造
+    - 业务字段直接传入 CheckpointEnvelope 构造
     - channels[name] (raw checkpoint 值) → 对应类型 Channel 实例 (调 from_checkpoint)
     - tasks/task_results: 重建 dataclass (Phase 2.1-D: 优先重建为 Task/TaskOutcome,
       无法识别时回退 dict — 兼容旧 schema)
@@ -549,7 +564,7 @@ def deserialize_loop_state(data: dict[str, Any]) -> LoopState:
         data: checkpoint dict (含 round/step/status/tasks/channels 等)
 
     Returns:
-        LoopState 实例 (channels 是 Channel 实例, 非 dict)
+        CheckpointEnvelope 实例 (channels 是 Channel 实例, 非 dict)
 
     Raises:
         ValueError: data 缺关键字段 / channels 结构异常
@@ -580,7 +595,7 @@ def deserialize_loop_state(data: dict[str, Any]) -> LoopState:
         for tid, rval in raw_results.items():
             rebuilt_results[tid] = _rebuild_task_outcome(rval)
 
-    # 4. 构造 LoopState (复制业务字段, 不包括 channels/tasks/task_results)
+    # 4. 构造 CheckpointEnvelope (复制业务字段, 不包括 channels/tasks/task_results)
     business_fields = {
         k: v
         for k, v in data.items()
@@ -589,7 +604,7 @@ def deserialize_loop_state(data: dict[str, Any]) -> LoopState:
     business_fields["tasks"] = rebuilt_tasks
     business_fields["task_results"] = rebuilt_results
 
-    return LoopState(channels=rebuilt_channels, **business_fields)
+    return CheckpointEnvelope(channels=rebuilt_channels, **business_fields)
 
 
 def _rebuild_channel(name: str, value: Any) -> Channel[Any]:
@@ -679,9 +694,9 @@ __all__ = [
     "BarrierChannel",
     "BarrierState",
     "Channel",
+    "CheckpointEnvelope",  # v2.3 P0-A 重命名 (原 LoopState, checkpoint 专用)
     "GateVerdict",
     "LastValueChannel",
-    "LoopState",
     "MetricsSnapshot",
     "Signal",
     "deserialize_loop_state",
