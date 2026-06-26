@@ -18,23 +18,23 @@
 
 ## 设计决策
 
-| #  | 决策 | 理由 | 日期 |
-|----|------|------|------|
-| 1-7  | v1.0 基础架构（LoopEngine/StageGraph/AgentRuntime + async + dataclass + GuardrailChain + init 断路修复 + llm/ 封装 + 现状清理） | 控制流/路由/执行分离；参考 CrewAI GuardrailResult + AutoGen DropMessage | 2026-06-24 |
-| 8  | render_description 空值整行删除 | 注释承诺"条件逻辑在 render_description 中处理"未实现 | 2026-06-24 |
-| 9  | run() 退出前同步 checkpoint.status | tick() 改 self.status 但不写 checkpoint | 2026-06-24 |
-| 10 | developer→critic 边显式注册 | build_dev_loop_graph 漏 add_edge，critic 永不调度 | 2026-06-24 |
-| 11 | **v2.0 是增量式演进，不是删除式重构** | 在 engine/runtime/tools 基础上**新增** loop/ 子系统 | 2026-06-25 |
-| 12 | **v2.0 删除项取消：保留 engine/runtime/tools 作为旧路径兼容** | CLI 仍 import 旧路径，v2.0 loop/ 是叠加而非替代 | 2026-06-25 |
-| 13 | **Channel 系统采用 Pydantic BaseModel (LoopState 容器) + Channel 抽象基类 (Python ABC)** | LoopState 用 Pydantic（便于序列化）；Channel 基类用 ABC（强制子类实现 copy/checkpoint/from_checkpoint） | 2026-06-25 |
-| 13a | v2.1 修订: 决策 13 修正 — 原写"dataclass"与实际不符。实际 `LoopState(BaseModel)` + `Channel(ABC)` | 2026-06-25 |
-| 14 | **check_file_isolation 是确定性检查，不是 LLM 自检** | Orchestrator 规划阶段 Python 代码检查 | 2026-06-25 |
-| 15 | **Gate 3（Contract）单 Agent 跳过，多 Agent 启用** | Phase 04 决策 | 2026-06-25 |
-| 16 | **Channel 序列化三件套: copy/from_checkpoint/checkpoint (LangGraph 对齐)** | Phase 1 审计：Channel 缺 LangGraph 风格序列化 API。v2.1 Phase A 修复 BarrierChannel 重构 | 2026-06-25 |
-| 17 | **SQLiteCheckpointStore.load() 必须返回 LoopState 实例 + Channel 实例 (完整闭环)** | v2.1 Phase A 实现 model_dump 但 _deserialize_state 仅返回 dict；Phase D 修复：deserialize_loop_state + _rebuild_channel | 2026-06-25 |
-| 18 | **atdo Plan 报告必须含 runtime smoke 验证 (防止虚化测试)** | Phase 1 审计：atdo Plan 报告虚化（Phase 02 测试用空 LoopState 绕过）。v2.1 强制 inline smoke test | 2026-06-25 |
-| 19 | **v2.2 闭环完成 + 生产就绪** | Wave 3 P2 改进 (P2.1 Checkpoint.state Any→LoopStateProtocol + P2.4 RoundResult 集成 Gate + P2.5 init 拆 8 模块) + atdo 防护规则化 (.claude/rules/agent-spawn-timeout.md 3 层防护) | 2026-06-26 |
-| 20 | **v2.3 Wave 2 完成: Orchestrator 集成 LLM SemanticEvaluator (Claude)** | Phase J 实现 ClaudeSemanticEvaluator (接 AnthropicProvider), OrchestratorConfig 默认启用 (有 API key 时). 第 4 级语义收敛判定生效. 借鉴 LangGraph ConditionalEdge: LLM 评估路由开箱即用. | 2026-06-26 |
+| #  | 决策 | 理由 | 日期 | status |
+|----|------|------|------|--------|
+| 1-7  | v1.0 基础架构（LoopEngine/StageGraph/AgentRuntime + async + dataclass + GuardrailChain + init 断路修复 + llm/ 封装 + 现状清理） | 控制流/路由/执行分离；参考 CrewAI GuardrailResult + AutoGen DropMessage | 2026-06-24 | ✅ |
+| 8  | render_description 空值整行删除 | 注释承诺"条件逻辑在 render_description 中处理"未实现 | 2026-06-24 | ✅ |
+| 9  | run() 退出前同步 checkpoint.status | tick() 改 self.status 但不写 checkpoint | 2026-06-24 | ✅ |
+| 10 | developer→critic 边显式注册 | build_dev_loop_graph 漏 add_edge，critic 永不调度 | 2026-06-24 | ✅ |
+| 11 | **v2.0 是增量式演进，不是删除式重构** | 在 engine/runtime/tools 基础上**新增** loop/ 子系统 | 2026-06-25 | ✅ |
+| 12 | **v2.0 删除项取消：保留 engine/runtime/tools 作为旧路径兼容** | CLI 仍 import 旧路径，v2.0 loop/ 是叠加而非替代 | 2026-06-25 | ✅ |
+| 13 | **Channel 系统采用 Pydantic BaseModel (LoopState 容器) + Channel 抽象基类 (Python ABC)** | LoopState 用 Pydantic；Channel 基类用 ABC | 2026-06-25 | ✅ |
+| 13a | v2.1 修订: 决策 13 修正 — 原写"dataclass"与实际不符 | 修正记录 | 2026-06-25 | ✅ |
+| 14 | **check_file_isolation 是确定性检查，不是 LLM 自检** | Orchestrator 规划阶段 Python 代码检查 | 2026-06-25 | ✅ |
+| 15 | **Gate 3（Contract）单 Agent 跳过，多 Agent 启用** | Phase 04 决策 | 2026-06-25 | ✅ |
+| 16 | **Channel 序列化三件套: copy/from_checkpoint/checkpoint (LangGraph 对齐)** | v2.1 Phase A 修复 BarrierChannel 重构 | 2026-06-25 | ✅ |
+| 17 | **SQLiteCheckpointStore.load() 必须返回 LoopState 实例 + Channel 实例 (完整闭环)** | v2.1 Phase D 修复 | 2026-06-25 | ✅ |
+| 18 | **atdo Plan 报告必须含 runtime smoke 验证 (防止虚化测试)** | v2.1 强制 inline smoke test | 2026-06-25 | ✅ |
+| 19 | **v2.2 闭环完成 + 生产就绪** | Wave 3 P2 改进 + atdo 防护规则化 | 2026-06-26 | ✅ |
+| 20 | **v2.3 Wave 2 完成: Orchestrator 集成 LLM SemanticEvaluator (Claude)** | Phase J 实现, 第 4 级语义收敛生效 | 2026-06-26 | ✅ |
 
 ## 当前状态
 
