@@ -738,10 +738,12 @@ def test_round_history_gate_results_contains_verdict() -> None:
 
 
 def test_convergence_judge_quality_failure_includes_message() -> None:
-    """ConvergenceJudge: Gate 失败时 judge.reason 应含 verdict.message (P0.4).
+    """ConvergenceJudge: Gate 失败时 judge.reason 应含 verdict.message (P0.4 + D-fix).
 
-    旧实现只看到 bool 不知道失败原因.
-    新实现 reason 中必须包含 gate 的 message 字符串.
+    v2.3 Phase D-fix: 修复前 _check_quality_gates 返回 None (不触发停止),
+    让下层判定 (停滞/语义) 接管, 违反了"质量门"的语义.
+    修复后: Gate 失败时 judge.reason 必须含 gate message + gate name,
+    且 should_stop=True (level=LEVEL_QUALITY).
     """
     from auto_engineering.gates.base import Verdict
 
@@ -755,14 +757,12 @@ def test_convergence_judge_quality_failure_includes_message() -> None:
     ]
     judge = ConvergenceJudge(ConvergenceConfig(max_iterations=10))
     verdict = judge.evaluate(state=None, history=history)
-    # 有 failed gate → 不应触发停止 (因为 quality gate 要求 all_passed)
-    assert verdict.should_stop is False
-    assert verdict.level == LEVEL_CONTINUE
-    # 关键: 不应再用 bool 触发 — 应输出 readable reason
-    # 但 Phase 2.3-D 的核心是 _check_quality_gates 看到 failed gate 时输出 message
-    # 由于未 all_passed, _check_quality_gates 不触发 verdict,
-    # 此测试主要保证: 字段类型是 Verdict, 不会因为 bool 触发 all_passed=True
-    assert history[-1].gate_results["lint"].passed is False
+    # D-fix: 有 failed gate → 必须触发停止 (质量门是"门", 不通过应关)
+    assert verdict.should_stop is True
+    assert verdict.level == LEVEL_QUALITY
+    # 关键: reason 必须含 message + gate name (用户能查到失败原因)
+    assert "syntax error at line 3" in verdict.reason
+    assert "lint" in verdict.reason
 
 
 def test_round_history_gate_results_serialization_roundtrip() -> None:
@@ -828,17 +828,15 @@ def test_convergence_judge_quality_all_passed_uses_verdict_objects() -> None:
 
 
 def test_convergence_judge_quality_failure_reason_includes_verdict_message() -> None:
-    """ConvergenceJudge: 有 failed gate 时, reason 输出 message (P0.4 新行为).
+    """ConvergenceJudge: 有 failed gate 时, reason 输出 message (P0.4 + D-fix).
 
-    与 test_convergence_judge_quality_failure_includes_message 不同 — 此测试
-    直接验证 _check_quality_gates 在 all_passed 时若有 failed gates 应输出 message.
+    v2.3 Phase D-fix: 修复前 _check_quality_gates 在 all_passed=False 时返回 None,
+    让 judge 落入停滞检测, 输出 '连续 2 轮产出无实质变化' 等错误信息.
+    修复后: 混合通过 + 失败 → judge.reason 必须含 failed gate 的 message.
     """
     from auto_engineering.gates.base import Verdict
 
-    # 混合通过 + 失败 — _check_quality_gates 不触发 stop (all 不全 True)
-    # 此测试是验证 _check_quality_gates 内部逻辑: future-proof
-    # 当前实现: all passed → stop, 否则 None (回退到下层判定)
-    # 因此本测试核心是确认类型转换 (Verdict → bool) 在 Judge 内部正确完成
+    # 混合通过 + 失败 — D-fix 后 _check_quality_gates 直接触发 stop
     history = [
         RoundHistory(
             round_id=1,
@@ -850,12 +848,12 @@ def test_convergence_judge_quality_failure_reason_includes_verdict_message() -> 
     ]
     judge = ConvergenceJudge(ConvergenceConfig(max_iterations=10))
     verdict = judge.evaluate(state=None, history=history)
-    # 不应触发 LEVEL_QUALITY (有失败)
-    assert verdict.should_stop is False
-    # 同时 hard_limit / stagnation / semantic 都不触发
-    assert verdict.level == LEVEL_CONTINUE
-    # 验证 gate_results 中 failed Verdict 保留了 message
-    assert history[-1].gate_results["lint"].message == "undefined variable 'x'"
+    # D-fix: 触发 LEVEL_QUALITY (而不是 CONTINUE 或 STAGNANT)
+    assert verdict.should_stop is True
+    assert verdict.level == LEVEL_QUALITY
+    # reason 必须含 failed gate 的 message (用户能定位失败原因)
+    assert "undefined variable 'x'" in verdict.reason
+    assert "lint" in verdict.reason
 
 
 # ============================================================

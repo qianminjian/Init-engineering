@@ -339,12 +339,18 @@ class ConvergenceJudge:
                 ),
             )
 
-        # v2.3 Phase D (P0.4): 有 failed gates → 输出 message 让用户知道失败原因
-        # 不触发停止 (因 all_passed=False), 让下层判定 (停滞/语义) 决定
-        # 但仍把 message 信息透传给 Orchestrator (通过 print/log 在 _evaluate 处)
-        # Note: 当前设计 — failed gates 不直接 stop, 但 user 可通过 history[-1].gate_results
-        # 看到完整 Verdict.message
-        return None
+        # v2.3 Phase D-fix: 任一 Gate FAIL → 触发停止 (质量门是"门", 不通过应关).
+        # 修复前: 返回 None, 让停滞检测/语义评估"误判"失败原因.
+        # 修复后: 直接 Verdict.stop(level=LEVEL_QUALITY), reason 含 gate name + message,
+        # 让 Orchestrator runtime smoke 输出 "质量门失败 (1 道): fake_failing: intentional...".
+        # 取前 3 道失败详情, 避免 reason 过长.
+        failed_details = "; ".join(
+            f"{name}: {verdict.message}" for name, verdict in failed_gates[:3]
+        )
+        return Verdict.stop(
+            level=LEVEL_QUALITY,
+            reason=f"质量门失败 ({len(failed_gates)} 道): {failed_details}",
+        )
 
     def _check_stagnation(
         self, history: list[RoundHistory]
