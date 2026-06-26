@@ -35,6 +35,7 @@
 | 18 | **atdo Plan 报告必须含 runtime smoke 验证 (防止虚化测试)** | v2.1 强制 inline smoke test | 2026-06-25 | ✅ |
 | 19 | **v2.2 闭环完成 + 生产就绪** | Wave 3 P2 改进 + atdo 防护规则化 | 2026-06-26 | ✅ |
 | 20 | **v2.3 Wave 2 完成: Orchestrator 集成 LLM SemanticEvaluator (Claude)** | Phase J 实现, 第 4 级语义收敛生效 | 2026-06-26 | ✅ |
+| 21 | **version_utils.get_new_channel_versions 标记 ⚠️ 死代码** | 定义存在 + 有测试, 但 0 生产引用; 文件头标记死代码, 从 __all__ 移除 | 2026-06-26 | ✅ |
 
 ## 当前状态
 
@@ -73,4 +74,4 @@
 
 ## 引用文件
 
-@design/INDEX.md · @design/v1.0-Design-Shared.md · @design/v1.0-Design-Loop.md · @design/v1.0-Design-Init.md · @design/v1.0-Design-Templates.md · @design/v1.1-Audit-Report.md · @design/v1.1-Plan-Dev.md · @design/v2.0-Analysis-Loop.md（**§八 删除项已取消**）· @design/v2.0-Design-Loop.md · @design/his_bak/ · @tests/conftest.py
+@design/INDEX.md · @design/v1.0-Design-Shared.md · @design/v1.0-Design-Loop.md · @design/v1.0-Design-Init.md · @design/v1.0-Design-Templates.md · @design/v1.1-Audit-Report.md · @design/v1.1-Plan-Dev.md · @design/v2.0-Analysis-Loop.md · @design/v2.0-Design-Loop.md · @design/v2.3-Plan-Dev.md · @design/his_bak/ · @tests/conftest.py
