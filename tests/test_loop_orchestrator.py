@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -38,6 +39,9 @@ from auto_engineering.loop.plan import (
     topological_sort,
 )
 from auto_engineering.loop.round import TaskOutcome, run_round
+
+if TYPE_CHECKING:
+    from auto_engineering.loop.convergence import RoundHistory
 
 # ============================================================
 # Fixtures + helpers
@@ -652,11 +656,7 @@ def test_select_round_tasks_round_2_includes_new_task():
     严禁虚化: Round 1 跑了 t1 (completed), Round 2 时 self.tasks 多了 t3.
     验证 Round 2 选 t2 (failed) + t3 (新增).
     """
-    # Round 1 时只有 t1 + t2
-    initial_tasks = [
-        make_task("t1"),
-        make_task("t2"),
-    ]
+    # Round 1 时只有 t1 + t2 (initial_tasks 变量去掉 — 直接用 history 表达)
     history_round_1 = _build_round_history_with_outcomes(
         round_id=1,
         task_outcomes={"t1": "completed", "t2": "failed"},
