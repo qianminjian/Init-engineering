@@ -148,15 +148,13 @@ class ClaudeSemanticEvaluator:
             LLMResponse (AnthropicProvider.create_message 返回)
         """
         provider = AnthropicProvider(api_key=self.api_key)
-        # 同步 API → 用 asyncio.to_thread 跑在 default executor
-        # 保持接口 async (与 OrchestratorConfig.semantic_evaluator 协议一致)
-        return await asyncio.to_thread(
-            provider.create_message,
+        response = await provider.create_message(
             model=self.model,
             max_tokens=self.max_tokens,
             system="你是代码审查员, 判断本轮产出是否满足需求.",
             messages=[{"role": "user", "content": prompt}],
         )
+        return response
 
     def _parse_satisfied(self, response) -> bool:
         """从 Claude 响应解析 satisfied 字段.
