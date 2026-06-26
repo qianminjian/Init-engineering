@@ -42,6 +42,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -83,7 +84,11 @@ class OrchestratorConfig:
             含 max_iterations 字段, 是主循环硬上限的**单一来源**
             (v2.3 Phase E P1.1, 借鉴 LangGraph Pregel.recursion_limit).
         gates: v2.1 Phase B — 验证 Gate 列表 (None = 跳过)
-        semantic_evaluator: v2.1 Phase B — LLM 语义评估 (None = 跳过)
+        semantic_evaluator: v2.1 Phase B — LLM 语义评估.
+            None 时, **有 ANTHROPIC_API_KEY** 自动启用 ClaudeSemanticEvaluator
+            (v2.3 Phase J P1.6 — 内置 LLM evaluator).
+            用户显式传值时不被覆盖.
+            完全无 API key 时保持 None (graceful degradation).
         project_root: v2.1 Phase B — Gate 运行的项目根目录 (None = 当前 cwd)
         agent_runtime: v2.3 Phase H (P1.4) — AgentRuntime 实例 (None = 用 self.executor).
             借鉴 AutoGen GroupChat agent_selector: 按 task.role 查 Runtime.get(role)
@@ -95,6 +100,31 @@ class OrchestratorConfig:
     semantic_evaluator: SemanticEvaluator | None = None
     project_root: Path | None = None
     agent_runtime: AgentRuntime | None = None  # P1.4 — None = 旧行为 (用 executor)
+
+    def __post_init__(self) -> None:
+        """v2.3 Phase J (P1.6): 默认启用 ClaudeSemanticEvaluator (有 API key 时).
+
+        行为契约:
+            - semantic_evaluator 已是用户显式传入 (非 None) → 不覆盖
+            - semantic_evaluator 为 None + 有 ANTHROPIC_API_KEY → 自动启用
+              ClaudeSemanticEvaluator (接 Claude API 真评估)
+            - semantic_evaluator 为 None + 无 API key → 保持 None
+              (Orchestrator.run() 跳过语义评估)
+
+        Why: 解决 P1.6 阻断 — 第 4 级语义收敛永远不触发 (生产环境无内置
+        LLM evaluator, 用户需自己写). 默认启用让 LLM 评估开箱即用.
+        借鉴 LangGraph ConditionalEdge: LLM 评估路由开箱即用.
+        """
+        if (
+            self.semantic_evaluator is None
+            and os.environ.get("ANTHROPIC_API_KEY")
+        ):
+            # 延迟 import 避免循环依赖 (semantic_evaluator → orchestrator 反向)
+            from auto_engineering.loop.semantic_evaluator import (
+                ClaudeSemanticEvaluator,
+            )
+
+            self.semantic_evaluator = ClaudeSemanticEvaluator()
 
 
 @dataclass

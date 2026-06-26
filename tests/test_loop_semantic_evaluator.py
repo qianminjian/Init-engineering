@@ -25,11 +25,10 @@
 
 from __future__ import annotations
 
-import os
-from unittest.mock import AsyncMock, MagicMock, patch
+from typing import TYPE_CHECKING
+from unittest.mock import MagicMock, patch
 
 import pytest
-
 
 # ============================================================
 # Fixtures + helpers
@@ -71,7 +70,7 @@ def _make_mock_response(text: str) -> MagicMock:
 def _make_round_result_with_history(
     gate_results: dict | None = None,
     outcomes: list | None = None,
-) -> "RoundResult":
+) -> RoundResult:
     """构造一个带 history 的 RoundResult (供 evaluator 调用)."""
     from auto_engineering.loop.convergence import RoundHistory
     from auto_engineering.loop.round import RoundResult, TaskOutcome
@@ -91,6 +90,10 @@ def _make_round_result_with_history(
         outcomes=outcomes or [TaskOutcome(task_id="t1", status="completed")],
         history=[history],
     )
+
+
+if TYPE_CHECKING:
+    from auto_engineering.loop.round import RoundResult
 
 
 @pytest.fixture
@@ -158,7 +161,8 @@ class TestClaudeSemanticEvaluatorParsesSatisfiedJson:
             "auto_engineering.loop.semantic_evaluator.AnthropicProvider"
         ) as MockProvider:
             mock_provider_instance = MagicMock()
-            mock_provider_instance.create_message = AsyncMock(
+            # 同步 mock: create_message 实际是 sync 方法, 包在 to_thread 里调用
+            mock_provider_instance.create_message = MagicMock(
                 return_value=mock_response
             )
             MockProvider.return_value = mock_provider_instance
@@ -181,7 +185,7 @@ class TestClaudeSemanticEvaluatorParsesSatisfiedJson:
             "auto_engineering.loop.semantic_evaluator.AnthropicProvider"
         ) as MockProvider:
             mock_provider_instance = MagicMock()
-            mock_provider_instance.create_message = AsyncMock(
+            mock_provider_instance.create_message = MagicMock(
                 return_value=mock_response
             )
             MockProvider.return_value = mock_provider_instance
@@ -213,7 +217,7 @@ class TestClaudeSemanticEvaluatorInvalidJson:
             "auto_engineering.loop.semantic_evaluator.AnthropicProvider"
         ) as MockProvider:
             mock_provider_instance = MagicMock()
-            mock_provider_instance.create_message = AsyncMock(
+            mock_provider_instance.create_message = MagicMock(
                 return_value=mock_response
             )
             MockProvider.return_value = mock_provider_instance
@@ -234,7 +238,7 @@ class TestClaudeSemanticEvaluatorInvalidJson:
             "auto_engineering.loop.semantic_evaluator.AnthropicProvider"
         ) as MockProvider:
             mock_provider_instance = MagicMock()
-            mock_provider_instance.create_message = AsyncMock(
+            mock_provider_instance.create_message = MagicMock(
                 return_value=mock_response
             )
             MockProvider.return_value = mock_provider_instance
@@ -257,11 +261,13 @@ class TestOrchestratorConfigDefaultEvaluator:
     def test_default_with_api_key_enables_claude_evaluator(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """RED: 设 ANTHROPIC_API_KEY → OrchestratorConfig.semantic_evaluator 是 ClaudeSemanticEvaluator."""
+        """RED: 设 ANTHROPIC_API_KEY → 启用 ClaudeSemanticEvaluator."""
         monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-from-env")
 
         from auto_engineering.loop.orchestrator import OrchestratorConfig
-        from auto_engineering.loop.semantic_evaluator import ClaudeSemanticEvaluator
+        from auto_engineering.loop.semantic_evaluator import (
+            ClaudeSemanticEvaluator,
+        )
 
         config = OrchestratorConfig()
         assert config.semantic_evaluator is not None, (
