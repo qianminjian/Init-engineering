@@ -152,8 +152,13 @@ def test_convergence_quality_gate_all_passed() -> None:
     assert verdict.level == LEVEL_QUALITY
 
 
-def test_convergence_quality_gate_partial_does_not_stop() -> None:
-    """质量门: 任一 Gate FAIL → 不触发停止."""
+def test_convergence_quality_gate_partial_triggers_stop() -> None:
+    """v2.3 Phase D-fix: 任一 Gate FAIL → 触发停止 (质量门是"门", 不通过应关).
+
+    历史背景: 之前 partial fail 返回 None (let stagnant/semantic 决定),
+    这违反了"质量门"的语义 — Orchestrator 会把"门失败"当成"停滞"误报.
+    修复后: 任一 Gate failed → Verdict.stop(level=LEVEL_QUALITY), reason 含 verdict.message.
+    """
     from auto_engineering.gates.base import Verdict
 
     history = [
@@ -168,8 +173,88 @@ def test_convergence_quality_gate_partial_does_not_stop() -> None:
     ]
     judge = ConvergenceJudge(ConvergenceConfig(max_iterations=10))
     verdict = judge.evaluate(state=None, history=history)
-    assert verdict.should_stop is False
-    assert verdict.level == LEVEL_CONTINUE
+    assert verdict.should_stop is True
+    assert verdict.level == LEVEL_QUALITY
+    assert "boom" in verdict.reason  # reason 含 failed gate message
+    assert "g2" in verdict.reason  # reason 含 failed gate name
+
+
+def test_convergence_judge_quality_gate_failure_triggers_stop() -> None:
+    """v2.3 Phase D-fix: FailingGate 触发 → judge.stop + reason 含 message.
+
+    这是 Orchestrator runtime smoke 暴露的核心 bug — fake_failing
+    'intentional failure for test' 必须出现在 judge.reason.
+    """
+    from auto_engineering.gates.base import Verdict
+
+    history = [
+        RoundHistory(
+            round_id=1,
+            gate_results={
+                "fake_failing": Verdict.failed(
+                    "intentional failure for test", gate_name="fake_failing"
+                ),
+            },
+        ),
+    ]
+    judge = ConvergenceJudge(ConvergenceConfig(max_iterations=10))
+    verdict = judge.evaluate(state=None, history=history)
+    assert verdict.should_stop is True
+    assert verdict.level == LEVEL_QUALITY
+    assert "intentional failure for test" in verdict.reason
+    assert "fake_failing" in verdict.reason
+
+
+def test_convergence_judge_quality_gate_failure_priority_over_stagnation() -> None:
+    """v2.3 Phase D-fix: 质量门失败时, 不应回退到停滞检测 (level=3 优先于 level=2).
+
+    即使同时满足停滞条件, 也必须返回 QUALITY (不是 STAGNANT).
+    """
+    from auto_engineering.gates.base import Verdict
+
+    # 连续 3 轮 files_changed=0 (触发停滞) + 最新一轮 gate 失败
+    history = [
+        RoundHistory(round_id=i, files_changed=0, lines_added=0, lines_removed=0)
+        for i in range(1, 4)
+    ] + [
+        RoundHistory(
+            round_id=4,
+            files_changed=0,
+            gate_results={
+                "fail_gate": Verdict.failed("not passed", gate_name="fail_gate"),
+            },
+        ),
+    ]
+    judge = ConvergenceJudge(ConvergenceConfig(max_iterations=10))
+    verdict = judge.evaluate(state=None, history=history)
+    assert verdict.level == LEVEL_QUALITY  # 不是 STAGNANT (2)
+    assert verdict.level != LEVEL_STAGNANT
+    assert "not passed" in verdict.reason
+
+
+def test_convergence_quality_gate_multiple_failed_includes_all_messages() -> None:
+    """v2.3 Phase D-fix: 多道 gate 失败时, reason 至少包含前 3 道 message."""
+    from auto_engineering.gates.base import Verdict
+
+    history = [
+        RoundHistory(
+            round_id=1,
+            gate_results={
+                "g1": Verdict.failed("err-1", gate_name="g1"),
+                "g2": Verdict.failed("err-2", gate_name="g2"),
+                "g3": Verdict.failed("err-3", gate_name="g3"),
+                "g4": Verdict.failed("err-4", gate_name="g4"),
+            },
+        ),
+    ]
+    judge = ConvergenceJudge(ConvergenceConfig(max_iterations=10))
+    verdict = judge.evaluate(state=None, history=history)
+    assert verdict.should_stop is True
+    assert verdict.level == LEVEL_QUALITY
+    # 至少前 3 道 message 应在 reason 中
+    assert "err-1" in verdict.reason
+    assert "err-2" in verdict.reason
+    assert "err-3" in verdict.reason
 
 
 def test_convergence_semantic_satisfied_stops() -> None:
