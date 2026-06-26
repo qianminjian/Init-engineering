@@ -41,9 +41,9 @@ ae dev-loop "<requirement>" [options]
 | `--log-format` | str | text | text / json |
 | `--llm-provider` | str | anthropic | anthropic/ollama/openai |
 | `--project-root` | path | cwd | 项目根目录 |
-| `--use-v1` / `--use-v2` | flag | F | 强制 v1.0 / v2.0（互斥） |
+| `--use-v1` / `--use-v2` | flag | — | 强制 v1.0 LoopEngine / v2.0 Orchestrator（互斥） |
 
-**路由**：默认 v2.0（需 `ANTHROPIC_API_KEY`）→ 无 key fallback v1.0；同时设置互斥 exit 2。
+**路由**：默认 v2.0 Orchestrator（需 `ANTHROPIC_API_KEY`）→ 无 key 自动 fallback v1.0 LoopEngine（带友好提示）。用 `--use-v1` 可显式切回 v1.0，用 `--use-v2` 强制 v2.0（无 key 时报错）。同时设置 --use-v1 和 --use-v2 互斥退出（exit 2）。
 
 ## ae status — 项目摘要
 
