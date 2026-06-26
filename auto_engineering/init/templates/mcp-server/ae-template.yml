@@ -1,4 +1,5 @@
 _min_ae_version: "0.1.0"
+_exclude_callback: "auto_engineering.init._shared.exclude:default_match_exclude"
 server_name:
   type: str
   help: MCP Server 名称
