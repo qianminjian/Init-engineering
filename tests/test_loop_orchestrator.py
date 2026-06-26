@@ -586,8 +586,8 @@ def _build_round_history_with_outcomes(
         tasks_run: 本轮跑的 task IDs (Phase 2.3-C 新增字段)
 
     Note:
-        RoundHistory 当前不直接含 task_outcomes 字段 — 这里构造一个
-        tasks_run 字段已足够测试增量选择逻辑 (Orchestrator 只读 tasks_run).
+        RoundHistory 含 tasks_run + task_outcomes 两个字段
+        (Phase 2.3-C 增量选择依赖).
     """
     from auto_engineering.loop.convergence import RoundHistory
 
@@ -595,6 +595,7 @@ def _build_round_history_with_outcomes(
         round_id=round_id,
         files_changed=len(task_outcomes),
         tasks_run=tasks_run or list(task_outcomes.keys()),
+        task_outcomes=dict(task_outcomes),
     )
 
 
@@ -727,3 +728,8 @@ def test_round_history_has_tasks_run_field():
     # 默认空列表 (向后兼容)
     rh_default = RoundHistory(round_id=2)
     assert rh_default.tasks_run == []
+    # task_outcomes 字段也存在
+    rh2 = RoundHistory(
+        round_id=3, tasks_run=["t1"], task_outcomes={"t1": "completed"}
+    )
+    assert rh2.task_outcomes == {"t1": "completed"}

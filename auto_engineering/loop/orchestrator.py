@@ -150,9 +150,9 @@ class Orchestrator:
             if cancellation is not None and cancellation.is_cancelled():
                 break
 
-            # 2b. 选择本轮 task (Phase 3 简化: 每轮重跑所有 task,
-            #     Phase 4+ 接增量更新: 仅跑失败 / 新增的 task)
-            round_tasks = self._select_round_tasks(round_id)
+            # 2b. 选择本轮 task (Phase 2.3-C: 增量选择)
+            #     Round 1 跑所有 task, Round 2+ 仅跑 failed / 新增 task
+            round_tasks = self._select_round_tasks(round_id, self.history)
 
             # 2c. 执行 Round (含 Gate 集成, v2.2 Phase H)
             round_result = await run_round(
@@ -167,7 +167,8 @@ class Orchestrator:
             self.round_results.append(round_result)
 
             # 2d. 构造 RoundHistory (从 RoundResult 读 gate_results, v2.2 Phase H)
-            history = await self._build_history(round_id, round_result)
+            #     Phase 2.3-C: 传入 round_tasks, 让 RoundHistory.tasks_run 有值
+            history = await self._build_history(round_id, round_result, round_tasks)
             self.history.append(history)
 
             # 2e. 收敛判定
@@ -184,25 +185,64 @@ class Orchestrator:
         )
         return self.history
 
-    def _select_round_tasks(self, round_id: int) -> list[Task]:
+    def _select_round_tasks(
+        self, round_id: int, history: list[RoundHistory]
+    ) -> list[Task]:
         """选择本轮要执行的 task 列表.
 
-        Phase 3 简化: 每轮都重跑所有 task (mock 场景, 让 ConvergenceJudge 反复判定).
+        v2.3 Phase C: 增量选择 (避免每轮重跑所有 task 浪费 LLM token).
 
-        Phase 4+ 接增量更新:
-            - 第一轮: 跑所有 task
-            - 后续轮: 仅跑失败 / 新增的 task
+        规则:
+            - Round 1: 跑所有 task (无历史可参考).
+            - Round 2+: 仅跑 failed task (status="failed") 或
+              新加 task (不在任何 history.tasks_run 中).
 
         Args:
             round_id: 当前轮次 (1-indexed)
+            history: 历史轮次列表 (Round 2+ 时非空, Round 1 为空)
 
         Returns:
             本轮要跑的 task 列表
+
+        Note:
+            借鉴 LangGraph `Pregel._prepare_next_tasks` 用 channel_versions diff 找触发任务,
+            简化版: 不引入 inverted index, 只看"failed + new" 两类 task.
         """
-        return list(self.tasks)
+        if round_id == 1:
+            return list(self.tasks)
+
+        # 1. 收集历史所有 task ids (判断"新加")
+        all_historical_task_ids: set[str] = set()
+        for h in history:
+            all_historical_task_ids.update(h.tasks_run)
+
+        # 2. 收集历史最近一次"非 completed"的 task ids (判断"failed")
+        #    逻辑: 对每个 task, 找其最近一轮的 outcome — 若非 completed 则重跑.
+        last_outcome_per_task: dict[str, str] = {}
+        for h in history:
+            for tid, status in h.task_outcomes.items():
+                last_outcome_per_task[tid] = status
+
+        # 3. 选择: 新加 task + 最后一轮未 completed 的 task
+        selected: list[Task] = []
+        for t in self.tasks:
+            if t.id not in all_historical_task_ids:
+                # 新加 task — 必须跑
+                selected.append(t)
+            else:
+                # 历史已跑过 — 看最后一轮 outcome
+                last_status = last_outcome_per_task.get(t.id)
+                if last_status != "completed":
+                    # 未 completed (failed / cancelled / missing) → 重跑
+                    selected.append(t)
+
+        return selected
 
     async def _build_history(
-        self, round_id: int, round_result: RoundResult
+        self,
+        round_id: int,
+        round_result: RoundResult,
+        round_tasks: list[Task] | None = None,
     ) -> RoundHistory:
         """构造 RoundHistory (含 Gate + 语义 + git diff).
 
@@ -211,6 +251,10 @@ class Orchestrator:
               改为从 round_result.gate_results (Run Round 时已跑) 读
             - 格式转换: dict[gate_name, Verdict] → dict[gate_name, bool]
             - LLM 语义评估 + git diff 仍在 Orchestrator (因为依赖 ctx / project_root)
+
+        v2.3 Phase C:
+            - 新增 round_tasks 参数, 写入 RoundHistory.tasks_run
+              (供下一轮 _select_round_tasks 增量选择参考)
         """
         # 1. 从 RoundResult 读 gate_results (Phase H 真集成)
         gate_results = {
@@ -224,6 +268,10 @@ class Orchestrator:
         # 3. git diff --numstat
         lines_added, lines_removed = _parse_git_numstat(self.config.project_root)
 
+        # 4. Phase 2.3-C: 记录本轮跑的 task IDs + 每个 task 的 outcome
+        tasks_run = [t.id for t in (round_tasks or [])]
+        task_outcomes = {o.task_id: o.status for o in round_result.outcomes}
+
         return RoundHistory(
             round_id=round_id,
             files_changed=round_result.completed_count,
@@ -231,6 +279,8 @@ class Orchestrator:
             lines_removed=lines_removed,
             gate_results=gate_results,
             semantic_satisfied=semantic_satisfied,
+            tasks_run=tasks_run,
+            task_outcomes=task_outcomes,
         )
 
     def _run_gates(self) -> dict[str, bool]:

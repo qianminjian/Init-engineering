@@ -73,6 +73,10 @@ class RoundHistory:
         lines_removed: 本轮删除行数
         gate_results: 7 道 Gate 的结果 dict[name -> bool], True=pass
         semantic_satisfied: LLM 语义评估是否通过 (Phase 3+ LLM 调用, Phase 2 可为 None)
+        tasks_run: v2.3 Phase C — 本轮实际跑的 task IDs (供 Orchestrator 增量选择参考)
+        task_outcomes: v2.3 Phase C — 本轮每个 task 的最终状态
+            {task_id: "completed" | "failed" | "cancelled"}, 供下一轮 _select_round_tasks
+            区分"已完成 (跳过)" vs "失败 (重跑)"
     """
 
     round_id: int
@@ -81,6 +85,8 @@ class RoundHistory:
     lines_removed: int = 0
     gate_results: dict[str, bool] = field(default_factory=dict)
     semantic_satisfied: bool | None = None  # None = 未评估
+    tasks_run: list[str] = field(default_factory=list)
+    task_outcomes: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
