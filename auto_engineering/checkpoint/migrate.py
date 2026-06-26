@@ -19,7 +19,8 @@ v1.1 JSON 格式 (来自 engine/checkpoint.py + engine/state.py):
         ]
     }
 
-v2.0 SQLite Schema (loop/checkpoint.py): SQLiteCheckpointStore 表 checkpoints (含 state_json + history_json).
+v2.0 SQLite Schema (loop/checkpoint.py): SQLiteCheckpointStore 表 checkpoints
+(含 state_json + history_json).
 
 迁移策略:
     - LoopState: 提取 v1.1 loop_state.round/step/status + 其他字段注入 metrics/tasks/channels

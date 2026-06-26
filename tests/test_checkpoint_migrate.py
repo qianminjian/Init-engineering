@@ -18,7 +18,6 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-
 # ============================================================
 # I.1 load_v1_checkpoint
 # ============================================================
