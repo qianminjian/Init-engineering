@@ -173,6 +173,52 @@ def test_check_file_isolation_throws_conflict_error_on_violation():
 
 
 # ============================================================
+# B.2 workspace 边界检查 (P0-3 安全: 防 ../ / 绝对路径逃逸)
+# ============================================================
+
+
+def test_check_file_isolation_rejects_absolute_path():
+    """target_files 含绝对路径 → 抛 ConflictError (P0-3 安全)."""
+    tasks = [
+        make_task("t1", ["/etc/passwd"]),
+        make_task("t2", ["src/normal.py"]),
+    ]
+    with pytest.raises(ConflictError, match="绝对路径|workspace"):
+        check_file_isolation(tasks, raise_on_conflict=True)
+
+
+def test_check_file_isolation_rejects_parent_traversal():
+    """target_files 含 ../ 路径 → 抛 ConflictError (P0-3 安全)."""
+    tasks = [
+        make_task("t1", ["../../../etc/passwd"]),
+        make_task("t2", ["src/normal.py"]),
+    ]
+    with pytest.raises(ConflictError, match=r"\.\./|workspace"):
+        check_file_isolation(tasks, raise_on_conflict=True)
+
+
+def test_check_file_isolation_rejects_tilde_expansion():
+    """target_files 含 ~ 路径 → 抛 ConflictError (P0-3 安全)."""
+    tasks = [
+        make_task("t1", ["~/.ssh/id_rsa"]),
+        make_task("t2", ["src/normal.py"]),
+    ]
+    with pytest.raises(ConflictError, match="~|workspace"):
+        check_file_isolation(tasks, raise_on_conflict=True)
+
+
+def test_check_file_isolation_allows_relative_paths():
+    """target_files 含合法相对路径 → 不抛错 (P0-3 正常情况)."""
+    tasks = [
+        make_task("t1", ["src/foo.py"]),
+        make_task("t2", ["tests/test_foo.py"]),
+    ]
+    # 不应抛错
+    conflicts = check_file_isolation(tasks, raise_on_conflict=True)
+    assert conflicts == []
+
+
+# ============================================================
 # C. Plan parallelism_groups
 # ============================================================
 

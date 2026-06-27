@@ -202,6 +202,7 @@ def check_file_isolation(
     算法:
         1. 按 topological levels 分组 (同一 level 的 task 并行)
         2. 每个 level 内: 检查任意两个 task 的 target_files 是否有交集
+        3. workspace 边界校验 (P0-3 安全): 拒绝绝对路径 / ../ / ~ 逃逸
 
     Args:
         tasks: Task 列表 (迭代器, 可以是列表/生成器)
@@ -210,6 +211,11 @@ def check_file_isolation(
     Returns:
         冲突描述列表, 空列表表示无冲突
 
+    Raises:
+        ConflictError: 当 raise_on_conflict=True 且:
+            - 同 level 内文件冲突, 或
+            - target_files 含绝对路径 / ../ / ~ (workspace 逃逸)
+
     Note:
         串行的两个 task (有 depends_on 关系) 即使共享文件也不算冲突
         因为它们不会并行执行
@@ -217,6 +223,37 @@ def check_file_isolation(
     task_list = list(tasks)
     if not task_list:
         return []
+
+    # P0-3 workspace 边界校验: 拒绝逃逸出 project_root 的路径
+    workspace_violations: list[str] = []
+    for task in task_list:
+        for file_path in task.target_files:
+            if not file_path:
+                continue
+            # 绝对路径 (Unix / Windows)
+            if file_path.startswith("/") or (len(file_path) >= 2 and file_path[1] == ":"):
+                workspace_violations.append(
+                    f"task '{task.id}': target_files 含绝对路径 '{file_path}' "
+                    f"(workspace 逃逸禁止)"
+                )
+                continue
+            # 父目录逃逸
+            if ".." in file_path.split("/"):
+                workspace_violations.append(
+                    f"task '{task.id}': target_files 含 ../ 路径 '{file_path}' "
+                    f"(workspace 逃逸禁止)"
+                )
+                continue
+            # 主目录展开 (常见攻击向量)
+            if file_path.startswith("~"):
+                workspace_violations.append(
+                    f"task '{task.id}': target_files 含 ~ 路径 '{file_path}' "
+                    f"(workspace 逃逸禁止)"
+                )
+    if workspace_violations and raise_on_conflict:
+        raise ConflictError(workspace_violations)
+    if workspace_violations:
+        return workspace_violations
 
     # 按 topological level 分组
     levels = _topological_levels(task_list)
