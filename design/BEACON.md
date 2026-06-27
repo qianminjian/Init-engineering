@@ -1,4 +1,4 @@
-> 来源：@design/INDEX.md | 创建：2026-06-24 | 更新：2026-06-26 | 阶段：v2.3 P0-B 完成（v1.0 CLI list/show/resume 切到 SQLiteCheckpointStore, engine/checkpoint.py 冻结）
+> 来源：@design/INDEX.md | 创建：2026-06-24 | 更新：2026-06-27 | 阶段：v2.4 P1-C 完成 (gates/builtin.py 运行时 DeprecationWarning, BEACON 决策 26)
 
 ## 目标与成功标准
 
@@ -40,6 +40,7 @@
 | 23 | **P0-A: v2.0 Channel 体系归属 = checkpoint 专用; v2.0 Pydantic LoopState 重命名为 CheckpointEnvelope** | 消除 "LoopState" 同名双义 (engine.state.LoopState v1.0 dataclass 运行时 vs loop.state.LoopState v2.0 Pydantic checkpoint 专用). 详见下方决策 23 展开 | 2026-06-26 | ✅ |
 | 24 | **P0-B: engine/checkpoint.py 冻结 — 不再主动开发, 保留仅为向后兼容** | v1.0 CLI (ae checkpoint list/show/resume) 已切到 SQLiteCheckpointStore; engine/checkpoint.py 仍被 engine.loop.LoopEngine (v1.0 runtime) 使用, 因此保留. 文件头加 ⚠️ 冻结标记 (与 builtin.py 决策 22 同模式) | 2026-06-26 | ✅ |
 | 25 | **P0-C: CoverageGate (gates/coverage.py) 冻结 — 永远返回 'skip' Verdict, 不阻塞 dev-loop** | 本项目未装 pytest-cov (pyproject.toml addopts 不含 --cov), Gate 永远 'skip: 未提取到覆盖率数据'. 选 (b) 冻结而非 (a) 安装: (a) 装 pytest-cov 会让所有 pytest 跑 ~2x 内存 (CLAUDE.md 16G 内存约束, .claude/rules/pytest-memory-management.md), 真实覆盖率检查应在 CI 独立配置. 文件头加 ⚠️ 冻结标记 + DeprecationWarning 每 5 run 触发 1 次 + 测试保留 verdict.passed 接口 (向后兼容). 与决策 22 (builtin.py) / 24 (engine/checkpoint.py) 同模式 | 2026-06-27 | ✅ |
+| 26 | **P1-C: gates/builtin.py 加运行时 DeprecationWarning 信号 (每次 import/check 触发 1 次)** | builtin.py 文件头已有 ⚠️ 冻结标记 (决策 22) 但缺运行时信号. 加 module-level _WARNED flag + _warn_deprecation_once(), 5 个 Guardrail.check() 入口各调用 1 次 (整体守门, 避免刷屏). 引导用户迁移到 v2.0 Gate 体系 (gates/{safety,lint,test,coverage,build,...} 7 道). 与决策 25 (CoverageGate) 同模式 — 简单 module-level 守门, 无需 sys.modules 钩子 (过度设计). 测试: TestBuiltinDeprecationWarning 4 个新用例 (20/20 PASS) | 2026-06-27 | ✅ |
 
 ## 决策 23 展开: Channel 体系归属 = checkpoint 专用
 
@@ -51,11 +52,11 @@
 
 ## 当前状态
 
-**阶段：** v2.3 P0-B 完成（v1.0 CLI list/show/resume 切到 SQLiteCheckpointStore, engine/checkpoint.py 冻结, BEACON 决策 24）。
+**阶段：** v2.4 P1-C 完成（gates/builtin.py 运行时 DeprecationWarning, BEACON 决策 26）。
 
-**最近动作：** 2026-06-26 v2.3 P0-B 完成 — `auto_engineering/cli.py` 三个 v1.0 命令 (list/show/resume) 从 `engine.checkpoint.CheckpointStore` (line 1071/1107/1149) 切到 `loop.checkpoint.SQLiteCheckpointStore` (v2.0 schema, 与 v2 子命令共用 backend); `engine/checkpoint.py` 文件头加 ⚠️ 冻结标记 (与 gates/builtin.py 决策 22 同模式); BEACON 决策 24 记录冻结原因 (v1.0 runtime 仍用, 保留兼容); `tests/test_checkpoint_cli.py` fixture 同步切到 SQLiteCheckpointStore + 断言匹配 v2.0 字段 (ROUND/SCHEMA); `test_checkpoint_cli.py` (5 用例) + `test_checkpoint.py` (8 用例 v1.0 store 直测, 应不受影响) + `test_checkpoint_migrate.py` (7 用例) 全 PASS 零回归。
+**最近动作：** 2026-06-27 v2.4 P1-C 完成 — `auto_engineering/gates/builtin.py` 加 module-level `_WARNED` flag + `_warn_deprecation_once()`, 5 个 Guardrail.check() 入口各调 1 次 (整体守门, 避免刷屏), 引导用户迁移到 v2.0 Gate 体系 (gates/{safety,lint,test,coverage,build} 7 道); BEACON 决策 26 记录运行时信号模式 (与决策 22/24/25 同模式); `tests/test_builtin.py` TestBuiltinDeprecationWarning 4 个新用例 (20/20 PASS) + 零回归 (test_gates.py 27/27 + test_guardrail.py + test_orchestrator_gates_integration.py 全绿).
 
-**下一步：** v2.3 P0-B 完成后 → 用户 manual gate 决策 v2.3 → 是否启动 v3.0 (production hardening / 真跑验证 / Web UI)？
+**下一步：** v2.4 P1-C 完成后 → 用户 manual gate 决策 v2.4 → 是否启动 v3.0 (production hardening / 真跑验证 / Web UI)？
 
 **阻塞项：** 无
 
@@ -69,6 +70,7 @@
 
 | 日期 | 变更 | 原因 |
 |------|------|------|
+| 2026-06-27 | v2.4 P1-C 完成 (builtin.py 运行时 DeprecationWarning + BEACON 决策 26) | builtin.py 文件头已有 ⚠️ 冻结标记 (决策 22) 但缺运行时信号. 加 module-level _WARNED flag + _warn_deprecation_once(), 5 个 Guardrail.check() 入口各调 1 次, 引导用户迁移到 v2.0 Gate 体系. 与决策 25 (CoverageGate) 同模式 |
 | 2026-06-27 | v2.4 P0-C 完成 (CoverageGate 冻结 + DeprecationWarning + BEACON 决策 25) | 本项目未装 pytest-cov, Gate 永远 'skip'. 选冻结而非安装 (避免 pytest 内存翻倍爆 16G). 真实覆盖率走 CI 独立 job. |
 | 2026-06-26 | v2.3 P0-B 完成 (v1.0 CLI list/show/resume 切到 SQLiteCheckpointStore, engine/checkpoint.py 冻结, BEACON 决策 24) | 统一 CLI backend: v1.0 与 v2 命令共用 SQLiteCheckpointStore; 旧 engine.checkpoint 保留兼容 (v1.0 runtime 仍用), 文件头加 ⚠️ 标记 |
 | 2026-06-26 | v2.3 P0-A 完成 (LoopState → CheckpointEnvelope 重命名, Channel 体系归属 = checkpoint 专用, BEACON 决策 23) | 消除 LoopState 同名双义 (engine.state v1.0 vs loop.state v2.0). 13 文件 import 同步, 160+ 测试全 PASS |
