@@ -47,6 +47,26 @@ class TestReadFileTool:
         assert not result.success
         assert "not found" in result.error.lower()
 
+    def test_read_file_blocks_path_outside_project_root(self, tmp_path: Path):
+        """P1-C: ReadFileTool 带 project_root 时拒绝读取项目外文件."""
+        from auto_engineering.tools import ReadFileTool
+
+        tool = ReadFileTool(project_root=tmp_path)
+        result = run_async(tool.execute(file_path="/etc/passwd"))
+        assert not result.success
+        assert "outside project_root" in result.error
+
+    def test_read_file_allows_path_inside_project_root(self, tmp_path: Path):
+        """P1-C: ReadFileTool 带 project_root 时允许读取项目内文件."""
+        from auto_engineering.tools import ReadFileTool
+
+        f = tmp_path / "inside.txt"
+        f.write_text("secure content", encoding="utf-8")
+        tool = ReadFileTool(project_root=tmp_path)
+        result = run_async(tool.execute(file_path=str(f)))
+        assert result.success
+        assert result.content == "secure content"
+
 
 class TestWriteFileTool:
     """WriteFileTool 真接."""
