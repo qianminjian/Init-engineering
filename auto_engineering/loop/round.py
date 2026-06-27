@@ -101,8 +101,8 @@ class RoundResult:
         return all(v.passed for v in self.gate_results.values())
 
     def files_changed(self) -> int:
-        """估算本轮修改文件数 (基于成功 task 数量, Phase 4+ 接真实 diff)."""
-        # Phase 3 用 task 数估算
+        """估算本轮修改文件数 (基于成功 task 数量, future 接真实 diff)."""
+        # v2.0 用 task 数估算
         return self.completed_count
 
 

@@ -195,5 +195,5 @@ def _emit_stage_done(stage: str, elapsed: float, tokens: int = 0) -> None:
 
 
 def _log_engine_version(version: str) -> None:
-    """输出当前使用的 engine 版本(v1.0 / v2.0)."""
+    """输出当前使用的 engine 版本(v2.0 / v2.0)."""
     click.echo(f"[engine] using {version} orchestrator")

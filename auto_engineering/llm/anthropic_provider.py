@@ -1,9 +1,9 @@
 """AnthropicProvider — LLM 调用封装.
 
-设计参考: design/LOOP-DEVELOPMENT-PLAN.md Phase 3 文件 18.
+设计参考: design/LOOP-DEVELOPMENT-PLAN.md v2.0 文件 18.
 封装 anthropic SDK,提供 LLMResponse/LLMUsage 数据类,统一接口给 Agent 调用.
 
-v3.1 扩展 (Phase 0.1 dev-loop 真接):
+v3.1 扩展 (v2.0 dev-loop 真接):
     - LLMResponse 加 stop_reason + tool_use_blocks(支持 BaseAgent 工具循环)
     - create_message 加 tools 参数 + 解析 SDK content blocks(text + tool_use)
 """

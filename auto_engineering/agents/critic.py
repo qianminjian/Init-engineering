@@ -1,6 +1,6 @@
 """CriticAgent — 代码审查.
 
-设计: design/LOOP-DEVELOPMENT-PLAN.md Phase 3 文件 23.
+设计: design/LOOP-DEVELOPMENT-PLAN.md v2.0 文件 23.
 
 P1-A: 原为 BaseAgent 子类, 现改为 factory function 返回 Agent 实例.
 """

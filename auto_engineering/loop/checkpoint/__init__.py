@@ -5,7 +5,7 @@
   - checkpoint/store.py: SQLiteCheckpointStore + SCHEMA_VERSION + _normalize_* helpers
   - checkpoint/__init__.py (本文件): re-export 所有公开符号, 保持向后兼容
 
-设计来源: design/v2.0-Analysis-Loop.md §4.4 + §五 Phase 1.2
+设计来源: design/v2.0-Analysis-Loop.md §4.4 + §五 v2.0
 
 P1-E 拆分: checkpoint.py 705 行 → checkpoint/store.py(≤400) + checkpoint/envelope.py(≤140).
 """

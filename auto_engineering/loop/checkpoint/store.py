@@ -194,9 +194,9 @@ class SQLiteCheckpointStore[T]:
 
     @staticmethod
     def _deserialize_state(state_json: str) -> Any:
-        """反序列化 JSON → CheckpointEnvelope 实例 (Phase 2.1-D 修复 + Phase 2.2-G 类型契约).
+        """反序列化 JSON → CheckpointEnvelope 实例 (v2.0-D 修复 + Phase 2.2-G 类型契约).
 
-        Phase 2.1-D: 返回 CheckpointEnvelope 实例, channels 是 Channel 实例.
+        v2.0-D: 返回 CheckpointEnvelope 实例, channels 是 Channel 实例.
         Phase 2.2-G: 输入是 LoopStateProtocol 序列化结果 (model_dump JSON),
                       返回 CheckpointEnvelope 实例 (调用 deserialize_loop_state 重建 Channel).
         (v2.3 P0-A: 原 LoopState 重命名为 CheckpointEnvelope.)
@@ -592,7 +592,7 @@ class SQLiteCheckpointStore[T]:
             raise CheckpointSchemaMismatchError(
                 found=schema_version, expected=SCHEMA_VERSION
             )
-        # 反序列化 (Phase 2.1-D: 返回 CheckpointEnvelope 实例, channels 是 Channel 实例)
+        # 反序列化 (v2.0-D: 返回 CheckpointEnvelope 实例, channels 是 Channel 实例)
         state = SQLiteCheckpointStore._deserialize_state(row["state_json"])
         history = json.loads(row["history_json"])
         created_at = datetime.fromisoformat(row["created_at"])

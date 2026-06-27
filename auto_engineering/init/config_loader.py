@@ -155,7 +155,7 @@ def _parse_tasks(tasks_raw: list[dict[str, Any]], config_kwargs: dict[str, Any])
     """将 _tasks 列表按默认 stage 分到 tasks_before / tasks_after。
 
     来源：Copier _template.py filter_config 中的 _tasks 处理。
-    stage 默认为 "after"，"before" 阶段的在 Phase 3（渲染）前执行。
+    stage 默认为 "after"，"before" 阶段的在 v2.0（渲染）前执行。
     """
     before: list[Task] = []
     after: list[Task] = []

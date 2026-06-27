@@ -26,7 +26,7 @@ def register_checkpoint_commands(main: click.Group) -> None:
     def checkpoint_list_cmd():
         """列出所有 checkpoint (v2.3 P0-B: 切到 SQLiteCheckpointStore).
 
-        历史: v1.0 用 engine.checkpoint.CheckpointStore (冻结).
+        历史: v2.0 用 engine.checkpoint.CheckpointStore (冻结).
         v2.0/v2.3: 用 loop.checkpoint.SQLiteCheckpointStore (与 v2.0 子命令共用).
         """
         from auto_engineering.loop.checkpoint import SQLiteCheckpointStore
@@ -79,7 +79,7 @@ def register_checkpoint_commands(main: click.Group) -> None:
     def checkpoint_show_cmd(checkpoint_id: str):
         """查看 checkpoint 详情 (v2.3 P0-B: 切到 SQLiteCheckpointStore).
 
-        历史: v1.0 用 engine.checkpoint.CheckpointStore.load_checkpoint (冻结).
+        历史: v2.0 用 engine.checkpoint.CheckpointStore.load_checkpoint (冻结).
         v2.0/v2.3: 用 loop.checkpoint.SQLiteCheckpointStore.load.
         """
         from auto_engineering.loop.checkpoint import (
@@ -131,7 +131,7 @@ def register_checkpoint_commands(main: click.Group) -> None:
     def checkpoint_resume_cmd(checkpoint_id: str):
         """从 checkpoint 恢复 (v2.3 P0-B: 切到 SQLiteCheckpointStore).
 
-        历史: v1.0 用 engine.checkpoint.CheckpointStore.load_checkpoint (冻结).
+        历史: v2.0 用 engine.checkpoint.CheckpointStore.load_checkpoint (冻结).
         v2.0/v2.3: 用 loop.checkpoint.SQLiteCheckpointStore.load.
         (实际恢复请使用 `ae dev-loop` — 它会自动检测中断并提示 resume.)
         """
@@ -299,12 +299,12 @@ def register_checkpoint_commands(main: click.Group) -> None:
     @click.argument("src_json", type=click.Path(exists=True))
     @click.argument("dst_sqlite", type=click.Path())
     def checkpoint_v2_migrate_cmd(src_json: str, dst_sqlite: str) -> None:
-        """迁移 v1.1 JSON checkpoint → v2.0 SQLite.
+        """迁移 v2.0 JSON checkpoint → v2.0 SQLite.
 
         用法:
             ae checkpoint v2 migrate <src.json> <dst.sqlite>
 
-        迁移方向: v1.1 → v2.0 (单向, 不可逆).
+        迁移方向: v2.0 → v2.0 (单向, 不可逆).
         """
         from auto_engineering.checkpoint.migrate import migrate_v1_to_v2
 
@@ -313,4 +313,4 @@ def register_checkpoint_commands(main: click.Group) -> None:
         except Exception as e:
             click.echo(f"[迁移失败] {e}", err=True)
             raise SystemExit(1) from e
-        click.echo(f"Migrated v1.1 → v2.0: checkpoint_id={cp_id}")
+        click.echo(f"Migrated v2.0 → v2.0: checkpoint_id={cp_id}")

@@ -75,7 +75,7 @@ class RoundHistory:
                       之前是 dict[str, bool], 丢失 verdict.message 语义.
                       用 Any 是为了避免与 gates 模块循环引用 (RoundHistory 在 convergence.py,
                       Verdict 在 gates/base.py). 实际值始终为 Verdict.
-        semantic_satisfied: LLM 语义评估是否通过 (Phase 3+ LLM 调用, Phase 2 可为 None)
+        semantic_satisfied: LLM 语义评估是否通过 (v2.0+ LLM 调用, Phase 2 可为 None)
         tasks_run: v2.3 Phase C — 本轮实际跑的 task IDs (供 Orchestrator 增量选择参考)
         task_outcomes: v2.3 Phase C — 本轮每个 task 的最终状态
             {task_id: "completed" | "failed" | "cancelled"}, 供下一轮 _select_round_tasks
@@ -286,9 +286,9 @@ class ConvergenceJudge:
         """评估当前是否应该停止循环.
 
         Args:
-            state: 当前状态 (v2.3 P0-A: 运行时走 engine.state.LoopState v1.0 dataclass;
+            state: 当前状态 (v2.3 P0-A: 运行时走 engine.state.LoopState v2.0 dataclass;
                    CheckpointEnvelope 仅供 checkpoint 持久化. Phase 2 暂不直接读取,
-                   保留接口供 Phase 3+ 使用)
+                   保留接口供 v2.0+ 使用)
             history: 历史轮次列表 (可为空)
 
         Returns:
@@ -430,7 +430,7 @@ class ConvergenceJudge:
 
         Note:
             Phase 2 实现: 仅当 semantic_satisfied=True 时触发
-            Phase 3+ 接 LLM 调用: 内部调用 LLM 评估当前产出
+            v2.0+ 接 LLM 调用: 内部调用 LLM 评估当前产出
         """
         if not history:
             return None

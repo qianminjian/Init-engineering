@@ -1,6 +1,6 @@
 """v2.0 Phase 04 — 7 道 Gate (v2.0 production path).
 
-v2.4 P0-FINAL: v1.0 builtin/guardrail 已移除.
+v2.4 P0-FINAL: v2.0 builtin/guardrail 已移除.
 """
 
 from __future__ import annotations

@@ -2,16 +2,16 @@
 
 CheckpointEnvelope (原名 LoopState, v2.3 P0-A 重命名):
     v2.0 Checkpoint 持久化的数据结构 (Pydantic BaseModel).
-    仅供 checkpoint 持久化 / migrate (v1.1->v2.0) 使用.
-    运行时 Orchestrator 不使用此类型 (走 engine.state.LoopState v1.0 dataclass).
+    仅供 checkpoint 持久化 / migrate (v2.0->v2.0) 使用.
+    运行时 Orchestrator 不使用此类型 (走 engine.state.LoopState v2.0 dataclass).
     详见 BEACON.md 决策 23 (Channel 体系归属: checkpoint 专用).
 
-    重命名原因: 消除 "LoopState" 同名双义 -- engine.state.LoopState (v1.0 dataclass,
+    重命名原因: 消除 "LoopState" 同名双义 -- engine.state.LoopState (v2.0 dataclass,
     运行时生产代码用) vs loop.state.LoopState (v2.0 Pydantic, checkpoint 专用).
     新名 "CheckpointEnvelope" 明确语义: v2.0 Checkpoint 数据信封.
 
 设计文档:
-- Phase 2.1-D: 8 个核心字段 + Task 字段补全 + load() 重建 Channel 实例.
+- v2.0-D: 8 个核心字段 + Task 字段补全 + load() 重建 Channel 实例.
 - design/v2.0-Design-Loop.md §3.1
 """
 
@@ -32,7 +32,7 @@ from auto_engineering.loop.state.metrics import MetricsSnapshot, Signal
 
 
 # ============================================================
-# 辅助类型 (Phase 2.1-D)
+# 辅助类型 (v2.0-D)
 # 设计文档: design/v2.0-Design-Loop.md §3.1
 # ============================================================
 
@@ -53,14 +53,14 @@ class GateVerdict:
 
 
 class CheckpointEnvelope(BaseModel):
-    """v2.0 Checkpoint 数据信封 (Phase 2.1-D 补全字段).
+    """v2.0 Checkpoint 数据信封 (v2.0-D 补全字段).
 
     设计文档 §3.1: 8 个核心字段 + 底层 channels 存储.
 
     v2.3 P0-A 重命名: 原名 LoopState -> CheckpointEnvelope.
     语义: v2.0 Checkpoint 持久化的数据结构 (Pydantic BaseModel),
-    仅供 SQLite checkpoint store + migrate (v1.1->v2.0) 使用.
-    运行时 Orchestrator / Runtime / Gates 走 engine.state.LoopState (v1.0 dataclass).
+    仅供 SQLite checkpoint store + migrate (v2.0->v2.0) 使用.
+    运行时 Orchestrator / Runtime / Gates 走 engine.state.LoopState (v2.0 dataclass).
 
     Attributes:
         round: 当前 Round 编号 (0 = 未开始)
@@ -97,13 +97,13 @@ class CheckpointEnvelope(BaseModel):
     # 底层 channel 存储 (保留, 用于 Channel 系统 API)
     channels: dict[str, Channel[Any]] = Field(default_factory=dict)
 
-    # Phase 2.3-B: channel_versions 跟踪每个 channel 的版本号
+    # v2.0-B: channel_versions 跟踪每个 channel 的版本号
     # 借鉴 LangGraph Pregel.channel_versions (pregel/main.py:1140, 1736-1740)
     # 用途: 增量触发 (_get_new_channel_versions diff)
     channel_versions: dict[str, int] = Field(default_factory=dict)
 
     # ============================================================
-    # 便捷属性 (Phase 2.1-D 新增)
+    # 便捷属性 (v2.0-D 新增)
     # ============================================================
 
     def get_task(self, task_id: str) -> Any | None:
@@ -122,7 +122,7 @@ class CheckpointEnvelope(BaseModel):
         return self.metrics.get(name, default)
 
     # ============================================================
-    # Channel 系统 API (Phase 2.1-A 已有, 保留)
+    # Channel 系统 API (v2.0-A 已有, 保留)
     # ============================================================
 
     def get_channel(self, name: str) -> Any:
@@ -135,7 +135,7 @@ class CheckpointEnvelope(BaseModel):
     def set_channel(self, name: str, value: Any) -> bool:
         """写入指定 channel. 未知 channel 抛 KeyError(显式错误优于静默失败).
 
-        Phase 2.3-B: 累加 channel_versions[name] (借鉴 LangGraph Pregel 增量触发).
+        v2.0-B: 累加 channel_versions[name] (借鉴 LangGraph Pregel 增量触发).
         - 返回值仍来自 Channel.update(): True 表示有变化
         - 仅当 update() 返回 True 时累加 version (重复值不增)
 
@@ -159,7 +159,7 @@ class CheckpointEnvelope(BaseModel):
         - 父类 model_dump 会尝试序列化 Channel 对象 -> 失败
         - 覆盖后先用 checkpoint() 转 dict, 再 dict-to-dict 序列化
 
-        Phase 2.1-D: 输出包含全部 8 业务字段 + channels (含 checkpoint 值).
+        v2.0-D: 输出包含全部 8 业务字段 + channels (含 checkpoint 值).
         """
         # 排除 channels 字段从父类 dump (Channel 不可被 pydantic 序列化)
         kwargs.setdefault("mode", "json")
@@ -174,7 +174,7 @@ class CheckpointEnvelope(BaseModel):
 
 
 # ============================================================
-# 反序列化: checkpoint dict -> CheckpointEnvelope (Phase 2.1-D 修复 Phase A)
+# 反序列化: checkpoint dict -> CheckpointEnvelope (v2.0-D 修复 Phase A)
 # ============================================================
 
 
@@ -185,7 +185,7 @@ def deserialize_loop_state(data: dict[str, Any]) -> CheckpointEnvelope:
     - data 是 JSON 反序列化后的 dict (含 8 业务字段 + channels)
     - 业务字段直接传入 CheckpointEnvelope 构造
     - channels[name] (raw checkpoint 值) -> 对应类型 Channel 实例 (调 from_checkpoint)
-    - tasks/task_results: 重建 dataclass (Phase 2.1-D: 优先重建为 Task/TaskOutcome,
+    - tasks/task_results: 重建 dataclass (v2.0-D: 优先重建为 Task/TaskOutcome,
       无法识别时回退 dict -- 兼容旧 schema)
 
     Channel 类型识别:

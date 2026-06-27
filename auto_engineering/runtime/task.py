@@ -1,9 +1,9 @@
 """Task + TaskResult — runtime 层任务数据模型.
 
-参考 CrewAI task.py:114-213 富 Task 模型(精简版,只保留 v1.0 必要字段).
+参考 CrewAI task.py:114-213 富 Task 模型(精简版,只保留 v2.0 必要字段).
 
 设计要点:
-    - Task 是 runtime 层抽象,Stage 是 graph 层抽象。两者字段重叠(v1.0),
+    - Task 是 runtime 层抽象,Stage 是 graph 层抽象。两者字段重叠(v2.0),
       v2.0 可能拆分:Stage(graph 层)+ Task(runtime 层)。
     - Task.id 通常 == Stage.name(同一概念在 graph/runtime 两层表达)。
     - dataclass 而非 Pydantic:与 LoopState/Stage/Checkpoint 风格一致(YAGNI)。

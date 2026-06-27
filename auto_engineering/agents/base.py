@@ -1,4 +1,4 @@
-"""BaseAgent — Agent 基类. Phase 0.1 dev-loop 真接.
+"""BaseAgent — Agent 基类. v2.0 dev-loop 真接.
 
 设计要点:
     - LLM 调用循环(while turn < max_tool_calls + 1)
@@ -122,7 +122,7 @@ class BaseAgent:
             except Exception as exc:  # 详见下面特定异常映射
                 raise self._map_llm_exception(exc) from exc
 
-            # Phase 1.3: TokenTracker 累加 + 超阈值抛错
+            # v2.0: TokenTracker 累加 + 超阈值抛错
             if token_tracker is not None:
                 token_tracker.add(response)  # 超 max_tokens 抛 BUDGET_EXCEEDED
 

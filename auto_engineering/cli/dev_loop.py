@@ -156,8 +156,8 @@ def _run_v2_orchestrator(
     """v2.0 Orchestrator 驱动器 — 单 Agent 模式演示.
 
     设计要点 (Phase C):
-        - 单 task / round (Phase 3 多 Agent 并发未启用, 留 Phase 4+)
-        - 复用 v1.0 BaseAgent (DeveloperAgent) 作为 TaskExecutor
+        - 单 task / round (v2.0 多 Agent 并发未启用, 留 future)
+        - 复用 v2.0 BaseAgent (DeveloperAgent) 作为 TaskExecutor
         - 启用 2 道 Gate (Safety + Lint) — 真集成, 非 mock
         - semantic_evaluator 简化 (始终 True, 避免 mock LLM)
 
@@ -201,9 +201,9 @@ def _run_v2_orchestrator(
     # 2. 构造单 task (Phase C 简化: 1 个 task, developer agent)
     task = Task(
         id="t1",
-        title=requirement[:50] or "Implement requirement",  # Phase 2.1-D: 非空 title
+        title=requirement[:50] or "Implement requirement",  # v2.0-D: 非空 title
         description=requirement,
-        expected_output="实现需求对应的代码变更",  # Phase 2.1-D: contract
+        expected_output="实现需求对应的代码变更",  # v2.0-D: contract
         role="developer",
         agent_type="developer",
         target_files=frozenset(),  # 单 Agent 模式不强制隔离

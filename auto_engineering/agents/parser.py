@@ -1,6 +1,6 @@
 """Agent output parser — 双层防御 (schema → regex fallback).
 
-设计: design/LOOP-DEVELOPMENT-PLAN.md Phase 3 文件 19.
+设计: design/LOOP-DEVELOPMENT-PLAN.md v2.0 文件 19.
 来源: CrewAI utilities/converter.py:24-80.
 
 Layer 1 (schema): 尝试直接 JSON 解析 + Pydantic schema 校验

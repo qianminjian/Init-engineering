@@ -1,6 +1,6 @@
 """ArchitectAgent — 需求分析 → 实现计划.
 
-设计: design/LOOP-DEVELOPMENT-PLAN.md Phase 3 文件 21.
+设计: design/LOOP-DEVELOPMENT-PLAN.md v2.0 文件 21.
 
 P1-A: 原为 BaseAgent 子类, 现改为 factory function 返回 Agent 实例.
 保持向后兼容: ArchitectAgent(llm=...) 仍可用, 返回 Agent(role='architect').

@@ -36,7 +36,7 @@ class TaskStatus(StrEnum):
     BLOCKED = "blocked"
 
 
-# Task 合法角色枚举 (Phase 2.1-D 加 contract 校验)
+# Task 合法角色枚举 (v2.0-D 加 contract 校验)
 VALID_TASK_ROLES = frozenset({"developer", "critic", "reviewer", "architect"})
 
 
@@ -52,7 +52,7 @@ class ConflictError(Exception):
 
 @dataclass
 class TaskValidation:
-    """Task 验证规则 (Phase 2.1-D 新增).
+    """Task 验证规则 (v2.0-D 新增).
 
     Attributes:
         required_files: 必须存在的文件列表 (Gate 子集)
@@ -67,11 +67,11 @@ class TaskValidation:
 
 @dataclass
 class Task:
-    """单个任务单元 (Phase 2.1-D 字段补全: 设计文档 §3.2).
+    """单个任务单元 (v2.0-D 字段补全: 设计文档 §3.2).
 
     Attributes:
         id: 唯一标识 (由 Orchestrator 拆分时分配)
-        title: 人读任务标题 (新字段, Phase 2.1-D)
+        title: 人读任务标题 (新字段, v2.0-D)
         description: 四段式指令 (目标/边界/验收标准/禁止项)
         expected_output: 期望输出 (新字段, contract 的一部分)
         role: 执行 Agent 角色 developer|critic|reviewer|architect (新字段)
@@ -341,7 +341,7 @@ class Plan:
         """校验 Plan 合法性:
             1. DAG 无循环 (topological_sort 内部检查)
             2. 并行 task 的 target_files 无交集
-            3. contract 校验 (Phase 2.1-D):
+            3. contract 校验 (v2.0-D):
                - 每个 task.title 非空
                - 每个 task.expected_output 非空
                - 每个 task.role 在枚举中 (developer/critic/reviewer/architect)
@@ -352,7 +352,7 @@ class Plan:
         topological_sort(self.tasks)
         # 文件隔离检查
         check_file_isolation(self.tasks, raise_on_conflict=True)
-        # contract 校验 (Phase 2.1-D)
+        # contract 校验 (v2.0-D)
         self._validate_contracts()
 
     def _validate_contracts(self) -> None:

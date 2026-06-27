@@ -4,7 +4,7 @@
 
 模块内容：
 - run_builtin_hooks()  : git init / package_manager install / lefthook install / git add+commit
-- merge_incremental()   : 增量模式合并（Phase 3.5）
+- merge_incremental()   : 增量模式合并（v2.0.5）
 - init_project()       : 顶层便利函数
 """
 

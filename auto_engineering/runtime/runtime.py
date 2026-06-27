@@ -34,7 +34,7 @@ class AgentRuntime:
     """Agent 注册表 + 延迟实例化.
 
     v2.0 专有路径: Orchestrator 按 task.role 调 get(role) → agent.execute(task, ctx).
-    不包含 v1.0 execute(stage, state) API.
+    不包含 v2.0 execute(stage, state) API.
     """
 
     def __init__(self, registry: Any = None):

@@ -89,8 +89,8 @@ class TemplateConfig:
 
     secret_questions: list[str] = field(default_factory=list)
     questions: list[Question] = field(default_factory=list)
-    tasks_before: list[Task] = field(default_factory=list)  # Phase 3 前执行
-    tasks_after: list[Task] = field(default_factory=list)  # Phase 3 后执行
+    tasks_before: list[Task] = field(default_factory=list)  # v2.0 前执行
+    tasks_after: list[Task] = field(default_factory=list)  # v2.0 后执行
     external_data: dict[str, str] = field(default_factory=dict)  # P1#8
     message_before: str = ""  # 渲染前打印
     message_after: str = ""  # 渲染后打印

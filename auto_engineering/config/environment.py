@@ -1,7 +1,7 @@
 """init/dev-loop 共享契约 — 从 .ae-answers.yml + 代码自检测解析工程环境.
 
-解析流程见 design/v1.0-DESIGN.md §4.5 + design/v1.0-SHARED.md §共享契约.
-v1.1 Plan B: 新增 load_ae_answers() 和 preflight() 函数.
+解析流程见 design/v2.0-DESIGN.md §4.5 + design/v2.0-SHARED.md §共享契约.
+v2.0 Plan B: 新增 load_ae_answers() 和 preflight() 函数.
 """
 
 from __future__ import annotations
@@ -163,7 +163,7 @@ class ProjectEnvironment:
 
 
 # ----------------------------------------------------------------------
-# v1.1 Plan B 新增: load_ae_answers() + preflight()
+# v2.0 Plan B 新增: load_ae_answers() + preflight()
 # ----------------------------------------------------------------------
 
 

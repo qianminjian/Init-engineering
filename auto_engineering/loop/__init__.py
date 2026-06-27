@@ -22,7 +22,7 @@ Checkpoint 持久化 (v2.0 Phase 02):
 
 v2.3 P1-III: 缩减导出符号到核心 15 个 (原 16, 移除 LoopState — 详见 BEACON 决策 23).
 v2.3 P0-A: CheckpointEnvelope (原 LoopState) 从 v2.0 Pydantic 重命名, 明确"v2.0 Checkpoint 专用"
-    — 运行时 Orchestrator / Runtime / Gates 走 engine.state.LoopState (v1.0 dataclass).
+    — 运行时 Orchestrator / Runtime / Gates 走 engine.state.LoopState (v2.0 dataclass).
     CheckpointEnvelope / Channel / 辅助类型需显式 import `auto_engineering.loop.state`.
     不通过 __init__ 导出 (消除与 engine.state.LoopState 的同名双义).
 

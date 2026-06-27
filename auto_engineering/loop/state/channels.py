@@ -87,7 +87,7 @@ class LastValueChannel(Channel[T]):
     """单写覆盖语义.
 
     每次 update 覆盖前一值. 适用于: Plan 状态、Review 结论、
-    单一权威输出. v1.1 dataclass LoopState (engine.state) 的核心字段都可映射为此类型.
+    单一权威输出. v2.0 dataclass LoopState (engine.state) 的核心字段都可映射为此类型.
     """
 
     def __init__(self, name: str) -> None:
@@ -205,7 +205,7 @@ class AccumulatingChannel(Channel[T]):
 
 
 # ============================================================
-# BarrierChannel 状态重构 (Phase 2.1-A)
+# BarrierChannel 状态重构 (v2.0-A)
 # 原实现: asyncio.Event (不可 JSON 序列化)
 # 新实现: BarrierState dataclass + asyncio.Event (Event 从 state 重建)
 # 设计权衡:

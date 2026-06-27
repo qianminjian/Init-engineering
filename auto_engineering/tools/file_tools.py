@@ -1,4 +1,4 @@
-"""文件操作工具 — Phase 0.2 真接.
+"""文件操作工具 — v2.0 真接.
 
 5 个工具: ReadFile / WriteFile / EditFile / SearchCode / ListDir.
 

@@ -15,7 +15,7 @@ API:
     deserialize_state(json_str: str) -> dict          — JSON 反序列化
 
 Note: deserialize_state 返回 dict, 由 caller (checkpoint._deserialize_state)
-     负责用 deserialize_loop_state() 重建 CheckpointEnvelope 实例. 这是 Phase 2.1-D
+     负责用 deserialize_loop_state() 重建 CheckpointEnvelope 实例. 这是 v2.0-D
      已有的设计, types.py 不重复实现.
 """
 
@@ -81,7 +81,7 @@ def deserialize_state(json_str: str) -> dict[str, Any]:
     设计取舍: 返回 dict 而非 CheckpointEnvelope 实例, 因为:
         1. types.py 不应依赖 loop.state (避免循环引用)
         2. caller (SQLiteCheckpointStore._deserialize_state) 已用
-           deserialize_loop_state() 重建 Channel 实例 (Phase 2.1-D)
+           deserialize_loop_state() 重建 Channel 实例 (v2.0-D)
 
     Args:
         json_str: JSON 字符串 (CheckpointEnvelope 序列化结果)

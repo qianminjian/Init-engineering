@@ -1,6 +1,6 @@
 """DeveloperAgent — TDD 三步循环实现.
 
-设计: design/LOOP-DEVELOPMENT-PLAN.md Phase 3 文件 22.
+设计: design/LOOP-DEVELOPMENT-PLAN.md v2.0 文件 22.
 
 P1-A: 原为 BaseAgent 子类, 现改为 factory function 返回 Agent 实例.
 """

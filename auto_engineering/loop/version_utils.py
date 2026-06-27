@@ -4,7 +4,7 @@ v2.3-B: channel_versions 增量触发算法.
 借鉴 LangGraph Pregel.get_new_channel_versions() (pregel/main.py:1140, 1736-1740).
 简化: 比较 old vs new versions dict, 返回本轮被修改的 channel 名 set.
 
-Phase 2.3-B 用例: Loop 引擎每步调用 get_new_channel_versions(state.channel_versions, prev_versions)
+v2.0-B 用例: Loop 引擎每步调用 get_new_channel_versions(state.channel_versions, prev_versions)
 → 返回被修改的 channel 集合 → 驱动下游任务触发.
 
 ⚠️ 状态: 定义存在, 有单元测试 (tests/test_loop_state_v2.py), 但无生产导入/调用.

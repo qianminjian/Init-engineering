@@ -4,7 +4,7 @@
     Settings            — 全局配置
     ProjectEnvironment  — init/dev-loop 共享契约
 
-v1.1 Plan B 新增:
+v2.0 Plan B 新增:
     load_ae_answers()   — 低级 .ae-answers.yml 加载函数
     preflight()         — 入口前置校验
 """

@@ -1,4 +1,4 @@
-"""测试工具 — Phase 0.2 真接.
+"""测试工具 — v2.0 真接.
 
 1 个工具: RunTestsTool — 按测试 runner 跑测试.
 支持: pytest / npm test / (可扩展)

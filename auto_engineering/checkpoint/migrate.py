@@ -1,9 +1,9 @@
-"""Checkpoint 迁移: v1.1 JSON (engine/checkpoint.py) → v2.0 SQLite (loop/checkpoint.py).
+"""Checkpoint 迁移: v2.0 JSON (engine/checkpoint.py) → v2.0 SQLite (loop/checkpoint.py).
 
-设计来源: P1.5 审计 — v1.1 与 v2.0 Checkpoint 双轨独立, 用户无法跨版本恢复.
+设计来源: P1.5 审计 — v2.0 与 v2.0 Checkpoint 双轨独立, 用户无法跨版本恢复.
 借鉴 LangGraph checkpoint migration 工具思路 (单方向、显式触发、schema 兼容).
 
-v1.1 JSON 格式 (来自 engine/checkpoint.py + engine/state.py):
+v2.0 JSON 格式 (来自 engine/checkpoint.py + engine/state.py):
     {
         "status": "running" | "drained" | ...,
         "loop_state": {<engine.state.LoopState.to_dict() output>},
@@ -13,7 +13,7 @@ v1.1 JSON 格式 (来自 engine/checkpoint.py + engine/state.py):
                 "files_changed": int,
                 "lines_added": int,
                 "lines_removed": int,
-                "gate_results": dict[str, bool],  # v1.1 格式: bool
+                "gate_results": dict[str, bool],  # v2.0 格式: bool
                 "semantic_satisfied": bool | None,
             }
         ]
@@ -23,14 +23,14 @@ v2.0 SQLite Schema (loop/checkpoint.py): SQLiteCheckpointStore 表 checkpoints
 (含 state_json + history_json).
 
 迁移策略:
-    - CheckpointEnvelope: 提取 v1.1 loop_state.round/step/status + 其他字段注入
+    - CheckpointEnvelope: 提取 v2.0 loop_state.round/step/status + 其他字段注入
       metrics/tasks/channels (尽力兼容, 未知字段写入 channels 作为 LastValueChannel 留存)
     - history: 逐项转换为 v2.0 RoundHistory (gate_results 字段保留为 dict[str, bool])
 
 v2.3 P0-A: 旧名 LoopState (v2.0 Pydantic) 重命名为 CheckpointEnvelope. migrate.py 是
     v2.0 Pydantic CheckpointEnvelope 的真实用户之一 (另一是 v2.0 Checkpoint 持久化).
     运行时 Orchestrator / Runtime / Gates 不使用 CheckpointEnvelope, 走
-    engine.state.LoopState (v1.0 dataclass). 详见 BEACON.md 决策 23.
+    engine.state.LoopState (v2.0 dataclass). 详见 BEACON.md 决策 23.
 """
 
 from __future__ import annotations
@@ -45,33 +45,33 @@ from auto_engineering.loop.state import CheckpointEnvelope, LastValueChannel
 
 
 def load_v1_checkpoint(path: Path) -> dict[str, Any]:
-    """读 v1.1 JSON Checkpoint 文件.
+    """读 v2.0 JSON Checkpoint 文件.
 
-    v1.1 格式: {"status": str, "loop_state": dict, "history": list[dict], ...}
+    v2.0 格式: {"status": str, "loop_state": dict, "history": list[dict], ...}
     容错: 缺失可选字段返回空 dict/list (不抛异常).
 
     Args:
-        path: v1.1 JSON 文件路径
+        path: v2.0 JSON 文件路径
 
     Returns:
-        dict (解析后的 v1.1 Checkpoint 数据)
+        dict (解析后的 v2.0 Checkpoint 数据)
     """
     return json.loads(path.read_text())
 
 
 def _v1_loop_state_to_v2(v1_data: dict[str, Any]) -> CheckpointEnvelope:
-    """v1.1 loop_state (engine.state.LoopState dataclass) → v2.0 CheckpointEnvelope.
+    """v2.0 loop_state (engine.state.LoopState dataclass) → v2.0 CheckpointEnvelope.
 
-    v1.1 loop_state 是 dataclass LoopState.to_dict() 输出 (含 requirement/plan/file_list/...等).
+    v2.0 loop_state 是 dataclass LoopState.to_dict() 输出 (含 requirement/plan/file_list/...等).
     v2.0 CheckpointEnvelope 是 Pydantic model (含 round/step/status/tasks/task_results/channels/metrics).
 
     字段映射:
         - round/step/status: 直接映射 (v2.0 标准字段)
-        - 其他 v1.1 字段 (requirement/plan/file_list/...): 写入 CheckpointEnvelope.channels
+        - 其他 v2.0 字段 (requirement/plan/file_list/...): 写入 CheckpointEnvelope.channels
           (LastValueChannel), 保留供 v2.0 后续读出 (无信息丢失)
 
     Args:
-        v1_data: v1.1 checkpoint dict (含 loop_state 子键)
+        v1_data: v2.0 checkpoint dict (含 loop_state 子键)
 
     Returns:
         CheckpointEnvelope (v2.0 Pydantic 实例, 即 v2.0 Checkpoint 数据信封)
@@ -102,18 +102,18 @@ def _v1_loop_state_to_v2(v1_data: dict[str, Any]) -> CheckpointEnvelope:
 
 
 def _v1_history_to_v2(v1_history: list[dict[str, Any]]) -> list[RoundHistory]:
-    """v1.1 history 列表 → v2.0 RoundHistory 列表.
+    """v2.0 history 列表 → v2.0 RoundHistory 列表.
 
-    v1.1 history 项字段:
+    v2.0 history 项字段:
         - round_id, files_changed, lines_added, lines_removed
         - gate_results (dict[str, bool])
         - semantic_satisfied (bool | None)
 
     v2.0 RoundHistory dataclass 同名字段 (gate_results 改为 dict[str, Verdict],
-    但 v1.1 迁移场景下保留原始 bool 值 — Phase 2.3-D 之后 v2 内部才转 Verdict).
+    但 v2.0 迁移场景下保留原始 bool 值 — v2.0-D 之后 v2 内部才转 Verdict).
 
     Args:
-        v1_history: v1.1 history 列表
+        v1_history: v2.0 history 列表
 
     Returns:
         list[RoundHistory] (v2.0 dataclass)
@@ -140,17 +140,17 @@ def _v1_history_to_v2(v1_history: list[dict[str, Any]]) -> list[RoundHistory]:
 
 
 def migrate_v1_to_v2(src_json: Path, dst_sqlite: Path) -> str:
-    """迁移 v1.1 JSON Checkpoint → v2.0 SQLite Checkpoint.
+    """迁移 v2.0 JSON Checkpoint → v2.0 SQLite Checkpoint.
 
     步骤:
-        1. 读 v1.1 JSON (load_v1_checkpoint)
+        1. 读 v2.0 JSON (load_v1_checkpoint)
         2. 构造 v2.0 CheckpointEnvelope (尽力兼容字段)
         3. 构造 v2.0 RoundHistory 列表
         4. SQLiteCheckpointStore.save(state, round, step, history) 真存到 SQLite
         5. 返回 checkpoint_id
 
     Args:
-        src_json: v1.1 JSON 文件路径
+        src_json: v2.0 JSON 文件路径
         dst_sqlite: v2.0 SQLite 数据库文件路径 (不存在则创建)
 
     Returns:
@@ -176,7 +176,7 @@ def migrate_v1_to_v2(src_json: Path, dst_sqlite: Path) -> str:
         round=state.round,
         step=state.step,
         history=history,
-        tag="migrated-from-v1.1",
+        tag="migrated-from-v2.0",
     )
     return cp_id
 

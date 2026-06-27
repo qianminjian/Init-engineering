@@ -14,7 +14,7 @@
     3. 每轮后跑 Gate (project_root) + LLM 语义评估
     4. 收集 RoundHistory → ConvergenceJudge.evaluate() → verdict
     5. 若 verdict.should_stop → 退出
-    6. 否则 → 下一轮 (Phase 4+ 接 plan 更新逻辑)
+    6. 否则 → 下一轮 (future 接 plan 更新逻辑)
 
 收敛判定 4 级(复用 Phase 02):
     1. 硬上限: round >= max_iterations (单一来源: ConvergenceConfig)
@@ -133,7 +133,7 @@ class Orchestrator:
 
     Attributes:
         requirement: 原始需求描述
-        tasks: 任务列表 (Phase 3 由 Orchestrator 构造时传入, Phase 4+ 接 LLM 拆分)
+        tasks: 任务列表 (v2.0 由 Orchestrator 构造时传入, future 接 LLM 拆分)
         executor: 异步执行函数 (Task -> TaskOutcome)
         config: Orchestrator 配置
         plan: 构建后的 Plan (run() 时 validate)
@@ -240,7 +240,7 @@ class Orchestrator:
             1. Plan.validate() — 校验 DAG + 文件隔离
             2. for round_id in 1..max_iterations:
                 a. cancellation.check() (用户取消 → 抛 AEError)
-                b. 选择本轮 task (Phase 3 简化: 全部 task 在每轮都跑)
+                b. 选择本轮 task (v2.0 简化: 全部 task 在每轮都跑)
                 c. 调 LLM 语义评估 (若提供) → semantic_satisfied
                 d. run_round(tasks, executor, semantic_satisfied=semantic_satisfied)
                    → RoundResult (含 history[0]: RoundHistory, v2.3 Phase G P1.3)
@@ -278,7 +278,7 @@ class Orchestrator:
             if cancellation is not None and cancellation.is_cancelled():
                 break
 
-            # 2b. 选择本轮 task (Phase 2.3-C: 增量选择)
+            # 2b. 选择本轮 task (v2.0-C: 增量选择)
             #     Round 1 跑所有 task, Round 2+ 仅跑 failed / 新增 task
             round_tasks = self._select_round_tasks(round_id, self.history)
 

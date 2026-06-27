@@ -20,13 +20,13 @@ from pathlib import Path
 from typing import Any
 
 # ============================================================
-# v1.1 向后兼容: GateResult(Phase 1 Gate 体系的 2 态结果)
+# v2.0 向后兼容: GateResult(Phase 1 Gate 体系的 2 态结果)
 # ============================================================
 
 
 @dataclass
 class GateResult:
-    """v1.1 Gate 检查结果(2 态: passed / failed).
+    """v2.0 Gate 检查结果(2 态: passed / failed).
 
     保留供 Phase 1 代码使用. v2.0 新代码应使用 Verdict.
     """
@@ -81,7 +81,7 @@ class Gate:
     子类必须实现 run(project_root) 方法, 返回 Verdict.
     默认实现: 检查项目根存在 → 委托子类.
 
-    旧接口 Gate.check(stage, context) 保留供 v1.1 Guardrail 体系使用.
+    旧接口 Gate.check(stage, context) 保留供 v2.0 Guardrail 体系使用.
     """
 
     name: str = "base"
@@ -102,7 +102,7 @@ class Gate:
             f"{type(self).__name__}.run() must be implemented by subclass"
         )
 
-    # 旧接口(向后兼容, 由 v1.1 Guardrail 链调用)
+    # 旧接口(向后兼容, 由 v2.0 Guardrail 链调用)
     def check(self, stage: Any, context: Any) -> Verdict:
-        """v1.1 兼容接口. 返回 pass 占位(实际 v1.1 用 GuardrailResult)."""
-        return Verdict.passed("legacy v1.1 path", gate_name=self.name)
+        """v2.0 兼容接口. 返回 pass 占位(实际 v2.0 用 GuardrailResult)."""
+        return Verdict.passed("legacy v2.0 path", gate_name=self.name)
