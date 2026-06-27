@@ -5,16 +5,19 @@
 设计决策 (P0-18 in v2.0 §五 table 6):
     - 单 Agent 场景: 跳过(无跨 Agent 契约概念)
     - 多 Agent 场景: 检查 .ae-contracts/ 下定义的契约 vs 各 Agent 实际实现
-    - 当前 Phase 04 仅实现"单 Agent 跳过 + 多 Agent 占位"骨架
-    - 完整 contract 校验在 Phase 05+ (有 RoundPlan 落地后)
+    - Phase 04: 实现契约文件存在性 + 格式校验(YAML/JSON parse)
+    - 完整契约语义校验(各 Agent 实现 vs 契约)在 Phase 05+ 落地
 
 核心 API:
-    ContractGate.check(agent_count: int, contracts: dict | None) -> Verdict
+    ContractGate.run(project_root, agent_count) -> Verdict
 """
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+
+import yaml
 
 from auto_engineering.gates.base import Gate, Verdict
 
@@ -23,7 +26,11 @@ class ContractGate(Gate):
     """Gate 3: 跨 Agent 契约检查.
 
     单 Agent 场景 → 跳过 (passed=True, "single agent").
-    多 Agent 场景 → 检查 contracts 一致性(Phase 04: 占位).
+    多 Agent 场景 → 检查 .ae-contracts/ 下 .yml/.yaml/.json 契约文件:
+      - 目录不存在 → failed
+      - 无契约文件 → failed
+      - 有文件但格式错误 → failed
+      - 全部正确 → passed
 
     Args:
         contracts_dir: 契约定义目录(默认 .ae-contracts/)
@@ -43,12 +50,12 @@ class ContractGate(Gate):
         """执行契约检查.
 
         Args:
-            project_root: 项目根目录(占位用, 未深度使用)
+            project_root: 项目根目录(用于构建 contracts_dir 的绝对路径)
             agent_count: Agent 数量. 1 = 单 Agent (skip); >=2 = 多 Agent
-            contracts: 契约字典(可选). Phase 04 暂未使用.
+            contracts: 契约字典(可选). 传入时直接校验结构, 不读磁盘.
 
         Returns:
-            Verdict: passed=True (skip 或检查通过)
+            Verdict: passed=True 或 passed=False
         """
         # 单 Agent → 跳过
         if agent_count <= 1:
@@ -57,23 +64,64 @@ class ContractGate(Gate):
                 gate_name=self.name,
             )
 
-        # 多 Agent → Phase 04 占位: 若 contracts 为空, 视为通过(无契约违反)
-        # 完整契约校验待 Phase 05+ (RoundPlan 落地后)
-        if not contracts:
+        # 如果调用方显式传入了 contracts dict, 直接校验
+        if contracts is not None:
+            if not isinstance(contracts, dict):
+                return Verdict.failed(
+                    f"contracts 必须是 dict, 实际为 {type(contracts).__name__}",
+                    gate_name=self.name,
+                )
             return Verdict.passed(
-                f"skip: multi-agent ({agent_count}) but no contracts defined",
+                f"multi-agent ({agent_count}) contracts valid",
                 gate_name=self.name,
             )
 
-        # Phase 05+ 实现: 校验各 Agent 实现 vs contracts
-        # 当前占位: 仅校验 contracts 字典结构
-        if not isinstance(contracts, dict):
+        # 多 Agent + 无显式 contracts: 检查磁盘上的 contracts_dir
+        contracts_path = self.contracts_dir
+        if not contracts_path.is_absolute():
+            contracts_path = project_root / self.contracts_dir
+
+        if not contracts_path.is_dir():
             return Verdict.failed(
-                f"contracts 必须是 dict, 实际为 {type(contracts).__name__}",
+                f"multi-agent ({agent_count}): contracts directory not found: {contracts_path}",
                 gate_name=self.name,
             )
+
+        # 收集 .yml / .yaml / .json 文件
+        contract_files = sorted(
+            list(contracts_path.glob("*.yml"))
+            + list(contracts_path.glob("*.yaml"))
+            + list(contracts_path.glob("*.json"))
+        )
+
+        if not contract_files:
+            return Verdict.failed(
+                f"multi-agent ({agent_count}): no contract files (.yml/.json) in {contracts_path}",
+                gate_name=self.name,
+            )
+
+        # 逐文件 parse 校验格式
+        parsed_count = 0
+        for cf in contract_files:
+            try:
+                content = cf.read_text(encoding="utf-8").strip()
+                if not content:
+                    return Verdict.failed(
+                        f"multi-agent ({agent_count}): empty contract file: {cf.name}",
+                        gate_name=self.name,
+                    )
+                if cf.suffix in (".yml", ".yaml"):
+                    yaml.safe_load(content)
+                elif cf.suffix == ".json":
+                    json.loads(content)
+                parsed_count += 1
+            except (yaml.YAMLError, json.JSONDecodeError, ValueError) as exc:
+                return Verdict.failed(
+                    f"multi-agent ({agent_count}): parse error in {cf.name}: {exc}",
+                    gate_name=self.name,
+                )
 
         return Verdict.passed(
-            f"multi-agent ({agent_count}) contracts check passed (placeholder)",
+            f"multi-agent ({agent_count}) contracts valid: {parsed_count} file(s) in {contracts_path}",
             gate_name=self.name,
         )
