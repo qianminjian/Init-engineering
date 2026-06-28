@@ -35,7 +35,7 @@
 | 18 | **atdo Plan 报告必须含 runtime smoke 验证 (防止虚化测试)** | v2.1 强制 inline smoke test | 2026-06-25 | ✅ |
 | 19 | **v2.2 闭环完成 + 生产就绪** | Wave 3 P2 改进 + atdo 防护规则化 | 2026-06-26 | ✅ |
 | 20 | **v2.3 Wave 2 完成: Orchestrator 集成 LLM SemanticEvaluator (Claude)** | Phase J 实现, 第 4 级语义收敛生效 | 2026-06-26 | ✅ |
-| 21 | **version_utils.get_new_channel_versions 标记 ⚠️ 死代码** | 定义存在 + 有测试, 但 0 生产引用; 文件头标记死代码, 从 __all__ 移除 | 2026-06-26 | ✅ |
+| 21 | **version_utils.get_new_channel_versions 标记 ⚠️ 死代码 → 模块删除** | 原定义 0 生产引用; 算法 1:1 复制到 `loop/convergence.py::_get_new_channel_versions` (Phase P1-II 迁移, 当前同样 0 引用). v2.5 P0-FINAL+: 删除 `loop/version_utils.py` 模块本身, 死代码在 convergence.py 仍保留作 dormant helper 供未来接 orchestrator.py tick() 时取用. | 2026-06-26 | ✅ |
 | 22 | **gates/builtin.py 冻结 — 不再主动开发, 保留为向后兼容** | v2.3 P1-I: builtin.py 文件头添加 ⚠️ 冻结标记, 不新增 Guardrail, 仅修复 bug | 2026-06-26 | ✅ |
 | 23 | **P0-A: v2.0 Channel 体系归属 = checkpoint 专用; v2.0 Pydantic LoopState 重命名为 CheckpointEnvelope** | 消除 "LoopState" 同名双义 (engine.state.LoopState v1.0 dataclass 运行时 vs loop.state.LoopState v2.0 Pydantic checkpoint 专用). 详见下方决策 23 展开 | 2026-06-26 | ✅ |
 | 24 | **P0-B: engine/checkpoint.py 冻结 — 不再主动开发, 保留仅为向后兼容** | v1.0 CLI (ae checkpoint list/show/resume) 已切到 SQLiteCheckpointStore; engine/checkpoint.py 仍被 engine.loop.LoopEngine (v1.0 runtime) 使用, 因此保留. 文件头加 ⚠️ 冻结标记 (与 builtin.py 决策 22 同模式) | 2026-06-26 | ✅ |
