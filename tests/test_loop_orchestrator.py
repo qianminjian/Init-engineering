@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from types import SimpleNamespace
 
 import pytest
 
@@ -169,6 +170,52 @@ def test_check_file_isolation_throws_conflict_error_on_violation():
     ]
     with pytest.raises(ConflictError):
         check_file_isolation(tasks, raise_on_conflict=True)
+
+
+# ============================================================
+# B.2 workspace 边界检查 (P0-3 安全: 防 ../ / 绝对路径逃逸)
+# ============================================================
+
+
+def test_check_file_isolation_rejects_absolute_path():
+    """target_files 含绝对路径 → 抛 ConflictError (P0-3 安全)."""
+    tasks = [
+        make_task("t1", ["/etc/passwd"]),
+        make_task("t2", ["src/normal.py"]),
+    ]
+    with pytest.raises(ConflictError, match="绝对路径|workspace"):
+        check_file_isolation(tasks, raise_on_conflict=True)
+
+
+def test_check_file_isolation_rejects_parent_traversal():
+    """target_files 含 ../ 路径 → 抛 ConflictError (P0-3 安全)."""
+    tasks = [
+        make_task("t1", ["../../../etc/passwd"]),
+        make_task("t2", ["src/normal.py"]),
+    ]
+    with pytest.raises(ConflictError, match=r"\.\./|workspace"):
+        check_file_isolation(tasks, raise_on_conflict=True)
+
+
+def test_check_file_isolation_rejects_tilde_expansion():
+    """target_files 含 ~ 路径 → 抛 ConflictError (P0-3 安全)."""
+    tasks = [
+        make_task("t1", ["~/.ssh/id_rsa"]),
+        make_task("t2", ["src/normal.py"]),
+    ]
+    with pytest.raises(ConflictError, match="~|workspace"):
+        check_file_isolation(tasks, raise_on_conflict=True)
+
+
+def test_check_file_isolation_allows_relative_paths():
+    """target_files 含合法相对路径 → 不抛错 (P0-3 正常情况)."""
+    tasks = [
+        make_task("t1", ["src/foo.py"]),
+        make_task("t2", ["tests/test_foo.py"]),
+    ]
+    # 不应抛错
+    conflicts = check_file_isolation(tasks, raise_on_conflict=True)
+    assert conflicts == []
 
 
 # ============================================================
@@ -813,4 +860,268 @@ async def test_orchestrator_default_max_iterations():
     assert orch.judge.config is not None
     assert orch.judge.config.max_iterations == 10, (
         f"默认 max_iterations 应为 10, 实际: {orch.judge.config.max_iterations}"
+    )
+
+
+# ============================================================
+# J. v2.3 Phase H — Orchestrator + AgentRuntime 集成 (P1.4)
+# 设计: OrchestratorConfig.agent_runtime 字段, Orchestrator 按 task.role
+#       查 Runtime.registered_agents[role].execute. 借鉴 AutoGen GroupChat
+#       agent_selector: 用 message 路由到对应 agent.
+# ============================================================
+
+
+class _TrackingMockAgent:
+    """模拟 BaseAgent.execute 行为的 Agent — 记录 execute 调用.
+
+    用于验证 Orchestrator 通过 AgentRuntime 按 role 路由 task 到对应 agent.
+    返回 TaskResult-like dict 含 role 信息供测试断言.
+
+    AgentRuntime 通过 Protocol 接受任何 Agent-like 对象(duck typing),
+    所以 _TrackingMockAgent 不需要继承 BaseAgent.
+
+    Note: runtime.Task 没有 role 字段 (只 id/description/expected_output),
+    MockAgent 记录自己的 role (构造时确定) 而非 task.role.
+    """
+
+    def __init__(self, role: str) -> None:
+        self.role = role
+        self.execute_calls: list[tuple[str, str]] = []  # (task_id, agent_role)
+
+    async def execute(self, task, ctx, cancellation=None):  # type: ignore[no-untyped-def]
+        """模拟 BaseAgent.execute 签名 (task, ctx, cancellation)."""
+        self.execute_calls.append((task.id, self.role))
+        # 返回与 runtime.TaskResult 兼容的对象(duck typing)
+        # Orchestrator 的 _build_runtime_executor 只读 .values
+        return SimpleNamespace(
+            task_id=task.id,
+            values={"role": self.role, "task_id": task.id},
+            raw_response=f"mock-{self.role}",
+            tool_calls=[],
+            agent_type=self.role,
+        )
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_with_agent_runtime_routes_by_role():
+    """Orchestrator + AgentRuntime: 按 task.role 路由到对应 agent.
+
+    严禁虚化: 真注册 3 个 Mock agent (developer/critic), Orchestrator
+    跑 4 个 task (含 2 个 developer + 2 个 critic), 验证每个 agent 收到
+    对应 role 的 execute 调用 — 不允许 mock Orchestrator.
+    """
+    from auto_engineering.runtime.runtime import AgentRuntime
+
+    runtime = AgentRuntime()
+    dev_agent = _TrackingMockAgent("developer")
+    critic_agent = _TrackingMockAgent("critic")
+    runtime.register("developer", lambda: dev_agent)
+    runtime.register("critic", lambda: critic_agent)
+
+    tasks = [
+        make_task("t1", agent_type="developer"),
+        make_task("t2", agent_type="critic"),
+        make_task("t3", agent_type="developer"),
+        make_task("t4", agent_type="critic"),
+    ]
+
+    config = OrchestratorConfig(
+        convergence_config=ConvergenceConfig(
+            max_iterations=1,
+            stagnation_threshold=10,
+        ),
+        agent_runtime=runtime,  # v2.3 Phase H P1.4
+    )
+    orch = Orchestrator(
+        requirement="agent_runtime routing test",
+        tasks=tasks,
+        executor=None,  # agent_runtime 优先, executor 不会被调
+        config=config,
+    )
+
+    history = await orch.run()
+
+    # 验证: developer agent 收到 2 个 task (t1 + t3)
+    dev_task_ids = {call[0] for call in dev_agent.execute_calls}
+    assert dev_task_ids == {"t1", "t3"}, (
+        f"developer agent 应收到 t1+t3, 实际: {dev_task_ids}"
+    )
+    # 验证: critic agent 收到 2 个 task (t2 + t4)
+    critic_task_ids = {call[0] for call in critic_agent.execute_calls}
+    assert critic_task_ids == {"t2", "t4"}, (
+        f"critic agent 应收到 t2+t4, 实际: {critic_task_ids}"
+    )
+    # 验证: 每个 call 的 role 字段正确(模拟 BaseAgent 行为)
+    for _tid, role in dev_agent.execute_calls:
+        assert role == "developer"
+    for _tid, role in critic_agent.execute_calls:
+        assert role == "critic"
+    # 历史非空
+    assert len(history) >= 1
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_agent_runtime_missing_role_returns_failed():
+    """task.role 在 Runtime 未注册 → TaskOutcome.status='failed' (不抛异常).
+
+    严禁虚化: 注册 developer/critic 但 task.role='reviewer' (合法角色但 Runtime
+    未注册) → 真 Orchestrator 调 AgentRuntime.get('reviewer') → None → 返回
+    failed TaskOutcome (Graceful degradation, 不允许抛 KeyError/LookupError).
+    """
+    from auto_engineering.runtime.runtime import AgentRuntime
+
+    runtime = AgentRuntime()
+    runtime.register("developer", lambda: _TrackingMockAgent("developer"))
+    runtime.register("critic", lambda: _TrackingMockAgent("critic"))
+    # 注意: 'reviewer' 是合法 role (Plan.validate 通过) 但 Runtime 未注册
+
+    tasks = [
+        make_task("t1", agent_type="developer"),
+        make_task("t2", agent_type="reviewer"),  # 合法 role 但 Runtime 未注册
+        make_task("t3", agent_type="critic"),
+    ]
+
+    config = OrchestratorConfig(
+        convergence_config=ConvergenceConfig(
+            max_iterations=1,
+            stagnation_threshold=10,
+        ),
+        agent_runtime=runtime,
+    )
+    orch = Orchestrator(
+        requirement="missing role test",
+        tasks=tasks,
+        executor=None,
+        config=config,
+    )
+
+    # 不应抛异常 — 优雅降级
+    await orch.run()
+
+    # 验证: round_result.outcomes 含 reviewer 的 failed status
+    assert len(orch.round_results) >= 1
+    rr = orch.round_results[0]
+    failed_outcomes = [o for o in rr.outcomes if o.status == "failed"]
+    assert len(failed_outcomes) == 1, (
+        f"reviewer (未注册) 应 1 个 failed outcome, 实际: "
+        f"{[(o.task_id, o.status) for o in rr.outcomes]}"
+    )
+    assert failed_outcomes[0].task_id == "t2"
+    # 验证: error 字段含角色名 (便于调试)
+    assert "reviewer" in (failed_outcomes[0].error or ""), (
+        f"failed outcome error 应含 'reviewer', 实际: {failed_outcomes[0].error}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_without_agent_runtime_uses_executor_callback():
+    """不传 agent_runtime → executor callback 被调用 (向后兼容).
+
+    严禁虚化: 构造 Orchestrator 时不传 config.agent_runtime, 验证
+    executor 仍被调 (旧行为). 允许已有调用方继续用 executor 模式.
+    """
+    called: list[str] = []
+
+    async def executor(t, ctx):
+        called.append(t.id)
+        return TaskOutcome(task_id=t.id, status="completed", output="legacy")
+
+    tasks = [
+        make_task("legacy1", agent_type="developer"),
+        make_task("legacy2", agent_type="developer"),
+    ]
+
+    # 不传 agent_runtime (config 默认 None)
+    config = OrchestratorConfig(
+        convergence_config=ConvergenceConfig(
+            max_iterations=1,
+            stagnation_threshold=10,
+        ),
+    )
+    orch = Orchestrator(
+        requirement="backward compat test",
+        tasks=tasks,
+        executor=executor,
+        config=config,
+    )
+
+    history = await orch.run()
+
+    # 验证: executor 模式仍工作 (向后兼容)
+    assert called == ["legacy1", "legacy2"], (
+        f"executor 应被调 2 次, 实际: {called}"
+    )
+    assert len(history) == 1
+
+
+def test_orchestrator_config_has_agent_runtime_field():
+    """OrchestratorConfig.agent_runtime 字段存在 (P1.4 contract).
+
+    严禁虚化: 用 vars() 检查字段, 验证 'agent_runtime' 存在. 若字段
+    缺失则测试 FAIL — 防止 P1.4 退回到"无 agent_runtime 字段"状态.
+    """
+    from auto_engineering.runtime.runtime import AgentRuntime
+
+    config = OrchestratorConfig()
+    fields = vars(config)
+    assert "agent_runtime" in fields, (
+        f"OrchestratorConfig 缺 agent_runtime 字段 (P1.4 contract), "
+        f"实际 fields: {list(fields.keys())}"
+    )
+    # 默认 None (向后兼容)
+    assert fields["agent_runtime"] is None
+    # 同时验证 dataclass 字段声明
+    from dataclasses import fields as dc_fields
+
+    field_names = {f.name for f in dc_fields(OrchestratorConfig)}
+    assert "agent_runtime" in field_names
+
+    # 能接受 AgentRuntime 实例
+    runtime = AgentRuntime()
+    config2 = OrchestratorConfig(agent_runtime=runtime)
+    assert config2.agent_runtime is runtime
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_agent_runtime_task_outcome_status_completed():
+    """AgentRuntime 路径: agent.execute 返回成功 → TaskOutcome.status='completed'.
+
+    严禁虚化: Mock agent 返回 values dict, 验证 Orchestrator 构造的
+    TaskOutcome 含 status='completed' 和 output=str(values).
+    """
+    from auto_engineering.runtime.runtime import AgentRuntime
+
+    runtime = AgentRuntime()
+    agent = _TrackingMockAgent("developer")
+    runtime.register("developer", lambda: agent)
+
+    tasks = [make_task("t1", agent_type="developer")]
+
+    config = OrchestratorConfig(
+        convergence_config=ConvergenceConfig(
+            max_iterations=1,
+            stagnation_threshold=10,
+        ),
+        agent_runtime=runtime,
+    )
+    orch = Orchestrator(
+        requirement="completion test",
+        tasks=tasks,
+        executor=None,
+        config=config,
+    )
+
+    await orch.run()
+
+    # 验证 TaskOutcome: completed
+    rr = orch.round_results[0]
+    assert len(rr.outcomes) == 1
+    out = rr.outcomes[0]
+    assert out.task_id == "t1"
+    assert out.status == "completed", (
+        f"成功调用应 status='completed', 实际: {out.status}"
+    )
+    # output 包含 role 信息 (从 values dict 来)
+    assert "developer" in (out.output or ""), (
+        f"output 应含 'developer' (从 values), 实际: {out.output}"
     )

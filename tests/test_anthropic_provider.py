@@ -13,6 +13,9 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+import anthropic
+import pytest
+
 
 class TestLLMUsageDataclass:
     """LLMUsage 数据类 — 记录 token 用量."""
@@ -286,3 +289,148 @@ class TestAnthropicProviderKwargs:
             messages=[{"role": "user", "content": "q"}],
             tools=tools,
         )
+
+
+# ============================================================
+# P0-4: LLM retry + rate limit handling
+# ============================================================
+
+
+class TestAnthropicProviderRetry:
+    """P0-4: 生产 retry 策略 — RateLimitError / APIConnectionError 重试."""
+
+    def test_retries_on_rate_limit_error(self) -> None:
+        """RateLimitError → 重试 → 成功 → 返回 LLMResponse (RED: 生产 retry)."""
+        from auto_engineering.llm.anthropic_provider import AnthropicProvider
+
+        mock_client = MagicMock()
+        success_response = _make_text_response("OK")
+        mock_client.messages.create.side_effect = [
+            _make_rate_limit_error(),
+            success_response,
+        ]
+
+        provider = AnthropicProvider(client=mock_client)
+        response = provider.create_message(
+            model="claude-x",
+            max_tokens=100,
+            system="sys",
+            messages=[{"role": "user", "content": "q"}],
+        )
+        assert response.content == "OK"
+        assert mock_client.messages.create.call_count == 2
+
+    def test_retries_on_connection_error(self) -> None:
+        """APIConnectionError → 重试 → 成功."""
+        from auto_engineering.llm.anthropic_provider import AnthropicProvider
+
+        mock_client = MagicMock()
+        success_response = _make_text_response("OK")
+        mock_client.messages.create.side_effect = [
+            _make_connection_error(),
+            success_response,
+        ]
+
+        provider = AnthropicProvider(client=mock_client)
+        response = provider.create_message(
+            model="claude-x",
+            max_tokens=100,
+            system="sys",
+            messages=[{"role": "user", "content": "q"}],
+        )
+        assert response.content == "OK"
+        assert mock_client.messages.create.call_count == 2
+
+    def test_raises_after_max_retries(self) -> None:
+        """连续 N 次 RateLimitError → 抛 RateLimitError (不无限重试)."""
+        from auto_engineering.llm.anthropic_provider import AnthropicProvider
+
+        mock_client = MagicMock()
+        mock_client.messages.create.side_effect = _make_rate_limit_error()
+
+        provider = AnthropicProvider(client=mock_client, max_retries=3)
+        with pytest.raises(Exception) as exc_info:
+            provider.create_message(
+                model="claude-x",
+                max_tokens=100,
+                system="sys",
+                messages=[{"role": "user", "content": "q"}],
+            )
+        # 应在 ~4 次后失败 (1 原始 + 3 重试)
+        assert mock_client.messages.create.call_count <= 5
+        assert "rate" in str(exc_info.value).lower() or "limit" in str(exc_info.value).lower()
+
+    def test_does_not_retry_on_non_retryable_error(self) -> None:
+        """非重试错误 (如 ValueError) → 立即抛出, 不重试."""
+        from auto_engineering.llm.anthropic_provider import AnthropicProvider
+
+        mock_client = MagicMock()
+        mock_client.messages.create.side_effect = ValueError("bad input")
+
+        provider = AnthropicProvider(client=mock_client)
+        with pytest.raises(ValueError):
+            provider.create_message(
+                model="claude-x",
+                max_tokens=100,
+                system="sys",
+                messages=[{"role": "user", "content": "q"}],
+            )
+        # 只调用 1 次 (不重试)
+        assert mock_client.messages.create.call_count == 1
+
+    def test_retry_respects_max_retries_param(self) -> None:
+        """max_retries=0 → 不重试, 单次失败立即抛."""
+        from auto_engineering.llm.anthropic_provider import AnthropicProvider
+
+        mock_client = MagicMock()
+        mock_client.messages.create.side_effect = _make_rate_limit_error()
+
+        provider = AnthropicProvider(client=mock_client, max_retries=0)
+        with pytest.raises(Exception):
+            provider.create_message(
+                model="claude-x",
+                max_tokens=100,
+                system="sys",
+                messages=[{"role": "user", "content": "q"}],
+            )
+        assert mock_client.messages.create.call_count == 1
+
+
+# ============================================================
+# Helpers for retry tests
+# ============================================================
+
+
+def _make_text_response(text: str = "OK") -> MagicMock:
+    """构造一个 mock 的 Anthropic 响应 (text only)."""
+    response = MagicMock()
+    response.content = [MagicMock(type="text", text=text)]
+    response.model = "claude-x"
+    response.usage = MagicMock(input_tokens=10, output_tokens=5)
+    response.stop_reason = "end_turn"
+    return response
+
+
+def _make_rate_limit_error() -> Exception:
+    """构造一个 anthropic.RateLimitError 异常.
+
+    模拟 SDK 真实行为: RateLimitError 是 APIStatusError 子类,
+    有 status_code=429, response.headers.
+    """
+    import anthropic
+
+    mock_response = MagicMock()
+    mock_response.status_code = 429
+    mock_response.headers = {"retry-after": "1"}
+    return anthropic.RateLimitError(
+        message="Rate limit exceeded",
+        response=mock_response,
+        body=None,
+    )
+
+
+def _make_connection_error() -> Exception:
+    """构造一个 anthropic.APIConnectionError 异常."""
+    import anthropic
+
+    return anthropic.APIConnectionError(request=MagicMock())

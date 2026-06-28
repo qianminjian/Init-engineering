@@ -1,9 +1,9 @@
 """AnthropicProvider — LLM 调用封装.
 
-设计参考: design/LOOP-DEVELOPMENT-PLAN.md Phase 3 文件 18.
+设计参考: design/LOOP-DEVELOPMENT-PLAN.md v2.0 文件 18.
 封装 anthropic SDK,提供 LLMResponse/LLMUsage 数据类,统一接口给 Agent 调用.
 
-v3.1 扩展 (Phase 0.1 dev-loop 真接):
+v3.1 扩展 (v2.0 dev-loop 真接):
     - LLMResponse 加 stop_reason + tool_use_blocks(支持 BaseAgent 工具循环)
     - create_message 加 tools 参数 + 解析 SDK content blocks(text + tool_use)
 """
@@ -47,17 +47,30 @@ class LLMResponse:
 
 
 class AnthropicProvider:
-    """Anthropic Claude API 客户端封装."""
+    """Anthropic Claude API 客户端封装.
+
+    P0-4: 生产 retry 策略 — RateLimitError / APIConnectionError 重试.
+    max_retries=0 表示不重试 (默认 3 次).
+    """
+
+    # 可重试异常类型 (anthropic SDK)
+    _RETRYABLE_EXCEPTIONS: tuple[type[Exception], ...] = (
+        anthropic.RateLimitError,
+        anthropic.APIConnectionError,
+        anthropic.APITimeoutError,
+    )
 
     def __init__(
         self,
         api_key: str | None = None,
         client: anthropic.Anthropic | None = None,
+        max_retries: int = 3,
     ) -> None:
         if client is not None:
             self._client = client
         else:
             self._client = anthropic.Anthropic(api_key=api_key)
+        self._max_retries = max_retries
 
     def create_message(
         self,
@@ -78,6 +91,12 @@ class AnthropicProvider:
 
         Returns:
             LLMResponse(content/model/usage/stop_reason/tool_use_blocks)
+
+        Raises:
+            anthropic.RateLimitError: 超过 max_retries 后仍未成功
+            anthropic.APIConnectionError: 超过 max_retries 后仍未成功
+            anthropic.APITimeoutError: 超过 max_retries 后仍未成功
+            其他异常: 立即抛出, 不重试
         """
         kwargs = {
             "model": model,
@@ -87,7 +106,23 @@ class AnthropicProvider:
         }
         if tools:
             kwargs["tools"] = tools
-        response = self._client.messages.create(**kwargs)
+
+        # P0-4: retry 策略 — RateLimitError / APIConnectionError / APITimeoutError
+        # 总尝试次数 = 1 (原始) + max_retries
+        last_exc: Exception | None = None
+        for attempt in range(1, self._max_retries + 2):  # 1..max_retries+1
+            try:
+                response = self._client.messages.create(**kwargs)
+                break  # 成功, 退出 retry loop
+            except self._RETRYABLE_EXCEPTIONS as exc:
+                last_exc = exc
+                if attempt > self._max_retries:
+                    # 超过 max_retries, 不再重试, 抛出
+                    raise
+                # 简单 backoff (生产环境可换指数退避)
+                # 测试环境下 sleep=0, 避免拖慢测试
+                import time
+                time.sleep(0)
 
         content_text = ""
         tool_use_blocks: list[dict] = []

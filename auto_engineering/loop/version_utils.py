@@ -1,10 +1,15 @@
-"""v2.3-B: channel_versions 增量触发算法.
+"""⚠️ 死代码 (Dead Code) — 当前未被任何生产代码引用.
 
+v2.3-B: channel_versions 增量触发算法.
 借鉴 LangGraph Pregel.get_new_channel_versions() (pregel/main.py:1140, 1736-1740).
 简化: 比较 old vs new versions dict, 返回本轮被修改的 channel 名 set.
 
-Phase 2.3-B 用例: Loop 引擎每步调用 get_new_channel_versions(state.channel_versions, prev_versions)
+v2.0-B 用例: Loop 引擎每步调用 get_new_channel_versions(state.channel_versions, prev_versions)
 → 返回被修改的 channel 集合 → 驱动下游任务触发.
+
+⚠️ 状态: 定义存在, 有单元测试 (tests/test_loop_state_v2.py), 但无生产导入/调用.
+   - 如需接入: 在 orchestrator.py tick() 中调用, 传入 loop_state.channel_versions 与 prev_versions
+   - 最后验证: 2026-06-26 — grep 确认 0 生产引用
 """
 
 from __future__ import annotations
@@ -42,4 +47,5 @@ def get_new_channel_versions(
     return modified
 
 
-__all__ = ["get_new_channel_versions"]
+# ⚠️ get_new_channel_versions 已从 __all__ 移除 (死代码)
+# __all__ = ["get_new_channel_versions"]

@@ -75,7 +75,7 @@ class RoundHistory:
                       之前是 dict[str, bool], 丢失 verdict.message 语义.
                       用 Any 是为了避免与 gates 模块循环引用 (RoundHistory 在 convergence.py,
                       Verdict 在 gates/base.py). 实际值始终为 Verdict.
-        semantic_satisfied: LLM 语义评估是否通过 (Phase 3+ LLM 调用, Phase 2 可为 None)
+        semantic_satisfied: LLM 语义评估是否通过 (v2.0+ LLM 调用, Phase 2 可为 None)
         tasks_run: v2.3 Phase C — 本轮实际跑的 task IDs (供 Orchestrator 增量选择参考)
         task_outcomes: v2.3 Phase C — 本轮每个 task 的最终状态
             {task_id: "completed" | "failed" | "cancelled"}, 供下一轮 _select_round_tasks
@@ -210,6 +210,45 @@ def detect_stagnation(
 
 
 # ============================================================
+# channel_versions 增量触发算法
+# ============================================================
+
+
+def _get_new_channel_versions(
+    prev_versions: dict[str, int], current_versions: dict[str, int]
+) -> set[str]:
+    """返回本轮 (round/step) 被修改的 channel 名集合.
+
+    从 version_utils.py 迁移 (Phase P1-II): 替代原 get_new_channel_versions.
+
+    Args:
+        prev_versions: 上一轮的 channel_versions dict (本轮初基线)
+        current_versions: 本轮末的 channel_versions dict (CheckpointEnvelope.channel_versions)
+
+    Returns:
+        set[str]: 被修改 (新增 / 删除 / version 累加) 的 channel 名
+
+    算法 (LangGraph pregel/main.py:1736-1740 简化):
+        1. 遍历 current_versions → 若 version > prev (或 prev 缺失) → 加入 modified
+        2. 遍历 prev_versions → 若 key 不在 current 中 → 视为删除, 加入 modified
+    """
+    modified: set[str] = set()
+
+    # 1. 当前 versions 中所有 key: 若 version 累加或新增, 视为修改
+    for name, ver in current_versions.items():
+        prev_ver = prev_versions.get(name, 0)
+        if ver > prev_ver:
+            modified.add(name)
+
+    # 2. prev 中存在但 current 中不存在的 key → 视为删除/重置
+    for name in prev_versions:
+        if name not in current_versions:
+            modified.add(name)
+
+    return modified
+
+
+# ============================================================
 # ConvergenceJudge 主类
 # ============================================================
 
@@ -247,7 +286,9 @@ class ConvergenceJudge:
         """评估当前是否应该停止循环.
 
         Args:
-            state: 当前 LoopState (Phase 2 暂不直接读取, 保留接口供 Phase 3+ 使用)
+            state: 当前状态 (v2.3 P0-A: 运行时走 engine.state.LoopState v2.0 dataclass;
+                   CheckpointEnvelope 仅供 checkpoint 持久化. Phase 2 暂不直接读取,
+                   保留接口供 v2.0+ 使用)
             history: 历史轮次列表 (可为空)
 
         Returns:
@@ -389,7 +430,7 @@ class ConvergenceJudge:
 
         Note:
             Phase 2 实现: 仅当 semantic_satisfied=True 时触发
-            Phase 3+ 接 LLM 调用: 内部调用 LLM 评估当前产出
+            v2.0+ 接 LLM 调用: 内部调用 LLM 评估当前产出
         """
         if not history:
             return None

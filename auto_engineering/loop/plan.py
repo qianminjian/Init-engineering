@@ -36,7 +36,7 @@ class TaskStatus(StrEnum):
     BLOCKED = "blocked"
 
 
-# Task 合法角色枚举 (Phase 2.1-D 加 contract 校验)
+# Task 合法角色枚举 (v2.0-D 加 contract 校验)
 VALID_TASK_ROLES = frozenset({"developer", "critic", "reviewer", "architect"})
 
 
@@ -52,7 +52,7 @@ class ConflictError(Exception):
 
 @dataclass
 class TaskValidation:
-    """Task 验证规则 (Phase 2.1-D 新增).
+    """Task 验证规则 (v2.0-D 新增).
 
     Attributes:
         required_files: 必须存在的文件列表 (Gate 子集)
@@ -67,11 +67,11 @@ class TaskValidation:
 
 @dataclass
 class Task:
-    """单个任务单元 (Phase 2.1-D 字段补全: 设计文档 §3.2).
+    """单个任务单元 (v2.0-D 字段补全: 设计文档 §3.2).
 
     Attributes:
         id: 唯一标识 (由 Orchestrator 拆分时分配)
-        title: 人读任务标题 (新字段, Phase 2.1-D)
+        title: 人读任务标题 (新字段, v2.0-D)
         description: 四段式指令 (目标/边界/验收标准/禁止项)
         expected_output: 期望输出 (新字段, contract 的一部分)
         role: 执行 Agent 角色 developer|critic|reviewer|architect (新字段)
@@ -202,6 +202,7 @@ def check_file_isolation(
     算法:
         1. 按 topological levels 分组 (同一 level 的 task 并行)
         2. 每个 level 内: 检查任意两个 task 的 target_files 是否有交集
+        3. workspace 边界校验 (P0-3 安全): 拒绝绝对路径 / ../ / ~ 逃逸
 
     Args:
         tasks: Task 列表 (迭代器, 可以是列表/生成器)
@@ -210,6 +211,11 @@ def check_file_isolation(
     Returns:
         冲突描述列表, 空列表表示无冲突
 
+    Raises:
+        ConflictError: 当 raise_on_conflict=True 且:
+            - 同 level 内文件冲突, 或
+            - target_files 含绝对路径 / ../ / ~ (workspace 逃逸)
+
     Note:
         串行的两个 task (有 depends_on 关系) 即使共享文件也不算冲突
         因为它们不会并行执行
@@ -217,6 +223,37 @@ def check_file_isolation(
     task_list = list(tasks)
     if not task_list:
         return []
+
+    # P0-3 workspace 边界校验: 拒绝逃逸出 project_root 的路径
+    workspace_violations: list[str] = []
+    for task in task_list:
+        for file_path in task.target_files:
+            if not file_path:
+                continue
+            # 绝对路径 (Unix / Windows)
+            if file_path.startswith("/") or (len(file_path) >= 2 and file_path[1] == ":"):
+                workspace_violations.append(
+                    f"task '{task.id}': target_files 含绝对路径 '{file_path}' "
+                    f"(workspace 逃逸禁止)"
+                )
+                continue
+            # 父目录逃逸
+            if ".." in file_path.split("/"):
+                workspace_violations.append(
+                    f"task '{task.id}': target_files 含 ../ 路径 '{file_path}' "
+                    f"(workspace 逃逸禁止)"
+                )
+                continue
+            # 主目录展开 (常见攻击向量)
+            if file_path.startswith("~"):
+                workspace_violations.append(
+                    f"task '{task.id}': target_files 含 ~ 路径 '{file_path}' "
+                    f"(workspace 逃逸禁止)"
+                )
+    if workspace_violations and raise_on_conflict:
+        raise ConflictError(workspace_violations)
+    if workspace_violations:
+        return workspace_violations
 
     # 按 topological level 分组
     levels = _topological_levels(task_list)
@@ -304,7 +341,7 @@ class Plan:
         """校验 Plan 合法性:
             1. DAG 无循环 (topological_sort 内部检查)
             2. 并行 task 的 target_files 无交集
-            3. contract 校验 (Phase 2.1-D):
+            3. contract 校验 (v2.0-D):
                - 每个 task.title 非空
                - 每个 task.expected_output 非空
                - 每个 task.role 在枚举中 (developer/critic/reviewer/architect)
@@ -315,7 +352,7 @@ class Plan:
         topological_sort(self.tasks)
         # 文件隔离检查
         check_file_isolation(self.tasks, raise_on_conflict=True)
-        # contract 校验 (Phase 2.1-D)
+        # contract 校验 (v2.0-D)
         self._validate_contracts()
 
     def _validate_contracts(self) -> None:

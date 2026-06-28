@@ -4,7 +4,8 @@
 成功 → print "Phase D runtime smoke PASS" + return 0
 失败 → raise + return non-zero
 
-测试严禁虚化: 真实集成 SQLiteCheckpointStore + LoopState + Channel.
+测试严禁虚化: 真实集成 SQLiteCheckpointStore + CheckpointEnvelope + Channel.
+v2.3 P0-A: 原 LoopState (v2.0 Pydantic) 重命名为 CheckpointEnvelope.
 """
 
 from __future__ import annotations
@@ -14,14 +15,14 @@ from auto_engineering.loop.plan import Task
 from auto_engineering.loop.state import (
     AccumulatingChannel,
     BarrierChannel,
+    CheckpointEnvelope,
     LastValueChannel,
-    LoopState,
 )
 
 
 def main() -> int:
     store = SQLiteCheckpointStore(":memory:")
-    state = LoopState(round=1, step=3, status="running")
+    state = CheckpointEnvelope(round=1, step=3, status="running")
     state.channels = {
         "plan": LastValueChannel("plan"),
         "logs": AccumulatingChannel("logs"),
@@ -47,9 +48,9 @@ def main() -> int:
     cp_id = store.save(state, round=1)
     loaded = store.load(cp_id)
 
-    # 关键断言: load() 返回 LoopState 实例 + Channel 实例
-    assert isinstance(loaded.state, LoopState), (
-        f"load() returns {type(loaded.state)}, expected LoopState"
+    # 关键断言: load() 返回 CheckpointEnvelope 实例 + Channel 实例
+    assert isinstance(loaded.state, CheckpointEnvelope), (
+        f"load() returns {type(loaded.state)}, expected CheckpointEnvelope"
     )
     assert isinstance(loaded.state.channels["plan"], LastValueChannel), (
         f"channels[plan] is {type(loaded.state.channels['plan'])}"

@@ -1,4 +1,4 @@
-"""Git 工具 — Phase 0.2 真接.
+"""Git 工具 — v2.0 真接.
 
 3 个工具: GitStatus / GitCommit / GitDiff.
 """

@@ -1,6 +1,6 @@
 """Agent 实现 — Claude API 驱动的智能角色.
 
-Phase 0.3 真接: 3 Agent(BaseAgent 子类)各带 system_prompt.
+v2.0 真接: 3 Agent(BaseAgent 子类)各带 system_prompt.
 """
 
 from .architect import ARCHITECT_SYSTEM_PROMPT, ArchitectAgent

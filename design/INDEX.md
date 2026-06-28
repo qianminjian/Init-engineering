@@ -1,6 +1,6 @@
 # design/ — 文档索引
 
-> 创建：2026-06-25 | 更新：2026-06-25 | 维护规则：每次合并/重命名后更新本文件
+> 创建：2026-06-25 | 更新：2026-06-28 | 维护规则：每次合并/重命名后更新本文件
 
 ---
 
@@ -21,8 +21,12 @@
 | | `v1.0-Design-Init.md` | init 子系统设计 |
 | | `v1.0-Design-Loop.md` | loop 子系统设计 v3.0 |
 | | `v1.0-Design-Templates.md` | 模板资产定义 |
+| | `v2.0-Design-Loop.md` | v2.0 dev-loop 设计基线 |
 | **审计报告** | `v1.1-Audit-Report.md` | 架构审计（含3个附录） |
-| **执行计划** | `v1.1-Plan-Dev.md` | 整合开发计划（问题清单 + Phase 0-5 + 依赖图 + 工时 + commit 建议） |
+| **执行计划** | `v1.1-Plan-Dev.md` | v1.1 修复计划（问题清单 + Phase 0-5） |
+| | `v2.3-Plan-Dev.md` | v2.3 过度设计治理计划（P0/P1/P2 共10项） |
+| | `v2.4-Plan-Dev.md` | v2.4 整合修复计划（ContractGate/Agent/State/CLI/Checkpoint 拆分等） |
+| | `v2.5-Plan-Dev.md` | v2.5 生产就绪最终修复（11 项优化, v1.0 退役 + P0-FINAL 撤销决策 11/12/22/24/26） |
 | **演进分析** | `v2.0-Analysis-Loop.md` | v2.0 多 Agent 并发架构 |
 | **归档** | `his_bak/` | 历史版本（见 §归档清单） |
 
@@ -51,6 +55,8 @@ V<major>.<minor>-<Category>-<Name>.md
 
 | 日期 | 主文档 | 来源/操作 | 摘要 |
 |------|--------|---------|------|
+| 2026-06-28 | `v2.5-Plan-Dev.md` | 新增 | v2.5 生产就绪最终修复: 3 P0 (ContractGate/Real Agent/Split) + 5 P1 + 3 P2. v1.0 退役授权, P0-FINAL 撤销决策 11/12/22/24/26 |
+| 2026-06-27 | `v2.4-Plan-Dev.md` | 新增 | v2.4 整合修复: ContractGate 真实实现 + Real Agent 注册 + state/cli/checkpoint 拆分 + ReadFileTool 沙箱 |
 | 2026-06-25 | `v1.1-Plan-Dev.md` | 重命名 | 整合 v1.1-TODO-LIST + v1.1-UNIFIED-DEV-PLAN → 单一开发计划 |
 | 2026-06-25 | `v1.0-Design-*.md` | 重命名 | 设计文档四件套启用新命名规范 |
 | 2026-06-25 | `v1.1-Audit-Report.md` | 重命名 + 合并 | 合并 v1.1-AUDIT-REPORT + his_bak 附录 A/B/C |

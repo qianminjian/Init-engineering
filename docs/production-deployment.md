@@ -2,7 +2,7 @@
 
 > 创建：2026-06-26 | 阶段：v2.2 FINAL
 > 位置：`docs/` = 永久资产，不 gitignore
-> 决策依据：`design/BEACON.md` 决策 11/12/19
+> 决策依据：`design/BEACON.md` 决策 19/27 (v2.5 P0-FINAL, v1.0 退役)
 
 ## 环境要求
 
@@ -37,9 +37,8 @@ uv sync && uv run ae --version
 | 命令 | 用途 |
 |------|------|
 | `ae init <project>` | 项目脚手架（43 模板 + 8 项目类型） |
-| `ae dev-loop "<req>"` | 单需求开发循环（默认 v2.0 Orchestrator） |
-| `ae dev-loop --use-v1 "<req>"` | 强制 v1.0 LoopEngine |
-| `ae dev-loop --use-v2 --max-rounds N "<req>"` | 强制 v2.0 + 控制 round 数 |
+| `ae dev-loop "<req>"` | 单需求开发循环（v2.5 起仅 v2.0 Orchestrator） |
+| `ae dev-loop --max-rounds N "<req>"` | 控制 round 数 |
 | `ae status` | 项目环境摘要 + checkpoint 数量 |
 | `ae checkpoint list/show/resume` | v1.1 checkpoint 管理 |
 | `ae checkpoint v2 list/show/delete` | v2.0 SQLite checkpoint 管理 |
@@ -76,5 +75,5 @@ ae --version && ae --help       # 验证
 
 ## 引用
 
-- `design/BEACON.md` 决策 11/12/19 — v2.0 增量式演进 + v2.2 闭环
+- `design/BEACON.md` 决策 19/27 — v2.2 闭环 + v2.5 P0-FINAL v1.0 退役
 - `docs/api-reference.md` · `docs/troubleshooting.md` · `docs/e2e-real-run.md`

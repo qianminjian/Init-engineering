@@ -67,22 +67,24 @@ def check_syntax(phase: str) -> DimensionResult:
 
 
 def check_runtime_smoke(phase: str) -> DimensionResult:
-    """Dynamic: exercise LoopState + Channel round-trip serialization."""
+    """Dynamic: exercise CheckpointEnvelope + Channel round-trip serialization.
+    v2.3 P0-A: 原 LoopState (v2.0 Pydantic) 重命名为 CheckpointEnvelope.
+    """
     try:
         sys.path.insert(0, str(PROJECT_ROOT))
         from auto_engineering.loop.state import (
+            CheckpointEnvelope,
             LastValueChannel,
-            LoopState,
         )
 
-        # Test 1: empty LoopState round-trip
-        state = LoopState()
+        # Test 1: empty CheckpointEnvelope round-trip
+        state = CheckpointEnvelope()
         dumped = state.model_dump()
-        restored = LoopState.model_validate(dumped)
+        restored = CheckpointEnvelope.model_validate(dumped)
         if restored.model_dump() != dumped:
             return DimensionResult(
                 "runtimeSmoke", "dynamic", False,
-                "empty LoopState round-trip MISMATCH",
+                "empty CheckpointEnvelope round-trip MISMATCH",
             )
 
         # Test 2: LastValueChannel round-trip (LangGraph style)

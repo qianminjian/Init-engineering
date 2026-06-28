@@ -154,7 +154,7 @@ class InitWorker:
 
         self._current_phase = "finalize"
         if self._mode == "incremental":
-            # A1: Phase 3.5 — 增量合并
+            # A1: v2.0.5 — 增量合并
             created, skipped = merge_incremental(tmpdir, self.dst_path, self._created_files)
             if not self.quiet:
                 print(

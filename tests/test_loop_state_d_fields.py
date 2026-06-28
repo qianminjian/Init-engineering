@@ -1,10 +1,11 @@
-"""v2.1 Phase D 测试 — LoopState 8 字段补全 + Task 10 字段补全 + Plan.validate contract.
+"""v2.1 Phase D 测试 — CheckpointEnvelope 8 字段补全 + Task 10 字段补全 + Plan.validate contract.
 
 设计来源: design/v2.0-Design-Loop.md §3.1-3.2
 v2.1 Phase D: 补齐设计文档字段(实际代码与设计对齐).
+v2.3 P0-A: 原 LoopState (v2.0 Pydantic) 重命名为 CheckpointEnvelope. 本文件测试该类.
 
 关键点:
-- LoopState 字段: round/step/tasks/task_results/gate_results/signals/metrics/status/channels
+- CheckpointEnvelope 字段: round/step/tasks/task_results/gate_results/signals/metrics/status/channels
 - Task 字段: title/expected_output/role/context_files/validation/output (新增)
 - Plan.validate: 校验 expected_output 非空 + title 非空 + role 在枚举中
 - tests/test_loop_state_v2.py: 已有 Phase A 序列化测试, 本文件独立测试 Phase D 字段补全
@@ -25,77 +26,77 @@ from auto_engineering.loop.plan import (
 )
 from auto_engineering.loop.round import TaskOutcome
 from auto_engineering.loop.state import (
+    CheckpointEnvelope,
     LastValueChannel,
-    LoopState,
 )
 
 # ============================================================
-# D.1 LoopState 8 字段测试
+# D.1 CheckpointEnvelope 8 字段测试
 # ============================================================
 
 
 def test_loop_state_default_round_is_zero():
-    """LoopState.round 默认 0 (启动时未跑任何轮)."""
-    state = LoopState()
+    """CheckpointEnvelope.round 默认 0 (启动时未跑任何轮)."""
+    state = CheckpointEnvelope()
     assert state.round == 0
 
 
 def test_loop_state_default_step_is_zero():
-    """LoopState.step 默认 0 (L1 Inner Loop 起步)."""
-    state = LoopState()
+    """CheckpointEnvelope.step 默认 0 (L1 Inner Loop 起步)."""
+    state = CheckpointEnvelope()
     assert state.step == 0
 
 
 def test_loop_state_default_status_is_running():
-    """LoopState.status 默认 'running'."""
-    state = LoopState()
+    """CheckpointEnvelope.status 默认 'running'."""
+    state = CheckpointEnvelope()
     assert state.status == "running"
 
 
 def test_loop_state_default_tasks_is_empty_dict():
-    """LoopState.tasks 默认空 dict (没有 task)."""
-    state = LoopState()
+    """CheckpointEnvelope.tasks 默认空 dict (没有 task)."""
+    state = CheckpointEnvelope()
     assert state.tasks == {}
 
 
 def test_loop_state_default_task_results_is_empty_dict():
-    """LoopState.task_results 默认空 dict."""
-    state = LoopState()
+    """CheckpointEnvelope.task_results 默认空 dict."""
+    state = CheckpointEnvelope()
     assert state.task_results == {}
 
 
 def test_loop_state_default_gate_results_is_empty_dict():
-    """LoopState.gate_results 默认空 dict."""
-    state = LoopState()
+    """CheckpointEnvelope.gate_results 默认空 dict."""
+    state = CheckpointEnvelope()
     assert state.gate_results == {}
 
 
 def test_loop_state_default_signals_is_empty_list():
-    """LoopState.signals 默认空 list (信号流未触发)."""
-    state = LoopState()
+    """CheckpointEnvelope.signals 默认空 list (信号流未触发)."""
+    state = CheckpointEnvelope()
     assert state.signals == []
 
 
 def test_loop_state_default_metrics_is_metrics_snapshot():
-    """LoopState.metrics 默认 MetricsSnapshot 实例 (不是 None)."""
+    """CheckpointEnvelope.metrics 默认 MetricsSnapshot 实例 (不是 None)."""
     from auto_engineering.loop.state import MetricsSnapshot
 
-    state = LoopState()
+    state = CheckpointEnvelope()
     assert isinstance(state.metrics, MetricsSnapshot)
 
 
 def test_loop_state_default_channels_is_empty_dict():
-    """LoopState.channels 默认空 dict (保留为底层 Channel 系统 API)."""
-    state = LoopState()
+    """CheckpointEnvelope.channels 默认空 dict (保留为底层 Channel 系统 API)."""
+    state = CheckpointEnvelope()
     assert state.channels == {}
 
 
 def test_loop_state_construct_with_all_8_fields():
-    """LoopState 可构造时一次性传入 8 字段."""
+    """CheckpointEnvelope 可构造时一次性传入 8 字段."""
     from auto_engineering.loop.state import MetricsSnapshot
 
     metrics = MetricsSnapshot()
-    state = LoopState(
+    state = CheckpointEnvelope(
         round=3,
         step=5,
         status="converged",
@@ -113,7 +114,7 @@ def test_loop_state_construct_with_all_8_fields():
 
 
 def test_loop_state_get_task_returns_task_by_id():
-    """LoopState.get_task(id) 便捷读取 tasks[id]."""
+    """CheckpointEnvelope.get_task(id) 便捷读取 tasks[id]."""
     task = Task(
         id="t1",
         title="Task 1",
@@ -122,33 +123,33 @@ def test_loop_state_get_task_returns_task_by_id():
         role="developer",
         target_files=frozenset(),
     )
-    state = LoopState(tasks={"t1": task})
+    state = CheckpointEnvelope(tasks={"t1": task})
     assert state.get_task("t1") is task
     assert state.get_task("nonexistent") is None
 
 
 def test_loop_state_get_signal_returns_first_signal_of_type():
-    """LoopState.get_signal(type) 返回第一个匹配 type 的信号."""
+    """CheckpointEnvelope.get_signal(type) 返回第一个匹配 type 的信号."""
     from auto_engineering.loop.state import Signal
 
     sig1 = Signal(type="metric.update", payload={"name": "tokens", "value": 100})
     sig2 = Signal(type="task.done", payload={"task_id": "t1"})
     sig3 = Signal(type="metric.update", payload={"name": "errors", "value": 0})
-    state = LoopState(signals=[sig1, sig2, sig3])
+    state = CheckpointEnvelope(signals=[sig1, sig2, sig3])
     result = state.get_signal("metric.update")
     assert result is sig1  # 第一个匹配
 
 
 def test_loop_state_get_metric_returns_value():
-    """LoopState.get_metric(name) 返回 metrics dict 中对应值."""
-    state = LoopState()
+    """CheckpointEnvelope.get_metric(name) 返回 metrics dict 中对应值."""
+    state = CheckpointEnvelope()
     state.metrics.values["tokens_used"] = 1500
     assert state.get_metric("tokens_used") == 1500
 
 
 def test_loop_state_model_dump_includes_all_8_fields():
-    """LoopState.model_dump 输出包含 8 字段 + channels."""
-    state = LoopState(
+    """CheckpointEnvelope.model_dump 输出包含 8 字段 + channels."""
+    state = CheckpointEnvelope(
         round=2,
         step=4,
         status="running",

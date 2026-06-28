@@ -1,6 +1,6 @@
 """ToolRegistry — 工具注册表.
 
-设计: design/LOOP-DEVELOPMENT-PLAN.md Phase 3 文件 13.
+设计: design/LOOP-DEVELOPMENT-PLAN.md v2.0 文件 13.
 
 按 name 索引 BaseTool 实例,提供:
 - register(tool): 添加（重名抛 ValueError）

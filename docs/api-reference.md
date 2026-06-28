@@ -2,7 +2,7 @@
 
 > 创建：2026-06-26 | 阶段：v2.2 FINAL
 > 位置：`docs/` = 永久资产
-> 决策依据：`design/BEACON.md` 决策 11/12/19
+> 决策依据：`design/BEACON.md` 决策 19/27 (v2.5 P0-FINAL, v1.0 退役)
 
 ## ae init — 项目脚手架
 
@@ -41,9 +41,8 @@ ae dev-loop "<requirement>" [options]
 | `--log-format` | str | text | text / json |
 | `--llm-provider` | str | anthropic | anthropic/ollama/openai |
 | `--project-root` | path | cwd | 项目根目录 |
-| `--use-v1` / `--use-v2` | flag | F | 强制 v1.0 / v2.0（互斥） |
 
-**路由**：默认 v2.0（需 `ANTHROPIC_API_KEY`）→ 无 key fallback v1.0；同时设置互斥 exit 2。
+> **v2.5 起移除**：`--use-v1` / `--use-v2` 不再支持。v2.5 仅有 v2.0 Orchestrator path，v1.0 LoopEngine 已退役（见 BEACON 决策 27）。无 `ANTHROPIC_API_KEY` 时直接报错，不存在 fallback。
 
 ## ae status — 项目摘要
 
@@ -76,5 +75,5 @@ resume 子命令为占位（实际恢复走 `ae dev-loop`）。
 
 ## 引用
 
-- `design/BEACON.md` 决策 11/12/19 · `auto_engineering/cli.py`
+- `design/BEACON.md` 决策 19/27 · `auto_engineering/cli.py`
 - `docs/production-deployment.md` · `docs/troubleshooting.md`
