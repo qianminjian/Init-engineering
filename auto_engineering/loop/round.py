@@ -178,7 +178,7 @@ async def run_round(
         # 即使无 task, 也跑 Gate (若提供) — Phase H 行为: Gate 在 task 之后跑
         if gates and project_root is not None:
             result.gate_results = _run_gates(gates, project_root)
-        _attach_round_history(result, tasks, project_root)
+        await _attach_round_history(result, tasks, project_root)
         return result
 
     # 创建并发任务
@@ -212,11 +212,11 @@ async def run_round(
         result.gate_results = _run_gates(gates, project_root)
 
     # v2.3 Phase G (P1.3): 末尾构造 RoundHistory 写入 round_result.history
-    _attach_round_history(result, tasks, project_root)
+    await _attach_round_history(result, tasks, project_root)
     return result
 
 
-def _attach_round_history(
+async def _attach_round_history(
     result: RoundResult,
     tasks: list[Task],
     project_root: Path | None,
@@ -238,7 +238,12 @@ def _attach_round_history(
     """
     from auto_engineering.loop.convergence import RoundHistory
 
-    lines_added, lines_removed = _parse_git_numstat(project_root)
+    # v2.5 P2-D-1: _parse_git_numstat 是同步 subprocess.run, 在 async
+    # 上下文会阻塞 event loop. 通过 asyncio.to_thread 移到 thread pool.
+    # 同 P0-1 asyncio.to_thread 模式.
+    lines_added, lines_removed = await asyncio.to_thread(
+        _parse_git_numstat, project_root
+    )
     history = RoundHistory(
         round_id=result.round_id,
         files_changed=result.completed_count,
@@ -258,6 +263,8 @@ def _parse_git_numstat(project_root: Path | None) -> tuple[int, int]:
     从 auto_engineering.loop.orchestrator 提取 (Phase G P1.3):
         单一数据源: RoundHistory 构造在 round.py 内完成, 不需 Orchestrator 中转.
         仓库无 HEAD / git 不可用 → (0, 0)
+
+    v2.5 P2-D-1: 同步函数, 调用方负责包 asyncio.to_thread (见 _attach_round_history).
     """
     import subprocess
 
