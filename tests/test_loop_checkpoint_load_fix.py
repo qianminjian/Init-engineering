@@ -1,11 +1,17 @@
 """v2.1 Phase D 测试 — 修复 Phase A load() 半完成 + 集成验证.
 
 设计来源: design/v2.0-Design-Loop.md §3.4 Checkpoint 持久化
+BEACON 决策 17: SQLiteCheckpointStore.load() 必须返回 LoopState 实例 + Channel 实例 (完整闭环)
 
 Phase A 已修复 save() 不抛异常, 但 load() 半完成:
 - 实际: store.load(id).state 返回 dict (JSON 反序列化结果)
 - 期望: store.load(id).state 返回 CheckpointEnvelope 实例, channels 是 Channel 实例
     (v2.3 P0-A: 原 LoopState 重命名为 CheckpointEnvelope)
+
+实现路径 (当前):
+    store.load() → _row_to_checkpoint() → _deserialize_state() →
+    → deserialize_loop_state() (in loop/state/checkpoint_envelope.py) →
+    → _rebuild_channel() (per channel) → Channel 实例
 
 测试约束 (遵循 pytest-memory-management.md):
 - 单文件 pytest --no-cov --timeout=60
