@@ -37,9 +37,8 @@ uv sync && uv run ae --version
 | 命令 | 用途 |
 |------|------|
 | `ae init <project>` | 项目脚手架（43 模板 + 8 项目类型） |
-| `ae dev-loop "<req>"` | 单需求开发循环（默认 v2.0 Orchestrator） |
-| `ae dev-loop --use-v1 "<req>"` | 强制 v1.0 LoopEngine |
-| `ae dev-loop --use-v2 --max-rounds N "<req>"` | 强制 v2.0 + 控制 round 数 |
+| `ae dev-loop "<req>"` | 单需求开发循环（v2.5 起仅 v2.0 Orchestrator） |
+| `ae dev-loop --max-rounds N "<req>"` | 控制 round 数 |
 | `ae status` | 项目环境摘要 + checkpoint 数量 |
 | `ae checkpoint list/show/resume` | v1.1 checkpoint 管理 |
 | `ae checkpoint v2 list/show/delete` | v2.0 SQLite checkpoint 管理 |
