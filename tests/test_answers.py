@@ -532,3 +532,64 @@ class TestLazyExternalDict:
         d = _LazyExternalDict({"a": "/tmp/a.yml", "b": "/tmp/b.yml"})
         r = repr(d)
         assert "_LazyExternalDict" in r
+
+
+class TestExternalDataSandbox:
+    """P1-S3 (deep audit C-P1-3): external_data 路径沙箱.
+
+    模板的 `external_data` 是用户输入, 攻击者可注入 `external_data:
+    { users: "/etc/passwd" }` 让 Jinja2 上下文读到敏感文件. 防御:
+    _LazyExternalDict / AnswersMap._load_external 接受 sandbox_roots,
+    路径不在 sandbox 内 (realpath 双侧) 抛 ValueError.
+    """
+
+    def test_path_outside_sandbox_rejected(self):
+        """路径不在 sandbox 根内 → 抛 ValueError (防 /etc/passwd 读取)."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yml", delete=False) as f:
+            yaml.dump({"secret": "data"}, f)
+            outside_path = f.name
+        try:
+            # sandbox root 是 tmp_path, 但 outside_path 也在 tmp_path
+            # 用一个明显不在 sandbox 内的路径
+            d = _LazyExternalDict(
+                {"key": "/etc/passwd"},
+                sandbox_roots=[Path("/tmp")],
+            )
+            with pytest.raises(ValueError) as exc_info:
+                d["key"]
+            assert "not under sandbox roots" in str(exc_info.value)
+            assert "/etc/passwd" in str(exc_info.value)
+        finally:
+            Path(outside_path).unlink(missing_ok=True)
+
+    def test_path_inside_sandbox_allowed(self):
+        """路径在 sandbox 根内 → 正常加载."""
+        with tempfile.TemporaryDirectory() as sandbox:
+            yaml_file = Path(sandbox) / "data.yml"
+            yaml_file.write_text(yaml.dump({"safe": "value"}))
+            d = _LazyExternalDict(
+                {"key": str(yaml_file)},
+                sandbox_roots=[Path(sandbox)],
+            )
+            assert d["key"] == {"safe": "value"}
+
+    def test_no_sandbox_roots_means_no_check(self):
+        """sandbox_roots=None (默认) → 不校验, 保持向后兼容."""
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".yml", delete=False) as f:
+            yaml.dump({"legacy": "value"}, f)
+            tmp_path = f.name
+        try:
+            d = _LazyExternalDict({"key": tmp_path})  # 无 sandbox_roots
+            assert d["key"] == {"legacy": "value"}
+        finally:
+            Path(tmp_path).unlink(missing_ok=True)
+
+    def test_answers_map_load_external_with_sandbox_rejects(self):
+        """AnswersMap._load_external 也走同一沙箱 (combined() 走 _LazyExternalDict)."""
+        am = AnswersMap(
+            external={"key": "/etc/passwd"},
+            external_sandbox_roots=["/tmp"],
+        )
+        with pytest.raises(ValueError) as exc_info:
+            am._load_external("key")
+        assert "not under sandbox roots" in str(exc_info.value)

@@ -23,20 +23,63 @@ BUILTIN_VARS: dict[str, Any] = {
 }
 
 
+def _is_path_under_any_root(file_path: Path, roots: list[Path]) -> bool:
+    """检查 file_path 是否在任一 root 下 (realpath 双侧 + lexical fallback).
+
+    防御: 模板的 `external_data` 路径可被恶意模板利用读 /etc/passwd 等敏感文件.
+    用 os.path.realpath 双侧归一化 (macOS symlink 安全), 文件不存在时回退
+    到 lexical 解析. 与 tools/base.py::_is_path_safe 同一模式.
+    """
+    import os
+
+    try:
+        if os.path.exists(file_path):
+            target = os.path.realpath(file_path)
+        else:
+            target = str(file_path.resolve())
+    except Exception:
+        return False
+    for root in roots:
+        try:
+            root_real = os.path.realpath(root)
+        except Exception:
+            continue
+        root_prefix = root_real if root_real.endswith(os.sep) else root_real + os.sep
+        if target == root_real or target.startswith(root_prefix):
+            return True
+    return False
+
+
 class _LazyExternalDict:
     """Lazy-loading dictionary for external data files.
 
     Only loads a file when its key is first accessed. 来源：Copier _external_data + LazyDict 模式。
     Supports YAML (.yml/.yaml) and JSON (.json) files.
+
+    v2.5: 加 sandbox_roots — 模板的 external_data 路径必须落在 sandbox_roots
+    内 (realpath 双侧校验), 防止恶意模板读 /etc/passwd 等敏感文件.
     """
 
-    def __init__(self, external_map: dict[str, str]) -> None:
+    def __init__(
+        self,
+        external_map: dict[str, str],
+        sandbox_roots: list[Path] | None = None,
+    ) -> None:
         self._external_map = external_map  # {var_name: file_path}
+        self._sandbox_roots = sandbox_roots or []
         self._cache: dict[str, Any] = {}
 
     def __getitem__(self, key: str) -> Any:
         if key not in self._cache:
             file_path = Path(self._external_map[key])
+            if self._sandbox_roots and not _is_path_under_any_root(
+                file_path, self._sandbox_roots
+            ):
+                raise ValueError(
+                    f"external_data path '{file_path}' (key='{key}') "
+                    f"not under sandbox roots {self._sandbox_roots}. "
+                    f"Refusing to load (potential template injection)."
+                )
             if file_path.exists():
                 if file_path.suffix in (".yml", ".yaml"):
                     data = yaml.safe_load(file_path.read_text())
@@ -91,6 +134,8 @@ class AnswersMap:
     builtins: dict = field(default_factory=lambda: BUILTIN_VARS.copy())
     external: dict[str, str] = field(default_factory=dict)
     hidden: set = field(default_factory=set)
+    # v2.5 P1-S3: external_data 路径沙箱 (防 /etc/passwd 读取)
+    external_sandbox_roots: list = field(default_factory=list)
     _external_cache: dict[str, Any] = field(default_factory=dict, init=False)
 
     def get(self, key: str) -> Any:
@@ -120,13 +165,31 @@ class AnswersMap:
             )
         )
         if self.external:
-            result["_external_data"] = _LazyExternalDict(self.external)
+            result["_external_data"] = _LazyExternalDict(
+                self.external,
+                sandbox_roots=[
+                    Path(r) for r in self.external_sandbox_roots
+                ],
+            )
         return result
 
     def _load_external(self, key: str) -> Any:
-        """懒加载外部数据文件。来源：Copier _external_data()。"""
+        """懒加载外部数据文件。来源：Copier _external_data()。
+
+        v2.5 P1-S3: 若 external_sandbox_roots 非空, 验证路径必须在
+        sandbox 根内 (realpath 双侧), 否则抛 ValueError 防路径穿越.
+        """
         if key not in self._external_cache:
             file_path = Path(self.external[key])
+            if self.external_sandbox_roots and not _is_path_under_any_root(
+                file_path,
+                [Path(r) for r in self.external_sandbox_roots],
+            ):
+                raise ValueError(
+                    f"external_data path '{file_path}' (key='{key}') "
+                    f"not under sandbox roots {self.external_sandbox_roots}. "
+                    f"Refusing to load (potential template injection)."
+                )
             if file_path.exists():
                 data = yaml.safe_load(file_path.read_text())
                 self._external_cache[key] = data

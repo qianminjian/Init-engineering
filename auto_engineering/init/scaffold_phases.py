@@ -247,6 +247,9 @@ class InitWorker:
             cli_overrides=cli_overrides,
             previous=self._previous_answers.previous if self._previous_answers else {},
             external=self._template.external_data,
+            # v2.5 P1-S3: external_data 路径沙箱到 template_dir (realpath 双侧
+            # 校验, 防 /etc/passwd 读取). 攻击者控制的模板无法越界.
+            external_sandbox_roots=[self._template.template_dir],
         )
         self._answers.builtins["project_type"] = self.project_type or ""
         if not self.defaults:
