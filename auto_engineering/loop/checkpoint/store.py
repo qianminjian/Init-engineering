@@ -17,7 +17,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from auto_engineering.loop.checkpoint._connection import _with_conn
+from auto_engineering.loop.checkpoint._connection import _atomic, _with_conn
 from auto_engineering.loop.checkpoint._serialization import (
     _deserialize_state,
     _normalize_history_item,
@@ -152,7 +152,7 @@ class SQLiteCheckpointStore[T]:
         history_json = json.dumps(history_dicts, default=str)
         now = datetime.now(UTC).isoformat()
 
-        with self._conn() as conn:
+        with self._conn() as conn, _atomic(conn):
             conn.execute(
                 """
                 INSERT INTO checkpoints
@@ -172,7 +172,6 @@ class SQLiteCheckpointStore[T]:
                     now,
                 ),
             )
-            conn.commit()
         return cp_id
 
     def load(self, checkpoint_id: str) -> Checkpoint[T]:
@@ -242,11 +241,10 @@ class SQLiteCheckpointStore[T]:
         Returns:
             True = 已删除, False = 不存在
         """
-        with self._conn() as conn:
+        with self._conn() as conn, _atomic(conn):
             cursor = conn.execute(
                 "DELETE FROM checkpoints WHERE id = ?", (checkpoint_id,)
             )
-            conn.commit()
             return cursor.rowcount > 0
 
     def clear(self) -> None:
@@ -254,9 +252,8 @@ class SQLiteCheckpointStore[T]:
 
         谨慎使用: 不可恢复.
         """
-        with self._conn() as conn:
+        with self._conn() as conn, _atomic(conn):
             conn.execute("DELETE FROM checkpoints")
-            conn.commit()
 
     def count(self) -> int:
         """返回 Checkpoint 总数."""

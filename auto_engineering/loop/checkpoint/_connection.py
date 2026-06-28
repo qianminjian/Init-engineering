@@ -3,6 +3,8 @@
 从 loop/checkpoint/store.py 拆分 (v2.5 P1-D: store.py 609 行 → store.py + _connection.py + _serialization.py).
 将 ":memory:" / file 模式的连接获取/释放/锁/行工厂 集中管理, store.py 中的公开方法
 (save/load/load_latest/load_by_round/list_all/delete/clear/count) 不再各自重复这层样板.
+v2.5 P1-D+1: 加 _atomic 上下文管理器 — 事务包装 + 失败自动 rollback, 让 save/delete/clear
+的 try/except 模板不再重复.
 """
 
 from __future__ import annotations
@@ -47,6 +49,24 @@ def _with_conn(
         conn.close()
 
 
+@contextmanager
+def _atomic(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
+    """事务包装: 正常退出时 commit, sqlite3.Error 时 rollback 后重新抛出.
+
+    用法: `with self._conn() as conn, _atomic(conn): conn.execute(...); ...`
+
+    SQLite 也会在 connection close 时自动 rollback 未提交事务, 但显式
+    rollback-on-error 给出清晰的失败契约 (P1-D 之前版本有显式 try/except rollback,
+    P1-D 拆分时丢失, v2.5 P1-D+1 恢复).
+    """
+    try:
+        yield conn
+        conn.commit()
+    except sqlite3.Error:
+        conn.rollback()
+        raise
+
+
 def _ensure_schema(conn: sqlite3.Connection) -> None:
     """在指定 connection 上创建 schema (幂等)."""
     conn.execute(
@@ -73,4 +93,4 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
-__all__ = ["_with_conn", "_ensure_schema"]
+__all__ = ["_with_conn", "_atomic", "_ensure_schema"]
