@@ -54,10 +54,22 @@ class BaseTool(ABC):
         /tmp → /private/tmp, 攻击者控制的 file_path 若经 symlink 可绕过 lexical
         解析. 用 os.path.realpath 双侧归一化; 不存在的中间目录回退到 lexical.
 
-        Returns:
-            (safe, error_message)
+        v2.5 P2-C-6: project_root is None 时 (调用方忘传) 默认 fail-OPEN
+        (allow all). 这是历史行为. 风险: 调用方忘传时, 沙箱彻底失效.
+        缓解: 记 warning 日志 (audit trail), 不 raise (向后兼容 — 测试 +
+        旧调用方仍能跑). 生产 CLI dev_loop.py:75-82 显式传 project_root
+        给所有 file 类工具, 不会触发 warning.
         """
         if self.project_root is None:
+            import logging
+            import warnings
+            msg = (
+                f"{type(self).__name__}._is_path_safe called with "
+                f"project_root=None. Sandbox disabled — file_path='{file_path}' "
+                f"allowed unconditionally. 调用方应显式传 project_root."
+            )
+            warnings.warn(msg, stacklevel=2)
+            logging.getLogger("ae.tools.sandbox").warning(msg)
             return True, ""
 
         import os

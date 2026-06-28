@@ -177,7 +177,7 @@ async def run_round(
         result.finished_at = time.monotonic()
         # 即使无 task, 也跑 Gate (若提供) — Phase H 行为: Gate 在 task 之后跑
         if gates and project_root is not None:
-            result.gate_results = _run_gates(gates, project_root)
+            result.gate_results = await _run_gates(gates, project_root)
         await _attach_round_history(result, tasks, project_root)
         return result
 
@@ -209,7 +209,7 @@ async def run_round(
 
     # v2.2 Phase H: 跑 Gate (task 完成后), 写入 gate_results
     if gates and project_root is not None:
-        result.gate_results = _run_gates(gates, project_root)
+        result.gate_results = await _run_gates(gates, project_root)
 
     # v2.3 Phase G (P1.3): 末尾构造 RoundHistory 写入 round_result.history
     await _attach_round_history(result, tasks, project_root)
@@ -300,23 +300,41 @@ def _parse_git_numstat(project_root: Path | None) -> tuple[int, int]:
     return (total_added, total_removed)
 
 
-def _run_gates(gates: list[Gate], project_root: Path) -> dict[str, Verdict]:
+async def _run_gates(gates: list[Gate], project_root: Path) -> dict[str, Verdict]:
     """跑 Gate 列表, 返回 {gate_name: Verdict} dict.
 
     Gate 异常被吞, 写入 Verdict(passed=False, message=str(exc)).
     与 Orchestrator._run_gates 不同: 这里始终写入 dict (含失败 entry),
     让 RoundResult.all_gates_passed 能正确反映"有 Gate 失败".
+
+    v2.5 P2-D-2: 之前串行跑 (test 60s + lint 30s + type_check 30s + safety 30s
+    + coverage 60s + build 30s = ~4 分钟/round × 10 rounds = 40 分钟).
+    改为 asyncio.gather + asyncio.to_thread 并行跑. 7 个 Gate 都是
+    read-only (scan / run linter / type check), 无共享写状态, 适合并行.
+    总时长 ≈ max(单个 gate 时长) 而非 sum.
     """
     results: dict[str, Verdict] = {}
-    for gate in gates:
+
+    async def _run_one(gate: Gate) -> tuple[str, Verdict]:
         try:
-            verdict = gate.run(project_root)
+            verdict = await asyncio.to_thread(gate.run, project_root)
         except Exception as exc:
             verdict = Verdict.failed(
                 f"Gate {gate.name} 异常: {exc}",
                 gate_name=gate.name,
             )
-        results[gate.name] = verdict
+        return gate.name, verdict
+
+    # 并行跑 (D-P2-3: return_exceptions=True 防御)
+    gathered = await asyncio.gather(
+        *[_run_one(g) for g in gates], return_exceptions=True
+    )
+    for item in gathered:
+        if isinstance(item, BaseException):
+            # 防御路径 (理论不应发生, _run_one 已捕获所有 Exception)
+            continue
+        name, verdict = item
+        results[name] = verdict
     return results
 
 

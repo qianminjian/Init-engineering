@@ -208,6 +208,29 @@ class TestFileSandbox:
         )
         assert "project_root" in result.error.lower() or "outside" in result.error.lower()
 
+    def test_project_root_none_warns_and_allows(self, caplog):
+        """v2.5 P2-C-6: project_root=None → 沙箱失效, 记 warning 但 allow.
+
+        这是 fail-OPEN 行为 (向后兼容). 防御: 警告 + 日志, 让调用方
+        知道 sandbox 失效. 生产 CLI dev_loop.py:75-82 显式传 project_root,
+        不会触发.
+        """
+        import logging
+        from auto_engineering.tools.file_tools import WriteFileTool
+
+        # project_root=None (缺省)
+        tool = WriteFileTool()
+        with caplog.at_level(logging.WARNING, logger="ae.tools.sandbox"):
+            safe, err = tool._is_path_safe("/any/path/at/all")
+        # 行为: 沙箱失效, allow all
+        assert safe is True
+        assert err == ""
+        # 警告记录
+        assert any(
+            "project_root=None" in rec.message
+            for rec in caplog.records
+        ), f"应记录 warning, 实际: {[r.message for r in caplog.records]}"
+
     def test_edit_inside_project_allowed(self):
         """编辑 project_root 内文件 → 正常."""
         test_file = self.project_root / "test.txt"
