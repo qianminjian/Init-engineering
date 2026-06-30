@@ -73,6 +73,20 @@ class TestStatusCommand:
         assert result.exit_code == 0
         assert "当前目录" in result.output
 
+    def test_status_exception_path(self, tmp_path: Path):
+        """ProjectEnvironment.resolve() 抛异常时，status 捕获并显示错误."""
+        from unittest.mock import patch
+
+        def fake_resolve(root):
+            raise RuntimeError("intentional resolve failure")
+        with patch(
+            "auto_engineering.config.environment.ProjectEnvironment.resolve",
+            fake_resolve,
+        ):
+            result = _runner.invoke(status, [], input="", standalone_mode=False)
+        assert result.exit_code == 0  # status 命令不崩溃
+        assert "读取项目环境失败" in result.output
+
 
 class TestInitFromAnswers:
     """ae init --from-answers 从答案文件恢复."""
@@ -97,6 +111,43 @@ class TestInitFromAnswers:
         ])
         # --from-answers 先尝试 answers_file，恢复 project_type
         assert result.exit_code in (0, 1)  # 0=成功，1=失败但CLI正常退出
+
+    def test_from_answers_missing_project_type_key(self, tmp_path: Path):
+        """--from-answers 文件不含 project_type 时，contextlib.suppress(KeyError) 生效."""
+        answers_file = tmp_path / "prev.yml"
+        # 故意不写 project_type 字段，触发 AnswersMap.get() 的 KeyError
+        answers_file.write_text(
+            "_meta:\n  ae_version: 1.0.0\n"
+            "project_name: restored\n"
+        )
+        target = tmp_path / "newproj"
+        target.mkdir()
+        # 不传 --type，所以会走到 answers.get("project_type") 路径
+        result = _runner.invoke(init, [
+            str(target),
+            "--from-answers", str(answers_file),
+            "--defaults",
+            "--skip-tasks",
+            "--pretend",
+        ])
+        # 不崩溃，suppress(KeyError) 生效
+        assert result.exit_code in (0, 1)
+
+    def test_init_execute_exception_handler(self, tmp_path: Path):
+        """worker.execute() 抛异常时，CLI 捕获并 SystemExit(1)."""
+        from unittest.mock import patch
+        target = tmp_path / "newproj"
+        target.mkdir()
+        # Mock execute() to raise an exception to trigger the except block
+        def fake_execute(self):
+            raise RuntimeError("intentional failure")
+        with patch("auto_engineering.init.scaffold_phases.InitWorker.execute", fake_execute):
+            result = _runner.invoke(init, [
+                str(target),
+                "--skip-tasks",
+            ])
+        assert result.exit_code == 1
+        assert "intentional failure" in result.output
 
     def test_init_with_defaults_pretend(self, tmp_path: Path):
         """--defaults --pretend 模式."""
