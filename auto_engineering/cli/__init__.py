@@ -1,13 +1,9 @@
 """CLI 入口 — Click 命令注册.
 
-从 cli.py 拆分 (Plan P1-B): helpers.py + dev_loop.py + checkpoint.py + __init__.py.
-
 命令:
     ae init <project>         项目环境初始化
-    ae dev-loop <requirement> 单需求开发循环 (默认 v2.0 Orchestrator)
-    ae status                 查看当前进度
-    ae checkpoint list|show|resume    Checkpoint 管理
-    ae checkpoint v2 list|show|delete|migrate   v2.0 Checkpoint 操作
+    ae init --analyze <path> 存量项目：代码分析 + 自动初始化
+    ae init-config            查看/编辑初始化配置
 """
 
 from __future__ import annotations
@@ -18,39 +14,12 @@ from pathlib import Path
 import click
 
 from auto_engineering import __version__
-from auto_engineering.errors import AEError, ErrorCode
-
-# Re-export 所有 helpers + dev_loop 符号, 保持 from auto_engineering.cli import ... 兼容
-from auto_engineering.cli.helpers import (  # noqa: F401
-    CancellationToken,
-    ErrorCategory,
-    ProgressLogger,
-    TokenTracker,
-    _CATEGORY_FRIENDLY_PREFIX,
-    _emit_stage_done,
-    _install_sigint_handler,
-    _log_engine_version,
-    _log_stage_progress,
-    classify_error,
-)
-from auto_engineering.cli.dev_loop import (  # noqa: F401
-    OrchestratorRunResult,
-    _build_v2_agent_runtime,
-    _build_v2_semantic_evaluator,
-    _run_v2_orchestrator,
-)
-from auto_engineering.cli.checkpoint import register_checkpoint_commands  # noqa: F401
-
-
-# ============================================================
-# Click 命令
-# ============================================================
 
 
 @click.group()
 @click.version_option(version=__version__, prog_name="ae")
 def main():
-    """Auto-Engineering — 团队级 Loop 工程 + 多 Agent 协作."""
+    """Init-Engineering — Agent Skill 模式项目环境初始化工具."""
     pass
 
 
@@ -82,6 +51,9 @@ def main():
 )
 @click.option("--quiet", is_flag=True, help="静默模式")
 @click.option("--incremental", is_flag=True, help="增量模式：只补充缺失文件，不覆盖已有文件")
+@click.option(
+    "--analyze", "analyze_only", is_flag=True, help="存量项目：只分析项目类型，不初始化"
+)
 def init(
     project: str | None,
     project_type: str | None,
@@ -98,11 +70,29 @@ def init(
     cleanup_on_error: bool,
     quiet: bool,
     incremental: bool,
+    analyze_only: bool,
 ):
     """项目环境初始化."""
     from auto_engineering.init import InitWorker
+    from auto_engineering.init.detector import ProjectDetector
 
     dst_path = Path(project) if project else Path.cwd()
+
+    # --analyze 模式：只运行代码分析，不初始化
+    if analyze_only:
+        detector = ProjectDetector(dst_path)
+        candidates = detector.list_candidates()
+        detected = detector.detect()
+        click.echo(f"分析目录: {dst_path}")
+        if candidates:
+            click.echo(f"检测到的项目类型候选: {', '.join(candidates)}")
+            if detected:
+                click.echo(f"✓ 自动检测结果: {detected}")
+            else:
+                click.echo("⚠ 多个候选，无法自动确定类型")
+        else:
+            click.echo("⚠ 未检测到已知项目类型（空目录或未知类型）")
+        return
 
     if answers_file:
         from auto_engineering.init import AnswersMap
@@ -146,88 +136,8 @@ def init(
 
 
 @main.command()
-@click.argument("requirement")
-@click.option("--max-rounds", type=int, default=3, help="最大 Round 数")
-@click.option("--max-tokens", type=int, default=0, help="Token 预算上限 (0 = 无限制)")
-@click.option("--log-format", type=click.Choice(["text", "json"]), default="text", help="日志格式")
-@click.option(
-    "--llm-provider",
-    type=click.Choice(["anthropic", "ollama", "openai"]),
-    default="anthropic",
-    help="LLM 提供方",
-)
-@click.option("--project-root", type=click.Path(exists=True), help="项目根目录 (默认 cwd)")
-def dev_loop(
-    requirement: str,
-    max_rounds: int,
-    max_tokens: int,
-    log_format: str,
-    llm_provider: str,
-    project_root: str,
-):
-    """单需求开发循环 (v2.0 Orchestrator + Gates + 语义评估).
-
-    需要 ANTHROPIC_API_KEY 环境变量.
-    """
-    if llm_provider != "anthropic":
-        click.echo(f"[未实现] --llm-provider={llm_provider} 暂未实装。", err=True)
-        raise SystemExit(6)
-
-    root = Path(project_root).resolve() if project_root else Path.cwd()
-
-    from auto_engineering.config.environment import load_ae_answers, preflight
-
-    try:
-        preflight(root)
-    except SystemExit:
-        raise
-
-    from auto_engineering.config.settings import Settings
-
-    try:
-        Settings.from_env()
-    except AEError as e:
-        category, exit_code = classify_error(e)
-        click.echo(f"{_CATEGORY_FRIENDLY_PREFIX[category]} {e.message}", err=True)
-        raise SystemExit(exit_code) from None
-
-    answers_data = load_ae_answers(root)
-    _ = answers_data
-
-    cancellation = CancellationToken()
-    _install_sigint_handler(cancellation)
-
-    progress = ProgressLogger(log_format=log_format)
-    click.echo(f"Starting dev-loop: {requirement}")
-    _log_engine_version("v2.0")
-
-    tracker = TokenTracker(max_tokens=max_tokens)
-    try:
-        result = _run_v2_orchestrator(
-            requirement=requirement,
-            project_root=root,
-            max_rounds=max_rounds,
-            progress=progress,
-            cancellation=cancellation,
-            token_tracker=tracker,
-        )
-    except AEError as e:
-        category, exit_code = classify_error(e)
-        prefix = _CATEGORY_FRIENDLY_PREFIX[category]
-        click.echo(f"{prefix} {e.message}", err=True)
-        if e.code == ErrorCode.TASK_CANCELLED:
-            click.echo("Loop drained. Resume with: ae checkpoint resume <id>", err=True)
-        raise SystemExit(exit_code) from None
-
-    click.echo(
-        f"\n✓ dev-loop complete: status={result.status}, "
-        f"steps={result.total_steps}, checkpoint={result.checkpoint_id}"
-    )
-
-
-@main.command()
 def status():
-    """查看当前项目进度."""
+    """查看当前项目环境配置."""
     from auto_engineering.config.environment import ProjectEnvironment
 
     cwd = Path.cwd()
@@ -248,24 +158,6 @@ def status():
             click.echo(f"  ⚠ 不可自动判定: {', '.join(undetectable)}", err=True)
     except Exception as e:
         click.echo(f"  读取项目环境失败: {e}")
-
-    cp_dir = cwd / ".ae-checkpoints"
-    if cp_dir.exists():
-        from auto_engineering.loop.checkpoint import SQLiteCheckpointStore
-
-        total_v2 = 0
-        for db_file in cp_dir.glob("*.db"):
-            try:
-                store = SQLiteCheckpointStore(str(db_file))
-                total_v2 += store.count()
-            except Exception:
-                continue
-        if total_v2 > 0:
-            click.echo(f"  v2.0 Checkpoints: {total_v2} (见 `ae checkpoint v2 list`)")
-
-
-# 注册 checkpoint 命令 (从 cli/checkpoint.py 注入)
-register_checkpoint_commands(main)
 
 
 if __name__ == "__main__":

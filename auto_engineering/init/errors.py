@@ -52,14 +52,18 @@ class TaskExecutionError(InitError):
 
 
 class TemplateRenderError(InitError):
-    """Jinja2 渲染异常。携带源文件路径。"""
+    """Jinja2 渲染异常。携带源文件路径和行号。"""
 
     exit_code = 7
 
-    def __init__(self, src_path: str, jinja_error: Exception):
+    def __init__(self, src_path: str, jinja_error: Exception, line_number: int | None = None):
         self.src_path = src_path
         self.jinja_error = jinja_error
-        super().__init__(f"Template render error in {src_path}: {jinja_error}")
+        self.line_number = line_number
+        if line_number is not None:
+            super().__init__(f"Template render error in {src_path} line {line_number}: {jinja_error}")
+        else:
+            super().__init__(f"Template render error in {src_path}: {jinja_error}")
 
 
 class InitInterruptedError(InitError):
