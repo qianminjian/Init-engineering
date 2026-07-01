@@ -9,10 +9,13 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .config import TEMPLATES_ROOT
+
+_logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from .answers import AnswersMap
@@ -71,23 +74,34 @@ def build_template_dirs(
             template_dirs.append(feat_dir)
 
     # 2. feature 映射：lefthook / ci_platform / docker / monorepo
-    feature_map: dict[str, str] = {"use_lefthook": "lefthook"}
+    # P2 fix: 使用 (answer_key, feature_name) 对 track, 确保 condition 正确判断
+    feature_map: list[tuple[str, str]] = [("use_lefthook", "lefthook")]
     ci_platform = context.get("ci_platform")
     if ci_platform:
-        feature_map[ci_platform] = _CI_FEATURE_MAP.get(ci_platform, "")
+        feat_name = _CI_FEATURE_MAP.get(ci_platform, "")
+        if feat_name:
+            feature_map.append(("ci_platform", feat_name))
 
     if context.get("use_docker"):
-        feature_map["use_docker"] = "docker"
+        feature_map.append(("use_docker", "docker"))
     if context.get("project_type") == "monorepo":
-        feature_map["monorepo"] = "monorepo"
+        feature_map.append(("monorepo", "monorepo"))
 
-    for answer_key, feature_name in feature_map.items():
+    for answer_key, feature_name in feature_map:
         if not feature_name:
             continue
-        if answer_key == "monorepo" or context.get(answer_key):
-            feat_dir = TEMPLATES_ROOT / "_features" / feature_name
-            if feat_dir.exists():
-                template_dirs.append(feat_dir)
+        feat_dir = TEMPLATES_ROOT / "_features" / feature_name
+        if feat_dir.exists():
+            template_dirs.append(feat_dir)
+        else:
+            _logger.warning(
+                "feature directory not found for '%s' (%s): %s — skipping silently. "
+                "Template feature directory may be missing: %s",
+                answer_key,
+                feature_name,
+                feat_dir,
+                feat_dir,
+            )
 
     # 3. type_dir（项目类型主模板，最后追加以获得最高优先级）
     final_type_dir = type_dir / subdirectory if subdirectory else type_dir
@@ -145,13 +159,17 @@ def render_to(
     )
 
     # P1.2: 解析 exclude_callback spec 为可调用对象
-    # 解析失败时回退到默认 callback, 避免渲染失败 (优雅降级)
+    # ImportError: 模板模块不存在 → 回退(非阻断)
+    # ValueError: spec 格式错误 → 抛错(阻断)
+    # AttributeError: 函数不存在 → 抛错(阻断)
     from ._shared.exclude import default_match_exclude, parse_exclude_callback
 
     try:
         match_exclude = parse_exclude_callback(exclude_callback)
-    except (ValueError, ImportError, AttributeError):
+    except ImportError:
         match_exclude = default_match_exclude
+    except (ValueError, AttributeError) as e:
+        raise ValueError(f"exclude_callback 配置错误: {e}") from e
 
     from .renderer import TemplateRenderer
 
