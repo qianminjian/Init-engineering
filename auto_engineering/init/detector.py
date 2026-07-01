@@ -8,6 +8,8 @@ from collections.abc import Callable
 from pathlib import Path
 
 # 签名顺序很重要：更具体的签名应排在前面（monorepo > app-service）
+# 注意: cli-tool 与 app-service 都用 package.json 签名，重叠无法通过排序解决。
+# cli-tool (= app-service + bin field) 作为属性检测，不作为独立类型。
 FRAMEWORK_SIGNATURES: list[tuple[str, list[str]]] = [
     ("monorepo", ["pnpm-workspace.yaml", "lerna.json", "turbo.json", "nx.json"]),
     ("skill", [".claude/skills/"]),
@@ -15,7 +17,6 @@ FRAMEWORK_SIGNATURES: list[tuple[str, list[str]]] = [
     # A6: spec-doc 支持 design/*.md glob (任意 design 文档)
     ("spec-doc", ["design/BEACON.md", "design/*.md"]),
     ("mcp-server", ["package.json"]),
-    ("cli-tool", ["package.json"]),
     ("library", ["pyproject.toml", "setup.py", "Cargo.toml", "go.mod"]),
     ("app-service", ["package.json"]),
 ]
@@ -36,7 +37,8 @@ ADVANCED_CHECKS: dict[str, Callable[[Path], bool]] = {
     "mcp-server": lambda d: _check_package_json(
         d, lambda p: "@modelcontextprotocol/sdk" in str(p.get("dependencies", {}))
     ),
-    "cli-tool": lambda d: _check_package_json(d, lambda p: "bin" in p),
+    # cli-tool 已从 FRAMEWORK_SIGNATURES 移除（与 app-service 重叠）
+    # bin field 作为项目属性检测，暂不作为独立类型
 }
 
 

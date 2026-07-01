@@ -133,6 +133,16 @@ class TemplateRenderer:
                     target = src_file.resolve()
                     if self.preserve_symlinks:
                         if target.exists():
+                            # 安全: 只拒绝含 .. 的相对 symlink（可穿越到 dst_dir 外）
+                            # 绝对路径 symlink 可保留（目标位置在渲染后不变）
+                            raw_target = os.readlink(src_file)
+                            if ".." in raw_target:
+                                raise TemplateRenderError(
+                                    str(src_file),
+                                    ValueError(
+                                        f"symlink target '{raw_target}' contains '..', refusing to copy"
+                                    ),
+                                )
                             # 复制 symlink 本身 (保留为指向 target 的链接)
                             dst_file.symlink_to(target)
                             generated[rendered_rel] = dst_file

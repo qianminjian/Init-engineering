@@ -5,6 +5,7 @@
 - cookiecutter/hooks.py:80-128 — run_script_with_context()
 """
 
+import logging
 import os as subprocess_os
 import subprocess
 from pathlib import Path
@@ -13,6 +14,8 @@ import jinja2
 
 from .config import Task
 from .errors import TaskExecutionError
+
+_logger = logging.getLogger(__name__)
 
 
 class TaskRunner:
@@ -36,8 +39,19 @@ class TaskRunner:
         for task in tasks:
             # 1. 检查 when 条件
             if isinstance(task.when, str):
-                tpl = jinja_env.from_string(task.when)
-                should_run = tpl.render(**context).strip().lower() not in ("false", "no", "0", "")
+                try:
+                    tpl = jinja_env.from_string(task.when)
+                    should_run = (
+                        tpl.render(**context).strip().lower() not in ("false", "no", "0", "")
+                    )
+                except jinja2.UndefinedError as e:
+                    _logger.warning(
+                        "task when 条件引用了未定义变量 '%s' (task=%r): %s",
+                        task.when,
+                        task.cmd,
+                        e,
+                    )
+                    should_run = False
             else:
                 should_run = bool(task.when)
             if not should_run:
@@ -61,10 +75,10 @@ class TaskRunner:
             # 4. 渲染命令
             if isinstance(task.cmd, list):
                 cmd = [jinja_env.from_string(s).render(**render_context) for s in task.cmd]
-                use_shell = False
+                use_shell = False  # list 模式始终安全
             else:
                 cmd = jinja_env.from_string(task.cmd).render(**render_context)
-                use_shell = True
+                use_shell = task.shell  # 显式 opt-in（默认 False）
 
             # 5. 执行
             env = {**subprocess_os.environ, **extra_env}

@@ -20,6 +20,38 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 
+def _resolve_path(path: str | None, cwd: Path) -> Path:
+    """安全解析用户提供的路径。
+
+    - None / "." → cwd
+    - 其他 → expanduser → resolve（存在时）/ absolute（非存在时）
+    - 非存在路径中含 .. 穿越家目录时，抛出 ValueError
+    """
+    import os
+
+    if path in (None, "."):
+        return cwd
+    raw = Path(path)
+    expanded = raw.expanduser()
+    try:
+        # 存在时 resolve() 解析符号链接 + 规范化 ..
+        return expanded.resolve()
+    except (FileNotFoundError, OSError):
+        # 非存在时：abspath 规范化 ..（但不过滤合法路径）
+        # 安全检查：若规范化后路径不在家目录下，报错（防 ~user/../../etc）
+        resolved = Path(os.path.abspath(str(expanded)))
+        home = Path.home().resolve()
+        # 只有当路径尝试穿越家目录时才报错（正常 ~/xxx 不受影响）
+        try:
+            resolved.resolve().relative_to(home)
+        except ValueError:
+            if not str(resolved).startswith(str(home)):
+                raise ValueError(
+                    f"路径指向家目录以外: {path!r} → {resolved}"
+                )
+        return resolved
+
+
 @dataclass
 class SkillResult:
     """Skill 执行结果。"""
@@ -116,7 +148,10 @@ def _run_analyze(project_path: str | None, cwd: Path) -> SkillResult:
     """运行存量项目分析。"""
     from auto_engineering.init.detector import ProjectDetector
 
-    target = cwd if project_path in (None, ".") else Path(project_path).expanduser()
+    try:
+        target = _resolve_path(project_path, cwd)
+    except ValueError as e:
+        return SkillResult(success=False, message=str(e), action="analyze")
 
     if not target.exists():
         return SkillResult(
@@ -156,7 +191,10 @@ def _run_init(project_path: str | None, options: dict, cwd: Path) -> SkillResult
     """运行项目初始化。"""
     from auto_engineering.init import InitWorker
 
-    dst_path = cwd if project_path in (None, ".") else Path(project_path).expanduser()
+    try:
+        dst_path = _resolve_path(project_path, cwd)
+    except ValueError as e:
+        return SkillResult(success=False, message=str(e), action="init")
 
     # 构建 CLI 参数
     kwargs = {}

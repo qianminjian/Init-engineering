@@ -119,8 +119,21 @@ class Question:
         if type_name == "float":
             return float(raw)
         if type_name in ("json", "yaml"):
-            return yaml.safe_load(raw) if raw.strip() else None
+            if not raw.strip():
+                return None
+            try:
+                return yaml.safe_load(raw)
+            except yaml.YAMLError as e:
+                raise ValueError(f"YAML 解析失败: {e}") from e
         if type_name == "choice":
+            if self.multiselect and isinstance(raw, str):
+                # multiselect choice 用户输入是 YAML list 字符串，转为 Python list
+                if not raw.strip():
+                    return []
+                try:
+                    return yaml.safe_load(raw)
+                except yaml.YAMLError as e:
+                    raise ValueError(f"多选答案 YAML 解析失败: {e}") from e
             return raw
         return raw
 
@@ -138,9 +151,14 @@ class Task:
     - when: Jinja2 条件，False → 跳过
     - working_directory: 相对于项目根目录的执行路径
     - extra_vars: 注入为 Jinja 渲染变量（_ 前缀）和环境变量（大写）
+    - shell: 是否启用 shell 模式（默认 False，list 命令始终 False）
+      启用后 Jinja2 渲染结果通过 shell 执行（支持 && || | 等），
+      但存在 Jinja2 沙箱穿透后的命令注入风险。仅在需要 shell
+      特性时显式设为 True。
     """
 
     cmd: str | list[str]
     when: str | bool = True
     working_directory: str = ""
     extra_vars: dict[str, Any] = field(default_factory=dict)
+    shell: bool = False

@@ -90,7 +90,8 @@ class _LazyExternalDict:
 
                     data = json.loads(file_path.read_text())
                 else:
-                    data = yaml.safe_load(file_path.read_text())
+                    # 非 YAML/JSON 后缀：显式用 SafeLoader，禁用任意 Python 对象反序列化
+                    data = yaml.load(file_path.read_text(), Loader=yaml.SafeLoader)
                 self._cache[key] = data
             else:
                 self._cache[key] = None
@@ -137,7 +138,7 @@ class AnswersMap:
     external: dict[str, str] = field(default_factory=dict)
     hidden: set = field(default_factory=set)
     # v2.5 P1-S3: external_data 路径沙箱 (防 /etc/passwd 读取)
-    external_sandbox_roots: list = field(default_factory=list)
+    external_sandbox_roots: list[str] = field(default_factory=list)
     _external_cache: dict[str, Any] = field(default_factory=dict, init=False)
 
     def get(self, key: str) -> Any:
@@ -155,7 +156,7 @@ class AnswersMap:
             return self._load_external(key)
         raise KeyError(key)
 
-    def combined(self) -> dict:
+    def combined(self) -> dict[str, Any]:
         """全量合并。用于 Jinja2 渲染上下文。外挂 _external_data 键（懒加载）。"""
         result = dict(
             ChainMap(
@@ -193,7 +194,8 @@ class AnswersMap:
                     f"Refusing to load (potential template injection)."
                 )
             if file_path.exists():
-                data = yaml.safe_load(file_path.read_text())
+                # 显式 SafeLoader — 禁用 YAML 反序列化任意 Python 对象
+                data = yaml.load(file_path.read_text(), Loader=yaml.SafeLoader)
                 self._external_cache[key] = data
             else:
                 self._external_cache[key] = None

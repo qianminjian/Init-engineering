@@ -8,10 +8,10 @@
 
 from __future__ import annotations
 
-import contextlib
 import re
 import shutil
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -66,7 +66,7 @@ class InitWorker:
     _current_phase: str = field(init=False, default="")
     _template: TemplateConfig = field(init=False, default=None)
     _answers: AnswersMap = field(init=False, default_factory=AnswersMap)
-    _cleanup_hooks: list = field(default_factory=list, init=False)
+    _cleanup_hooks: list[Callable] = field(default_factory=list, init=False)
     _previous_answers: AnswersMap | None = field(init=False, default=None)
     _created_files: set[str] = field(default_factory=set, init=False)
     _mode: str = field(init=False, default="fresh")
@@ -79,9 +79,12 @@ class InitWorker:
         return False
 
     def _cleanup(self) -> None:
+        import logging
         for hook in self._cleanup_hooks:
-            with contextlib.suppress(Exception):
+            try:
                 hook()
+            except Exception as e:
+                logging.warning("cleanup hook failed: %s", e)
 
     def execute(self) -> InitResult:
         if self.pretend and not self.quiet:
@@ -99,6 +102,12 @@ class InitWorker:
                 dst_path=self.dst_path,
                 project_type=self.project_type or "",
             )
+
+        # P0-FIX: 必须在 try 块外记录 dst_path 初始状态
+        # Copier 模式: was_existing = dst_path.exists() 在 run_copy() 开始时记录
+        # AE 修复: _phase_detect() 可能在 fresh 模式下创建 dst_path,
+        #          因此在 _phase_detect() 后记录
+        dst_existed_before = self.dst_path.exists()
 
         tmpdir = Path(tempfile.mkdtemp(prefix="ae-init-"))
         self._cleanup_hooks.append(lambda: shutil.rmtree(tmpdir, ignore_errors=True))
@@ -127,7 +136,11 @@ class InitWorker:
             raise
 
         except Exception:
-            if self.cleanup_on_error and did_create_dst and self.dst_path.exists():
+            # P0-FIX: 用 dst_existed_before 替代 did_create_dst
+            # did_create_dst 只在 _phase_finalize 成功后才有意义(它在 try 块内设置)
+            # 若异常发生在 _phase_render/_phase_tasks 中, _phase_finalize 未运行,
+            # did_create_dst 仍为初始值 False, 导致 dst_path 从不被清理
+            if self.cleanup_on_error and not dst_existed_before and self.dst_path.exists():
                 shutil.rmtree(self.dst_path)
             raise
 
@@ -288,8 +301,37 @@ class InitWorker:
         )
 
     def _phase_tasks(self, tmpdir: Path) -> None:
-        jinja_env = jinja2.Environment()
+        # 与 TemplateRenderer.render_to() 保持一致: 使用 SandboxedEnvironment
+        # (防 Jinja2 沙箱穿透,参考 copier/_main.py SandboxedEnvironment)
+        from jinja2.sandbox import SandboxedEnvironment
+        from jinja2 import StrictUndefined
+
+        jinja_env = SandboxedEnvironment(undefined=StrictUndefined)
         context = self._answers.combined()
+
+        # Jinja2 内置函数（可用于 task when/cmd 模板）
+        import subprocess as _subprocess
+
+        def _git_status_clean() -> bool:
+            """检查 git 工作区是否干净（无待提交更改）。"""
+            result = _subprocess.run(
+                ["git", "status", "--porcelain"],
+                cwd=self.dst_path,
+                capture_output=True,
+                text=True,
+            )
+            return result.stdout.strip() == ""
+
+        def _project_exists(path: str) -> bool:
+            """检查项目目录下指定路径是否存在。"""
+            from pathlib import Path as _Path
+
+            p = (self.dst_path / path.strip()).resolve()
+            return p.exists()
+
+        jinja_env.globals["git_status_clean"] = _git_status_clean
+        jinja_env.globals["project_exists"] = _project_exists
+
         # A2: 把 current_phase 传给 TaskRunner (TaskRunner 内部用于 AE_PHASE)
         runner = TaskRunner(tmpdir, current_phase=self._current_phase)
         runner.run(self._template.tasks_before, context, jinja_env)

@@ -40,7 +40,8 @@ _PROMPT_DISPATCH = {
     "choice": lambda q, ctx: click.prompt(
         q.help,
         type=click.Choice(
-            list(q.choices) if isinstance(q.choices, list) else list(q.choices.keys())
+            list(q.choices) if isinstance(q.choices, list) else list(q.choices.keys()),
+            case_sensitive=False,
         ),
         default=q.default,
         show_choices=True,
@@ -122,8 +123,36 @@ class InteractivePrompt:
             return
 
         # 类型推导 → 选择 Click 方法
+        # multiselect choice: click 8.x 不支持 prompt(multiple=) / Choice(multiple=)
+        # 使用逗号分隔输入 + 手动验证，转换为 YAML list 字符串给 cast_answer
         type_name = q.get_type_name()
-        prompt_fn = _PROMPT_DISPATCH.get(type_name, _PROMPT_DISPATCH["str"])
+        if q.multiselect:
+            choices_list = list(q.choices) if isinstance(q.choices, list) else list(q.choices.keys())
+            default_str = ",".join(q.default) if isinstance(q.default, list) else (q.default or "")
+
+            def _multiselect_prompt(_q, _ctx, _choices=choices_list, _default=default_str):
+                while True:
+                    raw = click.prompt(
+                        _q.help,
+                        default=_default,
+                        show_default=True,
+                    )
+                    # 解析逗号分隔的输入
+                    selected = [s.strip() for s in raw.split(",") if s.strip()]
+                    # 验证每个选择都在 choices 中
+                    invalid = [s for s in selected if s not in _choices]
+                    if invalid:
+                        click.echo(f"  ✗ 无效选项: {invalid}，有效选项: {_choices}", err=True)
+                        continue
+                    if not selected:
+                        click.echo("  ✗ 请至少选择一个选项", err=True)
+                        continue
+                    # 转换为 YAML list 字符串给 cast_answer
+                    return "\n".join(f"- {v}" for v in selected)
+
+            prompt_fn = _multiselect_prompt
+        else:
+            prompt_fn = _PROMPT_DISPATCH.get(type_name, _PROMPT_DISPATCH["str"])
 
         # 渲染 default（来源：Copier Question.get_default_rendered()）
         rendered_default = self._render_default(q, context)
@@ -135,8 +164,12 @@ class InteractivePrompt:
         prefix = f"  {progress} " if progress else "  "
         click.echo(f"{prefix}{q.help}", err=False)
 
-        while True:
+        max_retries = 5
+        for _ in range(max_retries):
             raw_value = prompt_fn(q, context)
+            # multiselect 返回 tuple → 转为 YAML 列表字符串给 cast_answer
+            if isinstance(raw_value, tuple):
+                raw_value = "\n".join(f"- {v}" for v in raw_value)
             try:
                 value = q.cast_answer(raw_value)
             except (ValueError, TypeError) as e:
@@ -148,6 +181,9 @@ class InteractivePrompt:
                 click.echo(f"  ✗ {error}", err=True)
                 continue
             break
+        else:
+            # 达到最大重试次数，使用默认值（防止无限循环）
+            value = q.default if q.default is not None else ""
 
         q.default = orig_default
         self.answers.interactive[q.var_name] = value

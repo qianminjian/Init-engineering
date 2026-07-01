@@ -38,6 +38,7 @@ class ProjectEnvironment:
         if answers_file.exists():
             env = cls._from_answers_file(answers_file)
             changed = env._sync_detectable(project_root)
+            env._warn_type_inconsistency(project_root)
             if changed:
                 env.save(project_root)
             return env
@@ -104,8 +105,18 @@ class ProjectEnvironment:
             return "gitlab"
         return None
 
+    # 6 个可客观判定的字段 — _sync_detectable 只处理这些
+    _DETECTABLE_FIELDS: frozenset[str] = frozenset([
+        "package_manager",
+        "test_runner",
+        "ci_platform",
+        "use_typescript",
+        "use_lefthook",
+        "has_git",
+    ])
+
     def _sync_detectable(self, root: Path) -> bool:
-        """对可判定项执行代码检测，不一致则更新。"""
+        """对可判定项执行代码检测，不一致则静默更新。"""
         changed = False
         detections = {
             "package_manager": self._detect_package_manager(root),
@@ -120,6 +131,26 @@ class ProjectEnvironment:
                 setattr(self, field_name, detected)
                 changed = True
         return changed
+
+    def _warn_type_inconsistency(self, root: Path) -> None:
+        """project_type 与检测结果不一致时打印警告（不改值）。
+
+        设计: Section 10.3 — project_type 不可客观判定，有冲突时提示用户，不改。
+        """
+        if not self.project_type:
+            return
+        from auto_engineering.init.detector import ProjectDetector
+
+        detector = ProjectDetector(root)
+        candidates = detector.list_candidates()
+        detected = detector.detect()
+        if detected and detected != self.project_type:
+            import sys
+            print(
+                f"warning: 记录的 project_type={self.project_type!r}, "
+                f"当前代码检测为 {detected!r}。保持记录值。",
+                file=sys.stderr,
+            )
 
     def _warn_undetectable(self, root: Path) -> list[str]:
         """A5: 列出当前无法自动判定的字段 (供 CLI 层 warning 提示).

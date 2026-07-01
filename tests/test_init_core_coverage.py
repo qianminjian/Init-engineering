@@ -313,13 +313,17 @@ class TestProjectDetectorEdgeCases:
         assert "cli-tool" not in cands
 
     def test_cli_tool_with_bin(self, tmp_path: Path):
+        # cli-tool 与 app-service 都用 package.json 签名，重叠导致检测不稳定。
+        # v5.0: cli-tool 从 FRAMEWORK_SIGNATURES 移除，bin field 作为 app-service 属性。
+        # bin field 不再单独影响项目类型检测。
         pkg = tmp_path / "package.json"
         pkg.write_text(json.dumps({"bin": {"ae": "ae.js"}}))
         d = ProjectDetector(tmp_path)
         cands = d.list_candidates()
-        assert "cli-tool" in cands
+        # cli-tool 已移除：不再作为独立项目类型
+        assert "cli-tool" not in cands
+        # bin field不影响 package.json 项目的 app-service 检测
         assert "app-service" in cands
-        assert "mcp-server" not in cands
 
     def test_mcp_server_excluded_when_no_sdk(self, tmp_path: Path):
         pkg = tmp_path / "package.json"
@@ -753,7 +757,8 @@ class TestTaskRunnerExtended:
         r.run([t], {})  # should not raise
 
     def test_when_true_string_runs(self, tmp_path: Path):
-        t = Task(cmd="echo hello", when="true")
+        # String commands require shell=True (explicit opt-in after P0 fix)
+        t = Task(cmd="echo hello", when="true", shell=True)
         r = TaskRunner(tmp_path)
         r.run([t], {})
 
