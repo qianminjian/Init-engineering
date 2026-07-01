@@ -62,6 +62,9 @@ class InitWorker:
     skip_tasks: bool = False
     cleanup_on_error: bool = True
     incremental: bool = False
+    # P1-1: CLI 透传 templates_suffix + preserve_symlinks 到 TemplateRenderer
+    templates_suffix: str | None = None
+    preserve_symlinks: bool | None = None
 
     _current_phase: str = field(init=False, default="")
     _template: TemplateConfig = field(init=False, default=None)
@@ -284,6 +287,17 @@ class InitWorker:
                 raise InitInterruptedError() from None
 
     def _phase_render(self, tmpdir: Path) -> list[Path]:
+        # P1-1: CLI 传入值优先于 TemplateConfig 默认值
+        templates_suffix = (
+            self.templates_suffix
+            if self.templates_suffix is not None
+            else self._template.templates_suffix
+        )
+        preserve_symlinks = (
+            self.preserve_symlinks
+            if self.preserve_symlinks is not None
+            else self._template.preserve_symlinks
+        )
         return _render_to(
             answers=self._answers,
             folder_name=self.dst_path.name,
@@ -296,8 +310,8 @@ class InitWorker:
             overwrite=self.overwrite,
             tmpdir=tmpdir,
             exclude_callback=self._template.exclude_callback,
-            templates_suffix=self._template.templates_suffix,
-            preserve_symlinks=self._template.preserve_symlinks,
+            templates_suffix=templates_suffix,
+            preserve_symlinks=preserve_symlinks,
         )
 
     def _phase_tasks(self, tmpdir: Path) -> None:

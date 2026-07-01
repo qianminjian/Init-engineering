@@ -54,6 +54,18 @@ def main():
 @click.option(
     "--analyze", "analyze_only", is_flag=True, help="存量项目：只分析项目类型，不初始化"
 )
+# P1-1: templates_suffix + preserve_symlinks CLI 透传
+@click.option(
+    "--templates-suffix",
+    "templates_suffix",
+    help="模板文件后缀 (默认: .jinja)",
+)
+@click.option(
+    "--preserve-symlinks/--no-preserve-symlinks",
+    "preserve_symlinks",
+    default=None,
+    help="是否保留 symlink (默认: True)",
+)
 def init(
     project: str | None,
     project_type: str | None,
@@ -71,6 +83,8 @@ def init(
     quiet: bool,
     incremental: bool,
     analyze_only: bool,
+    templates_suffix: str | None,
+    preserve_symlinks: bool | None,
 ):
     """项目环境初始化."""
     from auto_engineering.init import InitWorker
@@ -120,6 +134,9 @@ def init(
         cleanup_on_error=cleanup_on_error,
         quiet=quiet,
         incremental=incremental,
+        # P1-1: templates_suffix + preserve_symlinks CLI 透传
+        templates_suffix=templates_suffix,
+        preserve_symlinks=preserve_symlinks,
     )
     if answers:
         worker._previous_answers = answers
