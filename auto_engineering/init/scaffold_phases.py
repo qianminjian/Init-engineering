@@ -27,7 +27,7 @@ from .errors import (
     TargetDirectoryError,
     UnsatisfiedPrerequisiteError,
 )
-from .hooks import TaskRunner
+from .hooks import HookRunner, TaskRunner
 from .prompts import (
     InteractivePrompt,
     prompt_for_nested_template,
@@ -298,7 +298,14 @@ class InitWorker:
             if self.preserve_symlinks is not None
             else self._template.preserve_symlinks
         )
-        return _render_to(
+
+        # P1-2: 渲染生命周期钩子 — before_renderer / after_renderer
+        # HookRunner(project_dir) 默认 spec=None，所有钩子为空实现（不阻断流程）
+        hook_runner = HookRunner(self.dst_path)
+        context = self._answers.combined()
+        hook_runner.before_renderer_hook(context)
+
+        generated = _render_to(
             answers=self._answers,
             folder_name=self.dst_path.name,
             template_dir=self._template.template_dir,
@@ -313,6 +320,9 @@ class InitWorker:
             templates_suffix=templates_suffix,
             preserve_symlinks=preserve_symlinks,
         )
+
+        hook_runner.after_renderer_hook(context, generated)
+        return generated
 
     def _phase_tasks(self, tmpdir: Path) -> None:
         # 与 TemplateRenderer.render_to() 保持一致: 使用 SandboxedEnvironment
