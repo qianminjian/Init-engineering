@@ -24,7 +24,7 @@ from auto_engineering.init.config_loader import (
     _resolve_nested_template,
     load_template_config,
 )
-from auto_engineering.init.errors import ConfigFileError
+from auto_engineering.init.errors import ConfigFileError, ConfigLoaderSecurityError
 
 
 # ============================================================
@@ -350,7 +350,7 @@ class TestIncludePathValidation:
         # 用 ../out.yml 跳到 tmp/ 读 out.yml
         config.write_text("included: !include ../out.yml\n")
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ConfigLoaderSecurityError) as exc_info:
             _load_yaml_with_includes(config)
         assert "模板目录外" in str(exc_info.value)
         assert "out.yml" in str(exc_info.value)
