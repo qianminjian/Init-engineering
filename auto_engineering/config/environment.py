@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 import shutil
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import click
@@ -29,6 +29,8 @@ class ProjectEnvironment:
     use_lefthook: bool = False
     ci_platform: str | None = None
     has_git: bool = True
+    # v2.5 P1-3: sandbox_roots — !include 路径必须在 sandbox 内
+    sandbox_roots: list[str] = field(default_factory=list)
 
     @classmethod
     def resolve(cls, project_root: Path) -> ProjectEnvironment:

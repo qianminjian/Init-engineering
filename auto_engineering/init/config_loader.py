@@ -13,7 +13,7 @@ from .config_types import DEFAULT_EXCLUDE, TEMPLATES_ROOT, Question, Task
 from .errors import ConfigFileError
 
 
-def load_template_config(project_type: str) -> "TemplateConfig":  # noqa: F821
+def load_template_config(project_type: str, sandbox_roots: list[str] | None = None) -> "TemplateConfig":  # noqa: F821
     """加载并解析 ae-template.yml，返回 TemplateConfig 实例。
 
     完整流程：
@@ -23,6 +23,11 @@ def load_template_config(project_type: str) -> "TemplateConfig":  # noqa: F821
     4. 解析 _tasks 列表到 tasks_before / tasks_after
     5. 处理 nested_templates 子模板
     6. 构造 TemplateConfig
+
+    Args:
+        project_type: 项目类型 (templates/<project_type>/)
+        sandbox_roots: 可选的 sandbox 根目录列表。若非空, !include 路径必须
+            在这些根目录下 (realpath 归一化防 symlink 穿越)。
     """
     from .config import TemplateConfig
 
@@ -31,7 +36,7 @@ def load_template_config(project_type: str) -> "TemplateConfig":  # noqa: F821
         raise ConfigFileError(f"模板配置文件不存在: {config_path}")
 
     # 支持 !include 标签合并（来源: Copier _template.py:92-106 YAML !include）
-    raw = _load_yaml_with_includes(config_path)
+    raw = _load_yaml_with_includes(config_path, sandbox_roots=sandbox_roots)
 
     # 分离 _ 前缀配置与问题定义（来源：Copier filter_config）
     questions_data: dict[str, Any] = {}
@@ -81,7 +86,7 @@ def load_template_config(project_type: str) -> "TemplateConfig":  # noqa: F821
     return TemplateConfig(template_dir=config_path.parent, questions=questions, **config_kwargs)
 
 
-def _load_yaml_with_includes(config_path: Path) -> dict:
+def _load_yaml_with_includes(config_path: Path, sandbox_roots: list[str] | None = None) -> dict:
     """加载 YAML 并解析 !include 标签。
 
     来源：Copier _template.py:92-106 _include() + Loader。
@@ -91,7 +96,35 @@ def _load_yaml_with_includes(config_path: Path) -> dict:
     v2.5 P2-C-1: glob 解析后验证每个匹配 path 在 config_path.parent
     (realpath) 内, 防止恶意模板 `!include ../../../*.yml` 越界读到
     模板目录外的文件 (例如 ~/.ssh/, /etc/ 等).
+
+    v2.5 P1-3: 若 sandbox_roots 非空,进一步验证 path 在 sandbox_roots 内.
+    sandbox_roots=None (默认) 跳过第二层检查,保持向后兼容.
     """
+    import os
+
+    def _is_path_under_any_root(file_path: Path, roots: list[str]) -> bool:
+        """检查 file_path 是否在任一 root 下 (realpath 双侧 + lexical fallback).
+
+        防御: 模板的 !include 路径可被恶意模板利用读 /etc/passwd 等敏感文件.
+        用 os.path.realpath 双侧归一化 (macOS symlink 安全), 文件不存在时回退
+        到 lexical 解析.
+        """
+        try:
+            if os.path.exists(file_path):
+                target = os.path.realpath(file_path)
+            else:
+                target = str(file_path.resolve())
+        except Exception:
+            return False
+        for root in roots:
+            try:
+                root_real = os.path.realpath(root)
+            except Exception:
+                continue
+            root_prefix = root_real if root_real.endswith(os.sep) else root_real + os.sep
+            if target == root_real or target.startswith(root_prefix):
+                return True
+        return False
 
     class _IncludeLoader(yaml.SafeLoader):
         pass
@@ -102,7 +135,6 @@ def _load_yaml_with_includes(config_path: Path) -> dict:
         results: list[dict] = []
         for path_obj in full_paths:
             # P2-C-1: 验证 path 在 config_path.parent 内 (realpath 防御 symlink)
-            import os
             config_parent_real = os.path.realpath(config_path.parent)
             path_real = os.path.realpath(path_obj)
             root_prefix = (
@@ -119,6 +151,23 @@ def _load_yaml_with_includes(config_path: Path) -> dict:
                     f"{path_obj} (resolved: {path_real}). 模板目录: {config_parent_real}. "
                     f"Refusing to load (potential template injection)."
                 )
+            # P1-3: sandbox_roots 检查
+            # sandbox_roots=None → 不检查 (向后兼容)
+            # sandbox_roots=[] → 严格模式,不允许任何 include
+            # sandbox_roots=["/a", "/b"] → 只允许在这些目录内
+            if sandbox_roots is not None:
+                if not sandbox_roots:
+                    raise ValueError(
+                        f"!include '{include_spec}' not allowed: "
+                        f"sandbox_roots is empty (strict mode). "
+                        f"Refusing to load (potential template injection)."
+                    )
+                if not _is_path_under_any_root(path_obj, sandbox_roots):
+                    raise ValueError(
+                        f"!include path '{path_obj}' (resolved: {path_real}) is not under "
+                        f"sandbox roots {sandbox_roots}. Refusing to load "
+                        f"(potential template injection)."
+                    )
             with open(path_obj) as fh:
                 for doc in yaml.safe_load_all(fh):
                     if doc:

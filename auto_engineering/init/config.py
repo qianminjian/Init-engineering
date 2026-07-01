@@ -101,11 +101,15 @@ class TemplateConfig:
     # ─── 加载入口（委托给 config_loader.load_template_config）────────
 
     @classmethod
-    def load(cls, project_type: str) -> "TemplateConfig":
+    def load(cls, project_type: str, sandbox_roots: list[str] | None = None) -> "TemplateConfig":
         """加载并解析 ae-template.yml。
 
         约定：配置文件名为 ae-template.yml，位于 templates/<project_type>/ 下。
         配置中的 _ 前缀字段映射到 TemplateConfig 属性（去 _ 前缀）。
         其余字段解析为 Question 列表。
+
+        Args:
+            project_type: 项目类型
+            sandbox_roots: 可选的 sandbox 根目录列表，传递给 !include 路径验证。
         """
-        return load_template_config(project_type)
+        return load_template_config(project_type, sandbox_roots=sandbox_roots)
