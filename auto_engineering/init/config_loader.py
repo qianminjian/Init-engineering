@@ -10,7 +10,7 @@ from typing import Any
 import yaml
 
 from .config_types import DEFAULT_EXCLUDE, TEMPLATES_ROOT, Question, Task
-from .errors import ConfigFileError
+from .errors import ConfigFileError, ConfigLoaderSecurityError
 
 
 def load_template_config(project_type: str, sandbox_roots: list[str] | None = None) -> "TemplateConfig":  # noqa: F821
@@ -146,7 +146,7 @@ def _load_yaml_with_includes(config_path: Path, sandbox_roots: list[str] | None 
                 path_real == config_parent_real
                 or path_real.startswith(root_prefix)
             ):
-                raise ValueError(
+                raise ConfigLoaderSecurityError(
                     f"!include glob '{include_spec}' 匹配到模板目录外的文件: "
                     f"{path_obj} (resolved: {path_real}). 模板目录: {config_parent_real}. "
                     f"Refusing to load (potential template injection)."
@@ -157,13 +157,13 @@ def _load_yaml_with_includes(config_path: Path, sandbox_roots: list[str] | None 
             # sandbox_roots=["/a", "/b"] → 只允许在这些目录内
             if sandbox_roots is not None:
                 if not sandbox_roots:
-                    raise ValueError(
+                    raise ConfigLoaderSecurityError(
                         f"!include '{include_spec}' not allowed: "
                         f"sandbox_roots is empty (strict mode). "
                         f"Refusing to load (potential template injection)."
                     )
                 if not _is_path_under_any_root(path_obj, sandbox_roots):
-                    raise ValueError(
+                    raise ConfigLoaderSecurityError(
                         f"!include path '{path_obj}' (resolved: {path_real}) is not under "
                         f"sandbox roots {sandbox_roots}. Refusing to load "
                         f"(potential template injection)."

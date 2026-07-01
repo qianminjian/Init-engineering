@@ -70,3 +70,13 @@ class InitInterruptedError(InitError):
     """用户 Ctrl-C 中断。部分答案已保存到 ~/.ae-partial-answers.yml。"""
 
     exit_code = 130
+
+
+class ConfigLoaderSecurityError(InitError):
+    """!include 路径安全校验失败 (越界/sandbox 违反/路径遍历)。"""
+
+    exit_code = 8
+
+    def __init__(self, message: str):
+        self.message = message
+        super().__init__(message)

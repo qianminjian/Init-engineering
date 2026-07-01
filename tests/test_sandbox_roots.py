@@ -20,6 +20,7 @@ import pytest
 
 from auto_engineering.config.environment import ProjectEnvironment
 from auto_engineering.init.config_loader import _load_yaml_with_includes
+from auto_engineering.init.errors import ConfigLoaderSecurityError
 
 
 class TestProjectEnvironmentSandboxRoots:
@@ -106,7 +107,7 @@ class TestIncludeOutsideSandbox:
         config.write_text("included: !include ../outside/_evil.yml\n")
 
         # 应该被拒绝
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ConfigLoaderSecurityError) as exc_info:
             _load_yaml_with_includes(config, sandbox_roots=[str(sandbox)])
         assert "sandbox" in str(exc_info.value).lower() or "outside" in str(exc_info.value).lower()
 
@@ -125,7 +126,7 @@ class TestIncludeOutsideSandbox:
         config_b.write_text("included: !include ../sandbox_a/_file.yml\n")
 
         # sandbox_b 不允许 include sandbox_a 的文件
-        with pytest.raises(ValueError):
+        with pytest.raises(ConfigLoaderSecurityError):
             _load_yaml_with_includes(config_b, sandbox_roots=[str(sandbox_b)])
 
 
@@ -148,7 +149,7 @@ class TestIncludePathTraversal:
         # 尝试 ../outside/_evil.yml 跳出 sandbox
         config.write_text("dangerous: !include ../outside/_evil.yml\n")
 
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(ConfigLoaderSecurityError) as exc_info:
             _load_yaml_with_includes(config, sandbox_roots=[str(sandbox)])
         # 验证拒绝原因包含路径信息
         error_msg = str(exc_info.value).lower()
@@ -175,7 +176,7 @@ class TestIncludePathTraversal:
         config.write_text("included: !include link_to_outside/_evil.yml\n")
 
         # symlink 解析后 realpath 应该指向 sandbox 外,被拒绝
-        with pytest.raises(ValueError):
+        with pytest.raises(ConfigLoaderSecurityError):
             _load_yaml_with_includes(config, sandbox_roots=[str(sandbox)])
 
 
@@ -201,5 +202,5 @@ class TestSandboxRootsBackwardCompatibility:
         config.write_text("included: !include _partial.yml\n")
 
         # 空 sandbox_roots 意味着严格模式,不允许任何 include
-        with pytest.raises(ValueError):
+        with pytest.raises(ConfigLoaderSecurityError):
             _load_yaml_with_includes(config, sandbox_roots=[])
