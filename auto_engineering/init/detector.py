@@ -1,49 +1,37 @@
-"""ProjectDetector — 项目类型自动检测（SST 模式）.
+"""ProjectDetector — 项目类型自动检测（签名 + 深度分析）。
 
-来源：SST 框架扫描 — 通过已知配置文件签名推断项目类型。
+来源：SST 框架扫描 → 依赖解析 → 框架识别 → 配置推断。
+
+v2.5: 拆出 per-language analyzers → detector_analyzers.py,
+helper detection functions → detector_helpers.py,
+constants → detector_constants.py。
+本模块仅保留 ProjectDetector class（编排 detector_analyzers + detector_helpers）。
 """
 
-import json
+from __future__ import annotations
+
 from collections.abc import Callable
 from pathlib import Path
 
-# 签名顺序很重要：更具体的签名应排在前面（monorepo > app-service）
-# 注意: cli-tool 与 app-service 都用 package.json 签名，重叠无法通过排序解决。
-# cli-tool (= app-service + bin field) 作为属性检测，不作为独立类型。
-FRAMEWORK_SIGNATURES: list[tuple[str, list[str]]] = [
-    ("monorepo", ["pnpm-workspace.yaml", "lerna.json", "turbo.json", "nx.json"]),
-    ("skill", [".claude/skills/"]),
-    ("hook", [".claude/hooks/"]),
-    # A6: spec-doc 支持 design/*.md glob (任意 design 文档)
-    ("spec-doc", ["design/BEACON.md", "design/*.md"]),
-    ("mcp-server", ["package.json"]),
-    ("library", ["pyproject.toml", "setup.py", "Cargo.toml", "go.mod"]),
-    ("app-service", ["package.json"]),
-]
-
-
-def _check_package_json(target_dir: Path, check_fn: Callable[[dict], bool]) -> bool:
-    pkg = target_dir / "package.json"
-    if not pkg.exists():
-        return False
-    try:
-        data = json.loads(pkg.read_text())
-        return check_fn(data)
-    except (json.JSONDecodeError, KeyError):
-        return False
-
+from .detector_analyzers import analyze_go, analyze_node, analyze_python
+from .detector_constants import FRAMEWORK_SIGNATURES, DetectionResult
+from .detector_helpers import (
+    check_pkg_dep,
+    detect_ci_platform as _detect_ci_platform,
+    detect_package_manager as _detect_package_manager,
+    detect_test_runner as _detect_test_runner,
+    signature_matches as _signature_matches,
+)
 
 ADVANCED_CHECKS: dict[str, Callable[[Path], bool]] = {
-    "mcp-server": lambda d: _check_package_json(
-        d, lambda p: "@modelcontextprotocol/sdk" in str(p.get("dependencies", {}))
+    "mcp-server": lambda d: check_pkg_dep(
+        d, lambda deps: "@modelcontextprotocol/sdk" in str(deps)
     ),
-    # cli-tool 已从 FRAMEWORK_SIGNATURES 移除（与 app-service 重叠）
-    # bin field 作为项目属性检测，暂不作为独立类型
 }
 
 
 class ProjectDetector:
-    """扫描目标目录，推断项目类型。"""
+    """扫描目标目录，推断项目类型与配置。"""
 
     def __init__(self, target_dir: Path):
         self.target_dir = target_dir
@@ -66,24 +54,32 @@ class ProjectDetector:
                 matches.append(ptype)
         return matches
 
+    def analyze(self) -> DetectionResult:
+        """深度分析目标目录，返回完整检测结果."""
+        result = DetectionResult(
+            candidates=self.list_candidates(),
+            project_type=self.detect(),
+        )
+        result.project_name = self.target_dir.resolve().name
 
-def _signature_matches(target_dir: Path, sig: str) -> bool:
-    """A6: 检查签名是否匹配 — 支持 glob 通配符 (*.md 等)."""
-    # 目录签名以 / 结尾: 直接 exists()
-    if sig.endswith("/"):
-        return (target_dir / sig).exists()
-    # glob 通配符: 用 fnmatch 判断文件名部分
-    if "*" in sig or "?" in sig or "[" in sig:
-        import fnmatch
+        pkg_json = self.target_dir / "package.json"
+        pyproject = self.target_dir / "pyproject.toml"
+        go_mod = self.target_dir / "go.mod"
+        cargo_toml = self.target_dir / "Cargo.toml"
 
-        rel_dir = sig.rsplit("/", 1)[0] if "/" in sig else ""
-        pattern = sig.rsplit("/", 1)[-1]
-        base = target_dir / rel_dir if rel_dir else target_dir
-        if not base.exists():
-            return False
-        for entry in base.iterdir():
-            if entry.is_file() and fnmatch.fnmatch(entry.name, pattern):
-                return True
-        return False
-    # 普通文件签名
-    return (target_dir / sig).exists()
+        if pkg_json.exists():
+            analyze_node(pkg_json, self.target_dir, result)
+        if pyproject.exists():
+            analyze_python(pyproject, result)
+        if go_mod.exists():
+            analyze_go(go_mod, result)
+        if cargo_toml.exists():
+            result.language = "rust"
+
+        result.package_manager = _detect_package_manager(self.target_dir)
+        result.test_runner = _detect_test_runner(self.target_dir, result.language)
+        result.ci_platform = _detect_ci_platform(self.target_dir)
+        result.has_lefthook = (self.target_dir / "lefthook.yml").exists()
+        result.has_docker = (self.target_dir / "Dockerfile").exists()
+
+        return result

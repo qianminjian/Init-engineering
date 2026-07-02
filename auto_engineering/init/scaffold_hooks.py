@@ -15,81 +15,118 @@ import subprocess
 import sys
 from pathlib import Path
 
-from .errors import TaskExecutionError
+from .errors import HookExecutionError, TaskExecutionError
 
 
-def run_builtin_hooks(answers, tmpdir: Path) -> None:
+def _has_package_file(tmpdir: Path, pm: str) -> bool:
+    """检查项目是否有对应包管理器的配置文件。"""
+    pm_file_map = {
+        "npm": "package.json",
+        "pnpm": "package.json",
+        "yarn": "package.json",
+        "bun": "package.json",
+        "uv": "pyproject.toml",
+        "poetry": "pyproject.toml",
+    }
+    expected = pm_file_map.get(pm, "package.json")
+    return (tmpdir / expected).exists()
+
+
+def _ensure_git_config(project_dir: Path) -> None:
+    """确保 git user.email/user.name 在 project_dir 仓库内配置（不污染 --global）。
+
+    B4 安全: 之前用 --global 会修改用户全局 git config, 污染其他项目的 commit author。
+    改为 -C project_dir config user.email/name (仅当前仓库有效)。
+    """
+    for key, default in [("user.email", "ae@init.local"), ("user.name", "ae init")]:
+        result = subprocess.run(
+            ["git", "-C", str(project_dir), "config", key],
+            capture_output=True, text=True,
+            encoding="utf-8", errors="replace",
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            subprocess.run(
+                ["git", "-C", str(project_dir), "config", key, default],
+                capture_output=True, text=True,
+                encoding="utf-8", errors="replace",
+            )
+
+
+def _coerce_bool(val) -> bool:
+    """将 answers 中可能为空字符串的布尔值转为 Python bool."""
+    if isinstance(val, bool):
+        return val
+    if val is None:
+        return False
+    if isinstance(val, str):
+        return val.strip().lower() in ("true", "yes", "y", "1")
+    return bool(val)
+
+
+def run_builtin_hooks(answers, tmpdir: Path, strict: bool = False, quiet: bool = False) -> None:
     """执行内置钩子:git init / package_manager install / lefthook / git add+commit。
 
-    拆分自 InitWorker._run_builtin_hooks()，避免 scaffold_phases.py 超过 200 行。
-    `answers` 参数是 InitWorker._answers（duck-typed，只需要 .get() 接口）。
+    strict=True 时任意步骤失败抛 HookExecutionError，否则 warning 继续。
+    quiet=True 时抑制 warning 输出（strict 模式下异常正常抛出）。
     """
+    _ensure_git_config(tmpdir)
+
+    def _fail(cmd: str, rc: int, stderr: str) -> None:
+        if strict:
+            raise HookExecutionError(command=cmd, exit_code=rc, stderr=stderr)
+        if not quiet:
+            print(f"warning: {cmd} failed: {stderr.strip()}", file=sys.stderr)
+
     # git init with branch fallback (git < 2.28 compatibility)
     result = subprocess.run(
         ["git", "init", "-b", "main"],
-        cwd=tmpdir,
-        capture_output=True,
-        text=True,
+        cwd=tmpdir, capture_output=True, text=True,
+        encoding="utf-8", errors="replace",
     )
     if result.returncode != 0:
-        if (
-            "unknown option" in result.stderr.lower()
-            or "unknown switch" in result.stderr.lower()
-        ):
-            result = subprocess.run(
-                ["git", "init"],
-                cwd=tmpdir,
-                capture_output=True,
-                text=True,
-            )
+        if "unknown option" in result.stderr.lower() or "unknown switch" in result.stderr.lower():
+            result = subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True, text=True,
+                                     encoding="utf-8", errors="replace")
         if result.returncode != 0:
-            raise TaskExecutionError("git init", result.returncode, result.stderr)
+            _fail("git init", result.returncode, result.stderr)
 
     pm = answers.get("package_manager")
-    if pm:
-        result = subprocess.run([pm, "install"], cwd=tmpdir, capture_output=True, text=True)
-        if result.returncode != 0:
-            raise TaskExecutionError(
-                f"{pm} install",
-                result.returncode,
-                result.stderr,
-            )
+    if pm and _has_package_file(tmpdir, pm):
+        try:
+            result = subprocess.run([pm, "install"], cwd=tmpdir, capture_output=True, text=True,
+                                     encoding="utf-8", errors="replace")
+            if result.returncode != 0:
+                _fail(f"{pm} install", result.returncode,
+                      f"exit={result.returncode}, run '{pm} install' manually")
+        except (FileNotFoundError, OSError) as e:
+            _fail(f"{pm} install", 127,
+                  f"'{pm}' not found ({e}), run '{pm} install' manually")
+    elif pm and not _has_package_file(tmpdir, pm):
+        if not getattr(answers, 'quiet', False):
+            print(f"  (skipping {pm} install: no package file found)")
 
-    if answers.get("use_lefthook"):
+    if _coerce_bool(answers.get("use_lefthook")):
         result = subprocess.run(
-            ["lefthook", "install"], cwd=tmpdir, capture_output=True, text=True
+            ["lefthook", "install"], cwd=tmpdir, capture_output=True, text=True,
+            encoding="utf-8", errors="replace",
         )
         if result.returncode != 0:
-            raise TaskExecutionError(
-                "lefthook install",
-                result.returncode,
-                result.stderr,
-            )
+            _fail("lefthook install", result.returncode, result.stderr)
 
     result = subprocess.run(
-        ["git", "add", "-A"],
-        cwd=tmpdir,
-        capture_output=True,
-        text=True,
+        ["git", "add", "-A"], cwd=tmpdir, capture_output=True, text=True,
+        encoding="utf-8", errors="replace",
     )
     if result.returncode != 0:
-        # A3: git add 失败非阻塞 (warning to stderr)
-        print(
-            f"warning: git add failed: {result.stderr.strip()}", file=sys.stderr
-        )
+        _fail("git add", result.returncode, result.stderr)
 
     result = subprocess.run(
         ["git", "commit", "-m", "chore(init): scaffolded by ae init"],
-        cwd=tmpdir,
-        capture_output=True,
-        text=True,
+        cwd=tmpdir, capture_output=True, text=True,
+        encoding="utf-8", errors="replace",
     )
     if result.returncode != 0:
-        # A3: git commit 失败非阻塞 (warning to stderr),不中断后续任务
-        print(
-            f"warning: git commit failed: {result.stderr.strip()}",
-            file=sys.stderr,
-        )
+        _fail("git commit", result.returncode, result.stderr)
 
 
 def merge_incremental(

@@ -9,7 +9,10 @@ _scratch/
 _proc-use/
 .coverage
 htmlcov/
+.pytest_cache/
+.pytest_cache/tests/
 .phase-execution/
+dist/
 .serena/
 .claude/scheduled_tasks.json
 .claude/scheduled_tasks.lock

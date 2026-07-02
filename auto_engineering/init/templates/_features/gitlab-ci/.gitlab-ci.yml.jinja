@@ -1,0 +1,69 @@
+stages:
+  - test
+  - lint
+{% if language == 'typescript' or language == 'javascript' %}
+test:
+  image: node:22-alpine
+  stage: test
+  before_script:
+    - corepack enable && corepack prepare pnpm@latest --activate
+    - pnpm install --frozen-lockfile
+  script:
+    - pnpm run test
+  cache:
+    key: {% raw %}${CI_COMMIT_REF_SLUG}{% endraw %}
+    paths:
+      - node_modules/
+lint:
+  image: node:22-alpine
+  stage: lint
+  before_script:
+    - corepack enable && corepack prepare pnpm@latest --activate
+    - pnpm install --frozen-lockfile
+  script:
+    - pnpm run lint
+  cache:
+    key: {% raw %}${CI_COMMIT_REF_SLUG}{% endraw %}
+    paths:
+      - node_modules/
+{% elif language == 'python' %}
+test:
+  image: python:3.13-alpine
+  stage: test
+  before_script:
+    - pip install uv && uv sync
+  script:
+    - uv run pytest
+lint:
+  image: python:3.13-alpine
+  stage: lint
+  before_script:
+    - pip install uv && uv sync
+  script:
+    - uv run ruff check .
+{% elif language == 'go' %}
+test:
+  image: golang:1.22-alpine
+  stage: test
+  script:
+    - go test ./...
+lint:
+  image: golang:1.22-alpine
+  stage: lint
+  script:
+    - go vet ./...
+{% elif language == 'rust' %}
+test:
+  image: rust:1.80-alpine
+  stage: test
+  script:
+    - cargo test
+lint:
+  image: rust:1.80-alpine
+  stage: lint
+  before_script:
+    - rustup component add clippy rustfmt
+  script:
+    - cargo fmt --check
+    - cargo clippy -- -D warnings
+{% endif %}

@@ -1,12 +1,14 @@
 """tests for init/prompts.py — 非交互分支覆盖."""
 
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
 from auto_engineering.init.prompts import (
     InteractivePrompt,
     prompt_for_nested_template,
+    prompt_for_project_type,
 )
 from auto_engineering.init.config_types import Question
 
@@ -43,11 +45,11 @@ class TestInteractivePromptVisibleQuestions:
             "cli_overrides": {"name": "from_cli"},
         })()
         overrides_answers.combined = lambda: {}
-        
+
         prompt = InteractivePrompt(questions, overrides_answers)
         visible = prompt._visible_questions("simple")
         # "name" 应在 cli_overrides 中被跳过
-        assert all(q.var_name != "name" or q.var_name in overrides_answers.cli_overrides 
+        assert all(q.var_name != "name" or q.var_name in overrides_answers.cli_overrides
                    for q in visible)
 
     def test_visible_questions_complex_only_json_yaml(self):
@@ -59,13 +61,106 @@ class TestInteractivePromptVisibleQuestions:
         ]
         answers = type("AnswersMap", (), {"cli_overrides": {}})()
         answers.combined = lambda: {}
-        
+
         prompt = InteractivePrompt(questions, answers)
         complex_qs = prompt._visible_questions("complex")
         type_names = [q.get_type_name() for q in complex_qs]
         assert "json" in type_names
         assert "yaml" in type_names
         assert "str" not in type_names
+
+    def test_visible_questions_simple_excludes_json_yaml(self):
+        """simple pass 排除 json/yaml 类型."""
+        questions = [
+            Question(var_name="cfg", help="配置", type="json", default="{}"),
+            Question(var_name="desc", help="描述", type="str", default=""),
+            Question(var_name="notes", help="备注", type="yaml", default=""),
+        ]
+        answers = type("AnswersMap", (), {"cli_overrides": {}})()
+        answers.combined = lambda: {}
+
+        prompt = InteractivePrompt(questions, answers)
+        simple_qs = prompt._visible_questions("simple")
+        type_names = [q.get_type_name() for q in simple_qs]
+        assert "json" not in type_names
+        assert "yaml" not in type_names
+        assert "str" in type_names
+
+
+class TestAskOneConditions:
+    """_ask_one 跳过条件覆盖 (lines 117-123)."""
+
+    def test_ask_one_skips_when_var_in_cli_overrides(self):
+        """line 119: cli_overrides 中的变量直接跳过."""
+        q = Question(var_name="name", help="名称", type="str", default="x")
+        answers = type("AnswersMap", (), {
+            "cli_overrides": {"name": "from_cli"},
+            "interactive": {},
+        })()
+        answers.combined = lambda: {"name": "from_cli"}
+
+        prompt = InteractivePrompt([q], answers)
+        # 如果 _ask_one 被跳过，interactive 应保持空
+        prompt._ask_one(q, {})
+        assert q.var_name not in answers.interactive
+
+    def test_ask_one_skips_when_condition_false(self):
+        """line 123: when 条件不满足时跳过."""
+        q = Question(var_name="x", help="x", type="str", default="x", when=False)
+        answers = type("AnswersMap", (), {"cli_overrides": {}, "interactive": {}})()
+        answers.combined = lambda: {}
+
+        prompt = InteractivePrompt([q], answers)
+        prompt._ask_one(q, {})
+        assert q.var_name not in answers.interactive
+
+
+class TestRunComplexPass:
+    """run() 第二遍循环覆盖 (lines 99-104)."""
+
+    def test_run_with_complex_type_question(self):
+        """complex pass 处理 json/yaml 类型."""
+        q_json = Question(var_name="cfg", help="配置", type="json", default="{}")
+        answers = type("AnswersMap", (), {
+            "cli_overrides": {},
+            "interactive": {},
+            "previous": {},
+            "defaults": {},
+            "builtins": {},
+            "external": {},
+        })()
+        # Simulate combined()
+        combined = {}
+
+        def combined_fn():
+            return combined
+
+        answers.combined = combined_fn
+
+        prompt = InteractivePrompt([q_json], answers)
+        # Mock the second-pass _ask_one
+        called = []
+
+        def mock_ask(q, ctx, progress=""):
+            called.append(q.var_name)
+
+        with patch.object(prompt, "_ask_one", mock_ask):
+            prompt.run()
+
+        # json question should be asked in complex pass
+        assert "cfg" in called
+
+
+class TestPromptForProjectType:
+    """prompt_for_project_type — click.prompt 分支 (line 239)."""
+
+    def test_prompt_for_project_type(self):
+        """click.prompt 被调用."""
+        with patch("auto_engineering.init.prompts.click.prompt") as mock_prompt:
+            mock_prompt.return_value = "app-service"
+            result = prompt_for_project_type(["app-service", "library"])
+            assert result == "app-service"
+            mock_prompt.assert_called_once()
 
 
 class TestRenderDefault:
@@ -76,7 +171,7 @@ class TestRenderDefault:
         q = Question(var_name="desc", help="描述", type="str", default="Hello {{project_name}}")
         answers = type("AnswersMap", (), {"cli_overrides": {}})()
         answers.combined = lambda: {"project_name": "World"}
-        
+
         prompt = InteractivePrompt([q], answers)
         rendered = prompt._render_default(q, {"project_name": "World"})
         assert rendered == "Hello World"
@@ -86,7 +181,7 @@ class TestRenderDefault:
         q = Question(var_name="desc", help="描述", type="str", default="hello world")
         answers = type("AnswersMap", (), {"cli_overrides": {}})()
         answers.combined = lambda: {}
-        
+
         prompt = InteractivePrompt([q], answers)
         rendered = prompt._render_default(q, {})
         assert rendered == "hello world"
@@ -96,7 +191,7 @@ class TestRenderDefault:
         q = Question(var_name="x", help="x", type="str", default=None)
         answers = type("AnswersMap", (), {"cli_overrides": {}})()
         answers.combined = lambda: {}
-        
+
         prompt = InteractivePrompt([q], answers)
         assert prompt._render_default(q, {}) is None
 
@@ -107,8 +202,192 @@ class TestRenderDefault:
         q_float = Question(var_name="f", help="f", type="float", default=3.14)
         answers = type("AnswersMap", (), {"cli_overrides": {}})()
         answers.combined = lambda: {}
-        
+
         prompt = InteractivePrompt([q_bool], answers)
         assert prompt._render_default(q_bool, {}) is True
         assert prompt._render_default(q_int, {}) == 42
         assert prompt._render_default(q_float, {}) == 3.14
+
+
+class TestAskOneMultiselect:
+    """multiselect 路径覆盖 (lines 129-153)."""
+
+    def test_multiselect_valid_input(self):
+        """多选输入有效选项 -> 转化为 YAML list."""
+        q = Question(
+            var_name="features",
+            help="选择特性",
+            type="choice",
+            choices=["a", "b", "c"],
+            multiselect=True,
+            default=["a"],
+        )
+        answers = type("AnswersMap", (), {
+            "cli_overrides": {},
+            "interactive": {},
+        })()
+        answers.combined = lambda: {"features": ["a"]}
+
+        prompt = InteractivePrompt([q], answers)
+
+        with patch("click.prompt", return_value="a, b"):
+            with patch("click.echo"):
+                prompt._ask_one(q, {})
+
+        assert "features" in answers.interactive
+
+    def test_multiselect_invalid_then_valid(self):
+        """多选先输入无效选项再输入有效选项."""
+        q = Question(
+            var_name="features",
+            help="选择特性",
+            type="choice",
+            choices=["a", "b"],
+            multiselect=True,
+        )
+        answers = type("AnswersMap", (), {
+            "cli_overrides": {},
+            "interactive": {},
+        })()
+        answers.combined = lambda: {}
+
+        prompt = InteractivePrompt([q], answers)
+
+        calls = ["x, y", "a"]  # First invalid, then valid
+        with patch("click.prompt", side_effect=calls):
+            with patch("click.echo"):
+                prompt._ask_one(q, {})
+
+        assert "features" in answers.interactive
+
+    def test_multiselect_empty_then_valid(self):
+        """多选先空输入再输入有效选项."""
+        q = Question(
+            var_name="features",
+            help="选择特性",
+            type="choice",
+            choices=["a", "b"],
+            multiselect=True,
+        )
+        answers = type("AnswersMap", (), {
+            "cli_overrides": {},
+            "interactive": {},
+        })()
+        answers.combined = lambda: {}
+
+        prompt = InteractivePrompt([q], answers)
+
+        calls = ["", "a"]  # First empty, then valid
+        with patch("click.prompt", side_effect=calls):
+            with patch("click.echo"):
+                prompt._ask_one(q, {})
+
+        assert "features" in answers.interactive
+
+
+class TestAskOneRetryLoop:
+    """重试循环覆盖 (lines 168-189) — cast 失败 / validator 失败 / max_retries."""
+
+    def test_cast_answer_failure_retries(self):
+        """cast_answer 失败时重试."""
+        q = Question(var_name="count", help="数量", type="int")
+        answers = type("AnswersMap", (), {
+            "cli_overrides": {},
+            "interactive": {},
+        })()
+        answers.combined = lambda: {}
+
+        prompt = InteractivePrompt([q], answers)
+
+        # First call returns "not-a-number" (cast fails), second returns "42"
+        calls = ["not-a-number", "42"]
+        with patch("click.prompt", side_effect=calls):
+            with patch("click.echo"):
+                prompt._ask_one(q, {})
+
+        assert answers.interactive["count"] == 42
+
+    def test_validator_failure_retries(self):
+        """validator 返回错误时重试."""
+        q = Question(
+            var_name="name",
+            help="名称",
+            type="str",
+            validator="{% if name|length <= 3 %}名称至少 3 个字符{% endif %}",
+        )
+        answers = type("AnswersMap", (), {
+            "cli_overrides": {},
+            "interactive": {},
+        })()
+        answers.combined = lambda: {}
+
+        prompt = InteractivePrompt([q], answers)
+
+        # "ab" is too short (2 chars, validator fails), "abcd" passes
+        calls = ["ab", "abcd"]
+        with patch("click.prompt", side_effect=calls):
+            with patch("click.echo"):
+                prompt._ask_one(q, {})
+
+        assert answers.interactive["name"] == "abcd"
+
+    def test_max_retries_fallback_to_default(self):
+        """达到最大重试次数后使用默认值."""
+        q = Question(var_name="count", help="数量", type="int", default=99)
+        answers = type("AnswersMap", (), {
+            "cli_overrides": {},
+            "interactive": {},
+        })()
+        answers.combined = lambda: {}
+
+        prompt = InteractivePrompt([q], answers)
+
+        # All 5 attempts fail → fallback to default
+        calls = ["bad"] * 10
+        with patch("click.prompt", side_effect=calls):
+            with patch("click.echo"):
+                prompt._ask_one(q, {})
+
+        assert answers.interactive["count"] == 99
+
+    def test_max_retries_no_default(self):
+        """max_retries 且无默认值 → 空字符串."""
+        q = Question(var_name="count", help="数量", type="int", default=None)
+        answers = type("AnswersMap", (), {
+            "cli_overrides": {},
+            "interactive": {},
+        })()
+        answers.combined = lambda: {}
+
+        prompt = InteractivePrompt([q], answers)
+
+        calls = ["bad"] * 10
+        with patch("click.prompt", side_effect=calls):
+            with patch("click.echo"):
+                prompt._ask_one(q, {})
+
+        assert answers.interactive["count"] == ""
+
+
+class TestPromptForNestedTemplateInteractive:
+    """prompt_for_nested_template — no_input=False 交互分支 (lines 260-266)."""
+
+    def test_interactive_returns_chosen_path(self):
+        """用户选择返回对应 path."""
+        nested = {
+            "ts": {"path": "./typescript", "title": "TypeScript"},
+            "js": {"path": "./javascript", "title": "JavaScript"},
+        }
+        with patch("auto_engineering.init.prompts.click.prompt") as mock_prompt:
+            mock_prompt.return_value = "ts"
+            result = prompt_for_nested_template(nested, no_input=False)
+            assert result == "./typescript"
+
+    def test_interactive_returns_none_for_missing_choice(self):
+        """无效选择返回空字符串."""
+        nested = {"ts": {"path": "./ts", "title": "TS"}}
+        with patch("auto_engineering.init.prompts.click.prompt") as mock_prompt:
+            mock_prompt.return_value = "nonexistent"
+            result = prompt_for_nested_template(nested, no_input=False)
+            assert result == ""
+

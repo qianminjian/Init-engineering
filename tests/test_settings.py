@@ -1,11 +1,12 @@
 """tests for config/settings.py — _int_env / _float_env error paths."""
 
+from __future__ import annotations
+
 import os
 
 import pytest
 
 from auto_engineering.config.settings import _float_env, _int_env
-from auto_engineering.errors import AEError
 
 
 class TestIntEnv:
@@ -23,12 +24,12 @@ class TestIntEnv:
         monkeypatch.setenv("TEST_INT_EMPTY", "")
         assert _int_env("TEST_INT_EMPTY", 7) == 7
 
-    def test_invalid_int_raises_ae_error(self, monkeypatch):
-        """非法整数环境变量 → AEError(CONFIG_INVALID_VALUE)."""
+    def test_invalid_int_raises_value_error(self, monkeypatch):
+        """非法整数环境变量 → ValueError."""
         monkeypatch.setenv("TEST_INVALID_INT", "not-a-number")
-        with pytest.raises(AEError) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             _int_env("TEST_INVALID_INT", 10)
-        assert exc_info.value.code.value == "CONFIG_INVALID_VALUE"
+        assert "TEST_INVALID_INT" in str(exc_info.value)
 
 
 class TestFloatEnv:
@@ -46,12 +47,12 @@ class TestFloatEnv:
         monkeypatch.setenv("TEST_FLOAT_EMPTY", "")
         assert _float_env("TEST_FLOAT_EMPTY", 2.5) == 2.5
 
-    def test_invalid_float_raises_ae_error(self, monkeypatch):
-        """非法浮点数环境变量 → AEError(CONFIG_INVALID_VALUE)."""
+    def test_invalid_float_raises_value_error(self, monkeypatch):
+        """非法浮点数环境变量 → ValueError."""
         monkeypatch.setenv("TEST_INVALID_FLOAT", "not-a-float")
-        with pytest.raises(AEError) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             _float_env("TEST_INVALID_FLOAT", 1.0)
-        assert exc_info.value.code.value == "CONFIG_INVALID_VALUE"
+        assert "TEST_INVALID_FLOAT" in str(exc_info.value)
 
 
 class TestSettingsFromEnv:
@@ -73,10 +74,10 @@ class TestSettingsFromEnv:
         assert s.anthropic_api_key == ""
 
     def test_from_env_missing_api_key_raises(self, monkeypatch):
-        """无 API key 且非 LLM agent 时抛 AEError."""
+        """无 API key 且非 LLM agent 时抛 ValueError."""
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         monkeypatch.delenv("CLAUDE_CODE", raising=False)
         from auto_engineering.config.settings import Settings
-        with pytest.raises(AEError) as exc_info:
+        with pytest.raises(ValueError) as exc_info:
             Settings.from_env()
-        assert exc_info.value.code.value == "CONFIG_MISSING_API_KEY"
+        assert "ANTHROPIC_API_KEY" in str(exc_info.value)

@@ -22,6 +22,8 @@ TEMPLATES_ROOT = Path(__file__).parent / "templates"
 DEFAULT_EXCLUDE = [
     "ae-template.yml",
     "ae-template.yaml",
+    "ae-feature.yml",
+    "*.tmpl",
     "~*",
     "*.py[co]",
     "__pycache__",

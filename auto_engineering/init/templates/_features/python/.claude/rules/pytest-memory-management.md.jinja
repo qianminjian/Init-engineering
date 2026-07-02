@@ -12,7 +12,7 @@ type: project
 ## 核心约束
 
 - pytest + coverage instrumentation 内存叠加约 **2x**
-- conftest hook 写入的 `/tmp/*_test_failures.json` 类文件跨 session 累积
+- conftest hook 写入的 `.ae-cache/*_test_failures.json` 类文件跨 session 累积
 - `.pytest_cache` 跨项目累积
 
 ## 禁止的反模式
@@ -48,8 +48,8 @@ type: project
 ## 清理协议（每次 pytest 后必做）
 
 ```bash
-rm -f /tmp/*_test_failures.json   # conftest hook 累积
-rm -rf .pytest_cache                 # 测试 cache（含 tests/.pytest_cache）
+rm -f .ae-cache/*_test_failures.json   # conftest hook 累积
+rm -rf .pytest_cache                   # 测试 cache（含 tests/.pytest_cache）
 ```
 
 或统一：`make clean`（如存在 Makefile）
@@ -76,7 +76,7 @@ ps aux | grep -E "pytest|python" | grep -v grep
 kill -9 <PID>
 
 # 3. 清残留
-rm -f /tmp/*_test_failures.json
+rm -f .ae-cache/*_test_failures.json
 rm -rf .pytest_cache tests/.pytest_cache
 
 # 4. 验证释放

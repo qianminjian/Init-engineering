@@ -1,0 +1,7 @@
+name: lefthook
+description: git hooks management with lefthook
+when: "{{ use_lefthook }}"
+questions: {}
+tasks_after:
+  - cmd: lefthook install
+    when: "{{ use_lefthook }}"

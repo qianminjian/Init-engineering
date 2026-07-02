@@ -17,8 +17,17 @@ class TestBuiltinVars:
     def test_has_ae_version(self):
         assert BUILTIN_VARS["_ae_version"] == "1.0.0"
 
-    def test_is_dict(self):
-        assert isinstance(BUILTIN_VARS, dict)
+    def test_is_dict_like(self):
+        # B3: BUILTIN_VARS 是 MappingProxyType(只读视图) — 支持 dict-like 访问但非 dict 子类
+        from collections.abc import Mapping
+        assert isinstance(BUILTIN_VARS, Mapping)
+        assert BUILTIN_VARS["_ae_version"] == "1.0.0"
+        assert "_folder_name" in BUILTIN_VARS
+
+    def test_is_immutable(self):
+        # B3: BUILTIN_VARS 不可写 (MappingProxyType 保护)
+        with pytest.raises(TypeError):
+            BUILTIN_VARS["_ae_version"] = "9.9.9"
 
 
 class TestAnswersMapConstruction:

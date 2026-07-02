@@ -18,6 +18,7 @@
 - Jinja2 环境使用 SandboxedEnvironment
 """
 
+import os
 import shutil
 from collections.abc import Callable
 from pathlib import Path
@@ -29,13 +30,32 @@ from jinja2.sandbox import SandboxedEnvironment
 
 from .errors import TemplateRenderError
 
-try:
-    from binaryornot.check import is_binary
-except ImportError:
 
-    def is_binary(path):
+def is_binary(path: str) -> bool:
+    """检测文件是否为二进制（无外部依赖，纯字节启发式）。
+
+    算法：
+    1. 读首 8KB 字节
+    2. 含 NUL 字节（\\x00）→ 二进制
+    3. 全部 UTF-8 可解码 → 文本
+    4. 否则 → 二进制
+
+    替代 binaryornot（最后发布 2020，无 3.13 兼容性保证）。
+    """
+    try:
         with open(path, "rb") as f:
-            return b"\x00" in f.read(1024)
+            chunk = f.read(8192)
+    except OSError:
+        return False
+    if not chunk:
+        return False
+    if b"\x00" in chunk:
+        return True
+    try:
+        chunk.decode("utf-8")
+        return False
+    except UnicodeDecodeError:
+        return True
 
 
 class TemplateRenderer:
@@ -59,6 +79,7 @@ class TemplateRenderer:
         match_exclude: Callable[[Path], bool] | None = None,
         templates_suffix: str = ".jinja",
         preserve_symlinks: bool = True,
+        on_exists: Callable[[str], None] | None = None,
     ):
         self.template_dirs = template_dirs
         self.context = context
@@ -74,6 +95,8 @@ class TemplateRenderer:
         self.templates_suffix = templates_suffix
         # T2-2: preserve_symlinks 可配置 — True 保留 symlink, False 跳过 dangling 或解析内容
         self.preserve_symlinks = preserve_symlinks
+        # P0-2: on_exists 回调 — 目标文件已存在时调用 HookRunner.on_exists_hook
+        self.on_exists = on_exists
         self.env = SandboxedEnvironment(
             undefined=StrictUndefined,
             **(envops or {"keep_trailing_newline": True}),
@@ -112,13 +135,16 @@ class TemplateRenderer:
                 )
                 root_prefix = dst_dir_real if dst_dir_real.endswith(os.sep) else dst_dir_real + os.sep
                 if not (dst_file_real == dst_dir_real or dst_file_real.startswith(root_prefix)):
-                    raise TemplateRenderError(str(src_file), ValueError("路径穿越"))
+                    raise TemplateRenderError(str(rel_path), ValueError("路径穿越"))
 
                 if (
                     dst_file.exists()
                     and generated.get(rendered_rel) is None
                     and not self._should_overwrite(rendered_rel)
                 ):
+                    # P0-2: 调用 on_exists 钩子 (HookRunner.on_exists_hook)
+                    if self.on_exists is not None:
+                        self.on_exists(rendered_rel)
                     continue
 
                 dst_file.parent.mkdir(parents=True, exist_ok=True)
@@ -135,16 +161,22 @@ class TemplateRenderer:
                         if target.exists():
                             # 安全: 只拒绝含 .. 的相对 symlink（可穿越到 dst_dir 外）
                             # 绝对路径 symlink 可保留（目标位置在渲染后不变）
-                            raw_target = os.readlink(src_file)
+                            try:
+                                raw_target = os.readlink(src_file)
+                            except OSError:
+                                continue
                             if ".." in raw_target:
                                 raise TemplateRenderError(
-                                    str(src_file),
+                                    str(rel_path),
                                     ValueError(
                                         f"symlink target '{raw_target}' contains '..', refusing to copy"
                                     ),
                                 )
                             # 复制 symlink 本身 (保留为指向 target 的链接)
-                            dst_file.symlink_to(target)
+                            try:
+                                dst_file.symlink_to(target)
+                            except OSError:
+                                continue
                             generated[rendered_rel] = dst_file
                             continue
                         # dangling symlink → 跳过 (目标不存在,无法保留)
@@ -159,7 +191,10 @@ class TemplateRenderer:
                         else:
                             newline = self._detect_newline(target)
                             dst_file.write_text(target.read_text(), newline=newline)
-                        shutil.copymode(src_file, dst_file)
+                        try:
+                            shutil.copymode(src_file, dst_file)
+                        except OSError:
+                            pass
                         generated[rendered_rel] = dst_file
                         continue
 
@@ -167,7 +202,7 @@ class TemplateRenderer:
                     try:
                         content = self._render(src_file.read_text())
                     except jinja2.TemplateError as e:
-                        raise TemplateRenderError(str(src_file), e) from e
+                        raise TemplateRenderError(str(rel_path), e) from e
                     newline = self._detect_newline(src_file)
                     dst_file.write_text(content, newline=newline)
                 elif is_binary(str(src_file)):
@@ -176,7 +211,10 @@ class TemplateRenderer:
                     newline = self._detect_newline(src_file)
                     dst_file.write_text(src_file.read_text(), newline=newline)
 
-                shutil.copymode(src_file, dst_file)
+                try:
+                    shutil.copymode(src_file, dst_file)
+                except OSError:
+                    pass  # Windows 不支持 chmod, symlink 权限保留可能失败
                 generated[rendered_rel] = dst_file
 
         return list(generated.values())

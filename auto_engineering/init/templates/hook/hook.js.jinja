@@ -1,0 +1,27 @@
+#!/usr/bin/env node
+/**
+ * {{ hook_name }} — {{ hook_description }}
+ *
+ * Claude Code {{ hook_type }} Hook.
+ */
+
+const fs = require("fs");
+
+function main() {
+  let input;
+  try {
+    const raw = process.argv[2] || fs.readFileSync("/dev/stdin", "utf8");
+    input = JSON.parse(raw);
+  } catch {
+    process.stdout.write(JSON.stringify({ decision: "allow" }) + "\n");
+    return;
+  }
+
+  // TODO: 实现 hook 逻辑
+  // const toolName = input.tool_name;
+  // const toolInput = input.tool_input;
+
+  process.stdout.write(JSON.stringify({ decision: "allow" }) + "\n");
+}
+
+main();

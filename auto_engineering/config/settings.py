@@ -10,7 +10,6 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
-from auto_engineering.errors import AEError, ErrorCode
 
 
 @dataclass
@@ -42,14 +41,13 @@ class Settings:
             填充了环境变量值的 Settings 实例.
 
         Raises:
-            AEError(CONFIG_MISSING_API_KEY): ANTHROPIC_API_KEY 未设置或为空.
+            ValueError: ANTHROPIC_API_KEY 未设置或为空.
         """
         api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
         # v2.5 修复: 在 Claude Code 等 LLM agent 环境下允许无 API key (agent 有自己的 auth)
         in_llm_agent = bool(os.environ.get("CLAUDE_CODE"))
         if not api_key and not in_llm_agent:
-            raise AEError(
-                ErrorCode.CONFIG_MISSING_API_KEY,
+            raise ValueError(
                 "环境变量 ANTHROPIC_API_KEY 未设置。请在 ~/.zshrc 或 .env 中设置后再运行。",
             )
         return cls(
@@ -64,29 +62,27 @@ class Settings:
 
 
 def _int_env(name: str, default: int) -> int:
-    """读取整数环境变量，解析失败抛 CONFIG_INVALID_VALUE."""
+    """读取整数环境变量，解析失败抛 ValueError."""
     raw = os.environ.get(name)
     if raw is None or raw == "":
         return default
     try:
         return int(raw)
     except ValueError as e:
-        raise AEError(
-            ErrorCode.CONFIG_INVALID_VALUE,
+        raise ValueError(
             f"环境变量 {name}={raw!r} 不是合法整数",
         ) from e
 
 
 def _float_env(name: str, default: float) -> float:
-    """读取浮点环境变量，解析失败抛 CONFIG_INVALID_VALUE."""
+    """读取浮点环境变量，解析失败抛 ValueError."""
     raw = os.environ.get(name)
     if raw is None or raw == "":
         return default
     try:
         return float(raw)
     except ValueError as e:
-        raise AEError(
-            ErrorCode.CONFIG_INVALID_VALUE,
+        raise ValueError(
             f"环境变量 {name}={raw!r} 不是合法浮点数",
         ) from e
 

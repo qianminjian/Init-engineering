@@ -1,0 +1,21 @@
+from mcp.server import Server
+from mcp.server.stdio import stdio_server
+
+
+server = Server("{{ server_name }}")
+
+
+@server.tool()
+async def hello(name: str = "world") -> str:
+    """Say hello."""
+    return f"Hello, {name}!"
+
+
+async def main():
+    async with stdio_server() as (read, write):
+        await server.run(read, write)
+
+
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(main())

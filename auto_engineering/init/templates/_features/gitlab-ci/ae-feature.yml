@@ -1,0 +1,4 @@
+name: gitlab-ci
+description: GitLab CI/CD pipeline
+when: "{{ ci_platform == 'gitlab' }}"
+questions: {}

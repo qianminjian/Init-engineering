@@ -1,0 +1,23 @@
+pre-commit:
+  parallel: true
+  commands:
+    lint:
+      glob: "*.{js,ts,jsx,tsx}"
+      run: |
+        {%- if package_manager in ('npm', 'pnpm', 'yarn', 'bun') %}
+        npx eslint {staged_files}
+        {%- elif package_manager in ('uv', 'poetry') %}
+        ruff check {staged_files}
+        {%- endif %}
+    format:
+      glob: "*.{js,ts,jsx,tsx,json,md,py}"
+      run: |
+        {%- if package_manager in ('npm', 'pnpm', 'yarn', 'bun') %}
+        npx prettier --check {staged_files}
+        {%- elif package_manager in ('uv', 'poetry') %}
+        ruff format --check {staged_files}
+        {%- endif %}
+commit-msg:
+  commands:
+    commitlint:
+      run: npx commitlint --edit {1}

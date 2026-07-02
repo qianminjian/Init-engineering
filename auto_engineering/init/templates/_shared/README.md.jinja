@@ -1,30 +1,29 @@
-# {{ project_name }}
+# {{ project_name or _folder_name }}
 
 {{ project_description }}
 
-## 快速开始
+## Quick Start
 
 ```bash
 git clone <repo-url>
-cd {{ project_name }}
-{% if package_manager %}{{ package_manager }} install{% endif %}
-{% if test_runner %}{{ test_runner }}{% endif %}
+cd {{ project_name or _folder_name }}
+{% if package_manager %}{{ package_manager }} install
+{% endif %}{% if test_runner %}{{ test_runner }}{% endif %}
 ```
 
-## 项目结构
+## Project Structure
 
 ```
-{{ project_name }}/
+{{ project_name or _folder_name }}/
 ├── src/
 ├── tests/
-├── CLAUDE.md
-├── README.md
-└── pyproject.toml
+├── docs/
+└── README.md
 ```
 
-## 技术栈
+## Tech Stack
 
-{% if language %}- 语言: {{ language }}{% endif %}
-{% if package_manager %}- 包管理: {{ package_manager }}{% endif %}
-{% if test_runner %}- 测试: {{ test_runner }}{% endif %}
-{% if ci_platform and ci_platform != 'none' %}- CI: {{ ci_platform }}{% endif %}
+{%- if language %}- Language: {{ language }}{% endif %}
+{%- if package_manager %}- Package: {{ package_manager }}{% endif %}
+{%- if test_runner %}- Test: {{ test_runner }}{% endif %}
+{%- if ci_platform and ci_platform != 'none' %}- CI: {{ ci_platform }}{% endif %}

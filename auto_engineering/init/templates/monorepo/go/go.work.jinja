@@ -1,0 +1,7 @@
+go {{ go_version }}
+
+use (
+{%- for pkg in go_workspace_members.split(",") %}
+	./{{ pkg.strip() }}
+{%- endfor %}
+)

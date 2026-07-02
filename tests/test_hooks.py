@@ -196,7 +196,9 @@ class TestHookRunnerNonBlocking:
             on_exists=None,
         )
 
-        runner = HookRunner(project_dir, spec=spec)
+        # B8: HookRunner 默认 strict=True (失败抛异常); 此处测试非阻塞语义
+        # 需显式传 strict=False
+        runner = HookRunner(project_dir, spec=spec, strict=False)
         context = {"project_name": "test-project"}
 
         # Should not raise, just log warning

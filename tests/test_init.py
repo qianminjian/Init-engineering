@@ -622,11 +622,13 @@ class TestBuiltinHooksGitCommitNonBlocking:
         failed_commit.returncode = 1
         failed_commit.stderr = "nothing to commit"
 
-        # 顺序: git init → git add → git commit (fail)
+        # _ensure_git_config 先调 git config 两次, 再 git init → git add → git commit
         side_effects = [
+            success_result,  # git config user.email
+            success_result,  # git config user.name
             success_result,  # git init
             success_result,  # git add
-            failed_commit,  # git commit (FAIL — 应非阻塞)
+            failed_commit,   # git commit (FAIL — 应非阻塞)
         ]
 
         with patch("subprocess.run", side_effect=side_effects) as mock_run:
@@ -637,8 +639,8 @@ class TestBuiltinHooksGitCommitNonBlocking:
             except Exception as e:
                 pytest.fail(f"_run_builtin_hooks 不应抛异常，但收到: {e}")
 
-            # 验证: 至少调了 3 次 subprocess.run (git init/add/commit)
-            assert mock_run.call_count >= 3
+            # 验证: 至少调了 5 次 subprocess.run (git config x2 + init/add/commit)
+            assert mock_run.call_count >= 5
 
 
 class TestInitPhaseTasksCurrentPhase:
@@ -667,10 +669,10 @@ class TestInitPhaseTasksCurrentPhase:
         worker._template.tasks_before = []
         worker._template.tasks_after = []
 
-        # mock TaskRunner 类 + 子任务 run_builtin_hooks
+        # mock TaskRunner 类 + 子任务 run_builtin_hooks (实际实现在 scaffold_tasks_runner)
         with (
-            patch("auto_engineering.init.scaffold_phases.TaskRunner") as MockRunner,
-            patch("auto_engineering.init.scaffold_phases.run_builtin_hooks"),
+            patch("auto_engineering.init.scaffold_tasks_runner.TaskRunner") as MockRunner,
+            patch("auto_engineering.init.scaffold_tasks_runner.run_builtin_hooks"),
         ):
             import tempfile
 

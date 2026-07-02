@@ -1,4 +1,4 @@
-_min_ae_version: "0.1.0"
+_min_ae_version: "1.0.0"
 _exclude_callback: "auto_engineering.init._shared.exclude:default_match_exclude"
 server_name:
   type: str
@@ -20,3 +20,20 @@ transport:
   help: 传输协议
   choices: [stdio, sse, streamable-http]
   default: stdio
+package_manager:
+  type: choice
+  help: 包管理器
+  choices: [npm, pnpm, yarn, bun, uv, poetry]
+  default: "{{ 'pnpm' if language == 'typescript' else 'uv' }}"
+  when: "{{ language == 'typescript' or language == 'python' }}"
+test_runner:
+  type: choice
+  help: 测试框架
+  choices: [vitest, jest, pytest]
+  default: "{{ 'vitest' if language == 'typescript' else 'pytest' }}"
+  when: "{{ language != 'none' }}"
+ci_platform:
+  type: choice
+  help: CI 平台
+  choices: [github, gitlab, none]
+  default: github

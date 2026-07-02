@@ -1,4 +1,4 @@
-_min_ae_version: "0.1.0"
+_min_ae_version: "1.0.0"
 _exclude_callback: "auto_engineering.init._shared.exclude:default_match_exclude"
 repo_name:
   type: str
@@ -8,13 +8,62 @@ repo_description:
   type: str
   help: 仓库描述
   default: ""
+language:
+  type: choice
+  help: 主要语言/生态（决定 monorepo 的 workspace 工具链）
+  choices:
+    typescript: TypeScript/Node（pnpm + turbo）
+    python: Python（uv workspaces）
+    go: Go（go.work）
+    rust: Rust（Cargo workspaces）
+  default: typescript
+
+# typescript: 包管理器
 package_manager:
   type: choice
   help: 包管理器
   choices: [pnpm, yarn, npm, bun]
   default: pnpm
+  when: "{{ language == 'typescript' }}"
+
+# python: 包管理器
+python_package_manager:
+  type: choice
+  help: Python 包管理器
+  choices: [uv, poetry, pdm]
+  default: uv
+  when: "{{ language == 'python' }}"
+
+# go: Go workspace 配置
+go_version:
+  type: str
+  help: 最低 Go 版本
+  default: "1.22"
+  when: "{{ language == 'go' }}"
+
+go_workspace_members:
+  type: str
+  help: Go workspace member 路径（逗号分隔）
+  default: "pkg1,pkg2"
+  when: "{{ language == 'go' }}"
+
 ci_platform:
   type: choice
   help: CI 平台
   choices: [github, gitlab, none]
   default: github
+
+# Nested template variants — 按 language 注入对应语言的 workspace 模板
+_nested_templates:
+  typescript:
+    path: typescript
+    title: TypeScript monorepo (pnpm + turbo)
+  python:
+    path: python
+    title: Python monorepo (uv workspaces)
+  go:
+    path: go
+    title: Go monorepo (go.work)
+  rust:
+    path: rust
+    title: Rust monorepo (Cargo workspaces)

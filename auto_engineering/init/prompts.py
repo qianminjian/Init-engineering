@@ -183,6 +183,10 @@ class InteractivePrompt:
             break
         else:
             # 达到最大重试次数，使用默认值（防止无限循环）
+            click.echo(
+                f"  ⚠ 已达到最大重试次数 ({max_retries})，使用默认值: {rendered_default!r}",
+                err=True,
+            )
             value = q.default if q.default is not None else ""
 
         q.default = orig_default
@@ -246,17 +250,38 @@ def prompt_for_project_type(available_types: list[str]) -> str:
 def prompt_for_nested_template(
     nested: dict[str, dict[str, str]],
     no_input: bool = False,
+    preferred: str | None = None,
 ) -> str | None:
     """交互式选择嵌套模板变体。
 
     来源：Cookiecutter main.py:144-146 choose_nested_template()。
     nested = {"typescript": {"path": "./ts", "title": "TypeScript 版本"}, ...}
-    返回选中的模板路径（相对于当前配置文件的目录），或 None。
+
+    Args:
+        nested: 模板变体字典 {key: {path, title}}
+        no_input: True 时跳过交互，按 preferred → first 顺序选择
+        preferred: 优先选中的 key（用于 CLI --language 透传场景）
+
+    Returns:
+        选中的模板路径（相对于当前配置文件的目录）。
+        兜底：nested 为空时返回 ""（让调用方使用 template.template_dir 根）。
+
+    Raises:
+        ValueError: nested 非空但首选/preferred 都不存在 (no_input=True 时)
     """
+    if not nested:
+        return ""
+
     choices = {label: cfg.get("title", label) for label, cfg in nested.items()}
     if no_input:
-        first = next(iter(nested.values()))
-        return first.get("path", "")
+        if preferred and preferred in nested:
+            return nested[preferred].get("path", "")
+        # A3 兜底: 第一个变体, 而不是返回 None 让后续用 template.template_dir 渲染空目录
+        first_key = next(iter(nested.keys()))
+        return nested[first_key].get("path", "")
+    if preferred and preferred in nested:
+        # 已知 preferred → 直接返回，不询问
+        return nested[preferred].get("path", "")
     choice = click.prompt(
         "请选择模板变体",
         type=click.Choice(list(choices.keys())),

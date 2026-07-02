@@ -80,3 +80,15 @@ class ConfigLoaderSecurityError(InitError):
     def __init__(self, message: str):
         self.message = message
         super().__init__(message)
+
+
+class HookExecutionError(InitError):
+    """钩子命令执行失败（strict 模式下抛出，非 strict 模式仅为 warning）。"""
+
+    exit_code = 9
+
+    def __init__(self, command: str, exit_code: int = 1, stderr: str = ""):
+        self.command = command
+        self.hook_exit_code = exit_code
+        self.stderr = stderr
+        super().__init__(f"Hook '{command}' failed (exit={exit_code}): {stderr}")

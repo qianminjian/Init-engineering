@@ -12,9 +12,10 @@
 
 from .answers import AnswersMap
 from .config import Question, Task, TemplateConfig
-from .detector import ProjectDetector
+from .detector import DetectionResult, ProjectDetector
 from .errors import (
     ConfigFileError,
+    HookExecutionError,
     InitError,
     InitInterruptedError,
     TargetDirectoryError,
@@ -31,6 +32,8 @@ from .scaffold import InitResult, InitWorker, init_project
 __all__ = [
     "AnswersMap",
     "ConfigFileError",
+    "DetectionResult",
+    "HookExecutionError",
     # Errors
     "InitError",
     "InitInterruptedError",

@@ -1,4 +1,4 @@
-_min_ae_version: "0.1.0"
+_min_ae_version: "1.0.0"
 _exclude_callback: "auto_engineering.init._shared.exclude:default_match_exclude"
 doc_name:
   type: str
@@ -12,3 +12,27 @@ author_name:
   type: str
   help: 作者
   default: ""
+language:
+  type: choice
+  help: 代码示例语言
+  choices:
+    typescript: TypeScript
+    python: Python
+    go: Go
+    rust: Rust
+  default: typescript
+package_manager:
+  type: choice
+  help: 包管理器（与 language 对应）
+  choices: [npm, pnpm, yarn, bun, uv, poetry, cargo]
+  default: "{{ 'pnpm' if language == 'typescript' else 'uv' if language == 'python' else 'cargo' if language == 'rust' else '' }}"
+  when: "{{ language != 'go' }}"
+doc_status:
+  type: choice
+  help: 文档状态
+  choices: [探索, 定义, 设计, 实现, 验证, 完成]
+  default: 探索
+version:
+  type: str
+  help: 版本号
+  default: "0.1.0"

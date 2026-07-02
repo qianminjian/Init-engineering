@@ -1,0 +1,4 @@
+name: github-actions
+description: GitHub Actions CI/CD pipeline
+when: "{{ ci_platform == 'github' }}"
+questions: {}

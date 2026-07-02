@@ -1,0 +1,66 @@
+"""Tasks phase — Jinja2 沙箱环境 + 钩子执行 + 内置钩子。
+
+从 scaffold_phases.py 拆分（v2.5：501→300 行）。
+
+设计：
+- 与 TemplateRenderer.render_to() 保持一致：使用 SandboxedEnvironment（防 Jinja2 沙箱穿透）
+- 提供项目级 Jinja2 全局函数 git_status_clean / project_exists
+- 串行执行 tasks_before → run_builtin_hooks → tasks_after
+"""
+
+from __future__ import annotations
+
+import subprocess
+from pathlib import Path
+
+from jinja2 import StrictUndefined
+from jinja2.sandbox import SandboxedEnvironment
+
+from .answers import AnswersMap
+from .hooks import TaskRunner
+from .scaffold_hooks import run_builtin_hooks
+
+
+def run_tasks_phase(
+    tmpdir: Path,
+    dst_path: Path,
+    template,
+    answers: AnswersMap,
+    current_phase: str,
+    strict: bool,
+    quiet: bool,
+) -> None:
+    """执行 template.tasks_before + run_builtin_hooks + template.tasks_after。
+
+    SandboxedEnvironment 含项目级全局函数：
+    - git_status_clean() : git 工作区是否干净
+    - project_exists(path) : 项目目录下指定路径是否存在
+    """
+    jinja_env = _build_jinja_env(dst_path)
+    context = answers.combined()
+
+    runner = TaskRunner(tmpdir, current_phase=current_phase)
+    runner.run(template.tasks_before, context, jinja_env)
+    run_builtin_hooks(answers, tmpdir, strict=strict, quiet=quiet)
+    runner.run(template.tasks_after, context, jinja_env)
+
+
+def _build_jinja_env(dst_path: Path) -> SandboxedEnvironment:
+    jinja_env = SandboxedEnvironment(undefined=StrictUndefined)
+
+    def _git_status_clean() -> bool:
+        result = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=dst_path,
+            capture_output=True,
+            text=True,
+        )
+        return result.stdout.strip() == ""
+
+    def _project_exists(path: str) -> bool:
+        p = (dst_path / path.strip()).resolve()
+        return p.exists()
+
+    jinja_env.globals["git_status_clean"] = _git_status_clean
+    jinja_env.globals["project_exists"] = _project_exists
+    return jinja_env

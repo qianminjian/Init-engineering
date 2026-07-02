@@ -127,8 +127,8 @@ def _parse_prompt(prompt: str) -> tuple[str, str | None, dict]:
         options = {}
         project_path = None
 
-        # 解析选项
-        for opt_match in re.finditer(r"--(\w+)(?:\s+(.+?))?(?=\s+--|\s+|$)", args_str):
+        # 解析选项（支持 --no-typescript、--package-manager 等含连字符的选项名）
+        for opt_match in re.finditer(r"--([\w-]+)(?:\s+(.+?))?(?=\s+--|\s+|$)", args_str):
             key, val = opt_match.group(1), opt_match.group(2) or "true"
             options[key] = val
 
@@ -161,20 +161,26 @@ def _run_analyze(project_path: str | None, cwd: Path) -> SkillResult:
         )
 
     detector = ProjectDetector(target)
-    candidates = detector.list_candidates()
-    detected = detector.detect()
+    result = detector.analyze()
 
-    if candidates:
+    if result.candidates:
         return SkillResult(
             success=True,
-            message=f"检测到 {len(candidates)} 个项目类型候选",
+            message=f"检测到 {len(result.candidates)} 个项目类型候选",
             action="analyze",
             project_path=str(target),
-            project_type=detected,
-            candidates=candidates,
+            project_type=result.project_type,
+            candidates=result.candidates,
             details={
-                "candidates": candidates,
-                "detected": detected,
+                "candidates": result.candidates,
+                "detected": result.project_type,
+                "language": result.language,
+                "package_manager": result.package_manager,
+                "test_runner": result.test_runner,
+                "ci_platform": result.ci_platform,
+                "frameworks": result.frameworks,
+                "has_docker": result.has_docker,
+                "has_lefthook": result.has_lefthook,
             },
         )
     else:
@@ -198,10 +204,13 @@ def _run_init(project_path: str | None, options: dict, cwd: Path) -> SkillResult
 
     # 构建 CLI 参数
     kwargs = {}
+    # --no-* 标志：存在表示否定（val == "true" 表示标志被传递）
+    _negated_flags = frozenset({"no-typescript", "no-lefthook"})
     for key, val in options.items():
         # 转换 CLI 选项名到 InitWorker 参数名
         param_map = {
             "type": "project_type",
+            "language": "language",
             "package-manager": "package_manager",
             "ci": "ci_platform",
             "test-runner": "test_runner",
@@ -211,10 +220,14 @@ def _run_init(project_path: str | None, options: dict, cwd: Path) -> SkillResult
             "force": "force",
             "quiet": "quiet",
             "incremental": "incremental",
+            "strict": "strict",
+            "verbose": "verbose",
         }
         if key in param_map:
             param = param_map[key]
-            if val == "true":
+            if key in _negated_flags:
+                kwargs[param] = False
+            elif val == "true":
                 kwargs[param] = True
             elif val not in ("true", "false"):
                 kwargs[param] = val
@@ -242,6 +255,16 @@ def _run_init(project_path: str | None, options: dict, cwd: Path) -> SkillResult
 def _run_detect(project_path: str | None, cwd: Path) -> SkillResult:
     """运行项目类型检测（不初始化）。"""
     return _run_analyze(project_path, cwd)
+
+
+def detect_project(path: str | Path | None = None) -> SkillResult:
+    """检测项目类型（无需 NLP prompt 解析的直接 API）。
+
+    供 Agent 编程调用，绕过 _parse_prompt 的字符串解析。
+    """
+    cwd = Path.cwd()
+    target = _resolve_path(str(path) if path else None, cwd)
+    return _run_analyze(str(target), cwd)
 
 
 # Claude Code Skill 入口点

@@ -8,7 +8,15 @@
     ae init <project>         项目环境初始化
 """
 
-# T3-1: __version__ 是 auto_engineering 包的版本,用于 CLI --version / ae init --version
-# 与 _ae_version (模板引擎版本) 不同: _ae_version 在 answers.py BUILTIN_VARS 中,
-# 用于模板渲染上下文,判断模板引擎的能力支持
-__version__ = "0.1.0"
+# v1.0 — 单一版本号：包版本与模板引擎版本统一。
+# 所有 ae-engineering 副本（CLI、模板引擎、AE_PHASE 钩子）必须
+# 引用本变量，避免版本漂移。详见 design/BEACON.md 设计决策 #5。
+__version__ = "1.0.0"
+_AE_VERSION = "1.0.0"
+
+__all__ = ["__version__", "_AE_VERSION"]
+
+
+def get_ae_version() -> str:
+    """导出 ae 版本号 — 用于模板渲染与兼容检查."""
+    return _AE_VERSION

@@ -1,0 +1,22 @@
+{
+  "name": "{{ server_name }}",
+  "version": "0.1.0",
+  "description": "{{ server_description }}",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "tsx": "^4",
+    "typescript": "^5",
+    "vitest": "^1"
+  }
+}

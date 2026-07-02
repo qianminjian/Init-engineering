@@ -9,6 +9,7 @@ from typing import Any
 
 import yaml
 
+from ._shared.path_utils import is_path_under_any_root
 from .config_types import DEFAULT_EXCLUDE, TEMPLATES_ROOT, Question, Task
 from .errors import ConfigFileError, ConfigLoaderSecurityError
 
@@ -102,30 +103,6 @@ def _load_yaml_with_includes(config_path: Path, sandbox_roots: list[str] | None 
     """
     import os
 
-    def _is_path_under_any_root(file_path: Path, roots: list[str]) -> bool:
-        """检查 file_path 是否在任一 root 下 (realpath 双侧 + lexical fallback).
-
-        防御: 模板的 !include 路径可被恶意模板利用读 /etc/passwd 等敏感文件.
-        用 os.path.realpath 双侧归一化 (macOS symlink 安全), 文件不存在时回退
-        到 lexical 解析.
-        """
-        try:
-            if os.path.exists(file_path):
-                target = os.path.realpath(file_path)
-            else:
-                target = str(file_path.resolve())
-        except Exception:
-            return False
-        for root in roots:
-            try:
-                root_real = os.path.realpath(root)
-            except Exception:
-                continue
-            root_prefix = root_real if root_real.endswith(os.sep) else root_real + os.sep
-            if target == root_real or target.startswith(root_prefix):
-                return True
-        return False
-
     class _IncludeLoader(yaml.SafeLoader):
         pass
 
@@ -162,7 +139,7 @@ def _load_yaml_with_includes(config_path: Path, sandbox_roots: list[str] | None 
                         f"sandbox_roots is empty (strict mode). "
                         f"Refusing to load (potential template injection)."
                     )
-                if not _is_path_under_any_root(path_obj, sandbox_roots):
+                if not is_path_under_any_root(path_obj, sandbox_roots):
                     raise ConfigLoaderSecurityError(
                         f"!include path '{path_obj}' (resolved: {path_real}) is not under "
                         f"sandbox roots {sandbox_roots}. Refusing to load "

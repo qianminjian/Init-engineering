@@ -140,13 +140,14 @@ class TestInitPytestRules:
     """R26+: ae init 生成的项目含 pytest 内存管理规则（沉淀自 auto-engineering 实战）."""
 
     def test_pytest_rule_file_generated(self, tmp_path: Path):
-        """所有项目类型都生成 .claude/rules/pytest-memory-management.md（来自 _shared/）."""
+        """Python 项目生成 .claude/rules/pytest-memory-management.md（来自 _features/python/）."""
         target = tmp_path / "test-project"
         result = run_ae(
             [
                 "init",
                 str(target),
                 "--type", "app-service",
+                "--language", "python",
                 "--defaults",
                 "--skip-tasks",
             ],
@@ -162,13 +163,14 @@ class TestInitPytestRules:
         assert "## 紧急处理" in content, "rule missing 紧急处理 section"
 
     def test_pytest_rule_referenced_in_claude_md(self, tmp_path: Path):
-        """CLAUDE.md 管理约束区含 pytest-memory-management @ 引用."""
+        """CLAUDE.md 管理约束区含 pytest-memory-management @ 引用（Python 项目）."""
         target = tmp_path / "test-project"
         result = run_ae(
             [
                 "init",
                 str(target),
                 "--type", "app-service",
+                "--language", "python",
                 "--defaults",
                 "--skip-tasks",
             ],

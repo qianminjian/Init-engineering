@@ -1,0 +1,30 @@
+# {{ repo_name }} — Cargo workspace root
+#
+# Cargo workspace 通过 [workspace] 段统一所有 member 包的依赖解析。
+# 子包路径在 members 列表中声明，每个 member 可独立指定自己的
+# [package] / [dependencies] 段。
+#
+# Why Cargo workspaces: 与 Cargo.lock 联锁 — 跨包改动是原子事务，
+# 与 uv workspaces 等价。
+
+[workspace]
+resolver = "2"
+members = [
+    "packages/*",
+    "apps/*",
+    "tools/*",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+# 跨 member 共享依赖 — 子包用 `dep = { workspace = true }` 引用
+serde = { version = "1", features = ["derive"] }
+tokio = { version = "1", features = ["full"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

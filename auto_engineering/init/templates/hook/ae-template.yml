@@ -1,4 +1,4 @@
-_min_ae_version: "0.1.0"
+_min_ae_version: "1.0.0"
 _exclude_callback: "auto_engineering.init._shared.exclude:default_match_exclude"
 hook_name:
   type: str
@@ -13,3 +13,17 @@ hook_type:
   help: Hook 类型
   choices: [PreToolUse, PostToolUse]
   default: PreToolUse
+language:
+  type: choice
+  help: 主要语言
+  choices:
+    bash: Bash
+    python: Python
+    typescript: TypeScript/Node.js
+  default: bash
+package_manager:
+  type: choice
+  help: 包管理器（与 language 对应）
+  choices: [npm, pnpm, yarn, bun, uv, poetry]
+  default: "{{ 'uv' if language == 'python' else 'pnpm' if language == 'typescript' else '' }}"
+  when: "{{ language != 'bash' }}"

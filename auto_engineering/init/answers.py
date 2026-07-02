@@ -13,43 +13,26 @@ from typing import Any
 
 import yaml
 
-BUILTIN_VARS: dict[str, Any] = {
-    # T3-1: _ae_version 是模板引擎版本,用于模板中判断引擎能力 (如 "1.0.0" 支持某些语法)
-    # 与 __version__ (包版本) 不同: __version__ 是 auto_engineering 包本身的版本号
+from ._shared.path_utils import is_path_under_any_root
+
+# B3: BUILTIN_VARS 改用 MappingProxyType 不可变视图, 防止任何位置污染模块级 dict
+# current_year 不再 import 时计算 (跨年 daemon 风险), 改在 AnswersMap.combined() 动态算
+from types import MappingProxyType
+
+BUILTIN_VARS: MappingProxyType = MappingProxyType({
+    # v1.0: 与 __version__ 同步 — 单版本号策略 (BEACON.md 决策 #5)。
+    # 模板中可用 {{ _ae_version }} 判断引擎能力，向后兼容字段名 `_ae_version`。
     "_ae_version": "1.0.0",
-    "current_year": str(datetime.now().year),
     "_folder_name": "",
     "_ae_python": sys.executable,
     "sep": _os.sep,
     "os": {"linux": "linux", "darwin": "macos", "win32": "windows"}.get(sys.platform, "linux"),
-}
+})
 
 
-def _is_path_under_any_root(file_path: Path, roots: list[Path]) -> bool:
-    """检查 file_path 是否在任一 root 下 (realpath 双侧 + lexical fallback).
-
-    防御: 模板的 `external_data` 路径可被恶意模板利用读 /etc/passwd 等敏感文件.
-    用 os.path.realpath 双侧归一化 (macOS symlink 安全), 文件不存在时回退
-    到 lexical 解析. 与 tools/base.py::_is_path_safe 同一模式.
-    """
-    import os
-
-    try:
-        if os.path.exists(file_path):
-            target = os.path.realpath(file_path)
-        else:
-            target = str(file_path.resolve())
-    except Exception:
-        return False
-    for root in roots:
-        try:
-            root_real = os.path.realpath(root)
-        except Exception:
-            continue
-        root_prefix = root_real if root_real.endswith(os.sep) else root_real + os.sep
-        if target == root_real or target.startswith(root_prefix):
-            return True
-    return False
+def _current_year_builtin() -> str:
+    """动态计算 current_year — 避免 import 时 frozen 跨年任务."""
+    return str(datetime.now().year)
 
 
 class _LazyExternalDict:
@@ -74,7 +57,7 @@ class _LazyExternalDict:
     def __getitem__(self, key: str) -> Any:
         if key not in self._cache:
             file_path = Path(self._external_map[key])
-            if self._sandbox_roots and not _is_path_under_any_root(
+            if self._sandbox_roots and not is_path_under_any_root(
                 file_path, self._sandbox_roots
             ):
                 raise ValueError(
@@ -134,7 +117,9 @@ class AnswersMap:
     interactive: dict = field(default_factory=dict)
     previous: dict = field(default_factory=dict)
     defaults: dict = field(default_factory=dict)
-    builtins: dict = field(default_factory=lambda: BUILTIN_VARS.copy())
+    # B3: builtins 拷贝自 MappingProxyType (普通 dict 副本, 可写但不影响模块级 BUILTIN_VARS)
+    # current_year 不在这里 — 在 combined() 动态注入
+    builtins: dict = field(default_factory=lambda: dict(BUILTIN_VARS))
     external: dict[str, str] = field(default_factory=dict)
     hidden: set = field(default_factory=set)
     # v2.5 P1-S3: external_data 路径沙箱 (防 /etc/passwd 读取)
@@ -157,7 +142,10 @@ class AnswersMap:
         raise KeyError(key)
 
     def combined(self) -> dict[str, Any]:
-        """全量合并。用于 Jinja2 渲染上下文。外挂 _external_data 键（懒加载）。"""
+        """全量合并。用于 Jinja2 渲染上下文。外挂 _external_data 键（懒加载）。
+
+        B3: current_year 在此方法调用时动态计算 (跨年 daemon / agent 任务场景)。
+        """
         result = dict(
             ChainMap(
                 self.cli_overrides,
@@ -167,6 +155,8 @@ class AnswersMap:
                 self.builtins,
             )
         )
+        # B3: 动态注入 current_year — 每次调用重新计算, 避免 frozen 在 import 时的年份
+        result["current_year"] = _current_year_builtin()
         if self.external:
             result["_external_data"] = _LazyExternalDict(
                 self.external,
@@ -184,7 +174,7 @@ class AnswersMap:
         """
         if key not in self._external_cache:
             file_path = Path(self.external[key])
-            if self.external_sandbox_roots and not _is_path_under_any_root(
+            if self.external_sandbox_roots and not is_path_under_any_root(
                 file_path,
                 [Path(r) for r in self.external_sandbox_roots],
             ):

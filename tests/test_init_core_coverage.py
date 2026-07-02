@@ -43,7 +43,11 @@ from auto_engineering.init.renderer import TemplateRenderer
 class TestBUILTINVARS:
     def test_contains_required_keys(self):
         assert "_ae_version" in BUILTIN_VARS
-        assert "current_year" in BUILTIN_VARS
+        # B3: current_year 改为 dynamic — 不在 BUILTIN_VARS,在 combined() 中动态注入
+        # 验证 combined() 含 current_year 但 BUILTIN_VARS 不含 (避免 import 时跨年 frozen)
+        assert "current_year" not in BUILTIN_VARS
+        am = AnswersMap()
+        assert "current_year" in am.combined()
         assert "_folder_name" in BUILTIN_VARS
         assert "_ae_python" in BUILTIN_VARS
         assert "sep" in BUILTIN_VARS
@@ -150,7 +154,13 @@ class TestAnswersMap:
     def test_builtins_fallback(self):
         m = AnswersMap()
         assert m.get("_ae_version") == "1.0.0"
-        assert m.get("current_year")
+        # B3: current_year 在 combined() 中动态注入,不是 builtin
+        # get() 会找遍所有层 (cli/interactive/previous/defaults/builtins),
+        # 找不到再找 external;current_year 不在任一层,直接抛 KeyError
+        with pytest.raises(KeyError):
+            m.get("current_year")
+        # 但 combined() 必须含 current_year (供 Jinja2 渲染使用)
+        assert "current_year" in m.combined()
 
     def test_external_lazy_load(self, tmp_path: Path):
         f = tmp_path / "ext.yml"
@@ -408,6 +418,11 @@ class TestQuestionTypeInference:
     def test_explicit_type_overrides(self):
         q = Question(var_name="x", type="int", default="not int")
         assert q.get_type_name() == "int"
+
+    def test_get_type_name_returns_yaml_for_unknown_default_type(self):
+        """Line 82: default is not None but type not in type_map → 'yaml'."""
+        q = Question(var_name="x", default=(1, 2, 3))  # tuple not in type_map
+        assert q.get_type_name() == "yaml"
 
 
 class TestQuestionRendering:
@@ -696,6 +711,37 @@ class TestQuestionCastAnswer:
         q = Question(var_name="x", type="unknown", default="")
         assert q.cast_answer("hello") == "hello"
 
+    def test_cast_yaml_bad_raises_value_error(self):
+        """Lines 126-127: bad YAML raises ValueError."""
+        q = Question(var_name="x", type="yaml", default="")
+        with pytest.raises(ValueError) as exc_info:
+            q.cast_answer("not: : valid: yaml: : :")
+        assert "YAML" in str(exc_info.value)
+
+    def test_cast_multiselect_choice(self):
+        """Lines 129-137: multiselect choice parses YAML list string."""
+        q = Question(
+            var_name="x",
+            type="choice",
+            choices=["a", "b", "c"],
+            multiselect=True,
+            default=["a"],
+        )
+        result = q.cast_answer("- a\n- b\n")
+        assert result == ["a", "b"]
+
+    def test_cast_multiselect_choice_empty(self):
+        """multiselect choice with empty string returns empty list."""
+        q = Question(
+            var_name="x",
+            type="choice",
+            choices=["a", "b"],
+            multiselect=True,
+            default=[],
+        )
+        result = q.cast_answer("")
+        assert result == []
+
 
 # ─── Errors ──────────────────────────────────────────────────────────────────
 
@@ -757,10 +803,13 @@ class TestTaskRunnerExtended:
         r.run([t], {})  # should not raise
 
     def test_when_true_string_runs(self, tmp_path: Path):
-        # String commands require shell=True (explicit opt-in after P0 fix)
+        # A4 安全: shell=True 已被禁用 (RCE 风险)
+        # string cmd + shell=True 必须抛 TaskExecutionError
         t = Task(cmd="echo hello", when="true", shell=True)
         r = TaskRunner(tmp_path)
-        r.run([t], {})
+        with pytest.raises(TaskExecutionError) as exc_info:
+            r.run([t], {})
+        assert "shell=True 已被 A4 安全策略禁用" in exc_info.value.stderr
 
     def test_list_cmd_no_shell(self, tmp_path: Path):
         t = Task(cmd=["echo", "hello"], when=True)

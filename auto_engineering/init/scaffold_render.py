@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 from .config import TEMPLATES_ROOT
 
@@ -23,6 +23,7 @@ if TYPE_CHECKING:
 # language → 模板 feature 子目录映射（来源: Copier _template.py 风格）
 _LANG_FEATURE_MAP = {
     "typescript": "typescript",
+    "javascript": "typescript",  # JS 项目复用 TS 模板（含 package.json/eslint/prettier）
     "python": "python",
     "go": "go",
     "rust": "rust",
@@ -37,7 +38,6 @@ _CI_FEATURE_MAP = {
 
 # 渲染阶段需要回填默认空值的 str 变量
 _RENDER_STR_VARS = [
-    "project_name",
     "project_description",
     "language",
     "package_manager",
@@ -51,31 +51,50 @@ def build_template_dirs(
     context: dict,
     type_dir: Path,
     subdirectory: str = "",
+    external_template_dir: Path | None = None,
 ) -> list[Path]:
     """根据 context 决定要加载的模板目录列表（按优先级排列）。
-
-    拆分自 InitWorker._phase_render() 的模板选择逻辑。
 
     Args:
         context: AnswersMap.combined() 的渲染上下文
         type_dir: 项目类型对应的模板根目录 (e.g. templates/app-service/)
         subdirectory: 可选子目录（TemplateConfig.subdirectory）
+        external_template_dir: 外部模板目录（--template-dir CLI），优先级最高
 
     Returns:
-        模板目录列表，按查找顺序排列（_shared → language feature → ... → type_dir）
+        模板目录列表，按查找顺序排列（外部 → _shared → features → type_dir）
     """
-    template_dirs: list[Path] = [TEMPLATES_ROOT / "_shared"]
+    default_root = external_template_dir if external_template_dir else TEMPLATES_ROOT
+    template_dirs: list[Path] = []
 
-    # 1. language → _features/<lang>
+    # 0. external template dir _shared (最高优先级)
+    if external_template_dir:
+        ext_shared = external_template_dir / "_shared"
+        if ext_shared.exists():
+            template_dirs.append(ext_shared)
+
+    # 1. built-in _shared
+    template_dirs.append(default_root / "_shared")
+
+    # 2. language → _features/<lang>
+    # spec-doc 项目跳过语言 feature（只生成文档，不需要源码模板）
     language = context.get("language", "typescript")
-    if lang_feat := _LANG_FEATURE_MAP.get(language):
-        feat_dir = TEMPLATES_ROOT / "_features" / lang_feat
+    project_type = context.get("project_type", "")
+    if project_type != "spec-doc" and (lang_feat := _LANG_FEATURE_MAP.get(language)):
+        # external feature first
+        if external_template_dir:
+            ext_feat = external_template_dir / "_features" / lang_feat
+            if ext_feat.exists():
+                template_dirs.append(ext_feat)
+        feat_dir = default_root / "_features" / lang_feat
         if feat_dir.exists():
             template_dirs.append(feat_dir)
 
-    # 2. feature 映射：lefthook / ci_platform / docker / monorepo
-    # P2 fix: 使用 (answer_key, feature_name) 对 track, 确保 condition 正确判断
-    feature_map: list[tuple[str, str]] = [("use_lefthook", "lefthook")]
+    # 3. feature 映射：lefthook / ci_platform / docker — 条件化选择
+    feature_map: list[tuple[str, str]] = []
+    if context.get("use_lefthook"):
+        feature_map.append(("use_lefthook", "lefthook"))
+
     ci_platform = context.get("ci_platform")
     if ci_platform:
         feat_name = _CI_FEATURE_MAP.get(ci_platform, "")
@@ -84,26 +103,31 @@ def build_template_dirs(
 
     if context.get("use_docker"):
         feature_map.append(("use_docker", "docker"))
-    if context.get("project_type") == "monorepo":
-        feature_map.append(("monorepo", "monorepo"))
 
     for answer_key, feature_name in feature_map:
         if not feature_name:
             continue
-        feat_dir = TEMPLATES_ROOT / "_features" / feature_name
+        if external_template_dir:
+            ext_dir = external_template_dir / "_features" / feature_name
+            if ext_dir.exists():
+                template_dirs.append(ext_dir)
+        feat_dir = default_root / "_features" / feature_name
         if feat_dir.exists():
             template_dirs.append(feat_dir)
         else:
             _logger.warning(
-                "feature directory not found for '%s' (%s): %s — skipping silently. "
-                "Template feature directory may be missing: %s",
-                answer_key,
-                feature_name,
-                feat_dir,
-                feat_dir,
+                "feature directory not found for '%s' (%s): %s",
+                answer_key, feature_name, feat_dir,
             )
 
-    # 3. type_dir（项目类型主模板，最后追加以获得最高优先级）
+    # 4. type_dir（项目类型主模板，最后追加以获得最高优先级）
+    # 外部 type dir 优先覆盖内置
+    if external_template_dir:
+        ext_type_dir = external_template_dir / type_dir.name
+        if subdirectory:
+            ext_type_dir = ext_type_dir / subdirectory
+        if ext_type_dir.exists():
+            template_dirs.append(ext_type_dir)
     final_type_dir = type_dir / subdirectory if subdirectory else type_dir
     template_dirs.append(final_type_dir)
 
@@ -124,6 +148,8 @@ def render_to(
     exclude_callback: str = "auto_engineering.init._shared.exclude:default_match_exclude",
     templates_suffix: str = ".jinja",
     preserve_symlinks: bool = True,
+    on_exists: Callable[[str], None] | None = None,
+    external_template_dir: Path | None = None,
 ) -> list[Path]:
     """Phase 渲染 — 委托给 TemplateRenderer，渲染到 tmpdir。
 
@@ -146,16 +172,22 @@ def render_to(
     for var in _RENDER_STR_VARS:
         if var not in answers:
             answers.builtins[var] = ""
+    # project_name 未显式设置时默认使用目录名
+    if "project_name" not in answers:
+        answers.builtins["project_name"] = folder_name
     if "use_typescript" not in answers:
-        answers.builtins["use_typescript"] = ""
+        answers.builtins["use_typescript"] = False
     if "use_lefthook" not in answers:
-        answers.builtins["use_lefthook"] = ""
+        answers.builtins["use_lefthook"] = False
+    if "use_docker" not in answers:
+        answers.builtins["use_docker"] = False
 
     context = answers.combined()
     template_dirs = build_template_dirs(
         context=context,
         type_dir=template_dir,
         subdirectory=subdirectory,
+        external_template_dir=external_template_dir,
     )
 
     # P1.2: 解析 exclude_callback spec 为可调用对象
@@ -184,5 +216,6 @@ def render_to(
         match_exclude=match_exclude,
         templates_suffix=templates_suffix,
         preserve_symlinks=preserve_symlinks,
+        on_exists=on_exists,
     )
     return renderer.render_to(tmpdir)

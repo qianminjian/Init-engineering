@@ -16,31 +16,38 @@
 
 以下问题在设计文档和代码库中均未解决，可能影响改造方向：
 
-### Q-A: `_ae_version` 版本三元不一致
+### Q-A: `_ae_version` 版本三元不一致  **[✅ 已解决 — 2026-07-02 v1.0 投产就绪]**
 
-| 来源 | 值 | 备注 |
+| 来源 | 值（v1.0 投产时） | 备注 |
 |------|---|------|
-| `auto_engineering/__init__.py` | `"0.1.0"` | 包版本，CLI `--version` 输出 |
-| `auto_engineering/init/answers.py` BUILTIN_VARS | `"1.0.0"` | 模板引擎版本，写入 .ae-answers.yml |
-| 设计文档 header (v5.0-Design-Init.md) | `"1.0.0"` | ✅ 与代码一致 |
-| 设计文档 §5.1 BUILTIN_VARS 示例 | `"5.0.0"` | ⚠️ **设计文档内部矛盾**，应以 header 为准 |
+| `auto_engineering/__init__.py` | `"1.0.0"` | ✅ 已统一，新增 `get_ae_version()` |
+| `auto_engineering/init/answers.py` BUILTIN_VARS | `"1.0.0"` | ✅ 已统一 |
+| 8 个 `ae-template.yml` `_min_ae_version` | `"1.0.0"` | ✅ 已统一 |
+| 设计文档 header (v5.0-Design-Init.md) | `"1.0.0"` | ✅ |
+| 设计文档 §5.1 BUILTIN_VARS 示例 | `"1.0.0"` | ✅ 笔误已修正 |
 
-**本计划修正**:
-- §5.1 的 `"5.0.0"` 是**设计文档的笔误**，header 的 `"1.0.0"` 才是正确承诺
-- `__version__`（0.1.0）和 `_ae_version`（1.0.0）是**不同语义**：包版本 vs 模板引擎版本，无需统一值
-- T3-1 改为：在 `answers.py` 和 `__init__.py` 中添加语义注释，澄清两者关系
+**决议变更**：原本"包版本 vs 模板引擎版本无需统一"的判断被推翻——v1.0 投产就绪决策统一三处版本号为 `1.0.0`，详见 `BEACON.md` 决策 #5。
 
-### Q-B: 设计文档 Section 17（测试策略）完全无覆盖
+### Q-B: 设计文档 Section 17（测试策略）完全无覆盖  **[✅ 部分解决 — 2026-07-02 v1.0 投产就绪]**
 
-设计文档 Section 17 要求 "tests/ 下测试，覆盖率 ≥ 80%"，当前 `test_init_core_coverage.py` 是空框架文件（仅含 import + 类骨架，无实际断言）。
+设计文档 Section 17 要求 "tests/ 下测试，覆盖率 ≥ 80%"。
 
-**建议**: 补充测试覆盖率改造任务（T-TEST 阶段）
+**当前状态**：
+- `test_init_core_coverage.py` 已填充实际断言（v1.0 投产前完成）
+- 新增 `tests/test_run_update.py` (6 个) + `tests/test_run_update_matrix.py` (10 个)
+- 总测试数：~580 个
+- 仍有缺口：模板 32 组合覆盖率 ~37%（P1-9）、Jinja2 渲染错误（P1-10）、异常路径（P1-11）
 
-### Q-C: skill.py 的 `_parse_prompt()` 不支持 `--templates-suffix` 和 `--preserve-symlinks`
+**剩余改进**：见 §1.1 待办事项 Q-B-剩余
 
-当前 Skill 入口的 `inputs` 定义中不包含这两个参数。如果 T2-1/T2-2 完成后要暴露到 CLI，则 skill.py 的 `_parse_prompt()` 也需要更新解析逻辑。
+### Q-C: skill.py 的 `_parse_prompt()` 不支持 `--templates-suffix` 和 `--preserve-symlinks`  **[⏸ 暂缓 — Skill 模式使用低频]**
 
-**建议**: T2-1/T2-2 完成后检查 skill.py 是否需要同步更新
+当前 Skill 入口的 `inputs` 定义中不包含这两个参数。CLI 已支持（v1.0-1 P1-1 透传）。
+
+**决议**：
+- Skill 模式主要面向自然语言交互，CLI 透传 CLI 已完整支持
+- 暂缓 skill.py 适配，监控用户反馈，3 个月内 0 反馈则关闭此 issue
+- 见 §1.1 待办事项 Q-C
 
 ---
 

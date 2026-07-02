@@ -4,11 +4,12 @@
 """
 
 from pathlib import Path
+from unittest.mock import patch, MagicMock
 
 import pytest
 
 from auto_engineering.init.answers import AnswersMap
-from auto_engineering.init.scaffold_hooks import merge_incremental
+from auto_engineering.init.scaffold_hooks import merge_incremental, run_builtin_hooks
 
 
 class TestMergeIncremental:
@@ -105,20 +106,189 @@ class TestMergeIncrementalWithCreatedFiles:
 
 
 class TestBuiltinHooksGitFallback:
-    """run_builtin_hooks — git init 分支 fallback.
+    """run_builtin_hooks — git init 分支 fallback."""
 
-    NOTE: 复杂的 subprocess mock 测试已移除。git init fallback 逻辑
-    在 E2E 测试中通过真实 subprocess 调用验证。
-    """
-    pass
+    def test_git_init_fallback_on_unknown_option(self, tmp_path: Path):
+        """git init -b main 失败时回退到 git init (lines 35-46)."""
+        from auto_engineering.init.scaffold_hooks import run_builtin_hooks
+
+        answers = AnswersMap(defaults={"package_manager": "", "use_lefthook": False})
+        calls = []
+
+        def mock_run(cmd, **kwargs):
+            calls.append(cmd)
+            result = MagicMock()
+            cmd_str = " ".join(cmd)
+            if cmd_str == "git init -b main":
+                result.returncode = 1
+                result.stderr = "unknown option -b"
+                result.stdout = ""
+            elif cmd_str == "git init":
+                result.returncode = 0
+                result.stdout = ""
+                result.stderr = ""
+            elif cmd_str.startswith("git"):
+                result.returncode = 0
+                result.stdout = ""
+                result.stderr = ""
+            else:
+                result.returncode = 0
+                result.stdout = ""
+                result.stderr = ""
+            return result
+
+        with patch("auto_engineering.init.scaffold_hooks.subprocess.run", mock_run):
+            run_builtin_hooks(answers, tmp_path)
+
+        assert ["git", "init", "-b", "main"] in calls
+        assert ["git", "init"] in calls  # fallback
+
+    def test_git_init_error_warns_not_raises(self, tmp_path: Path):
+        """git init 失败时打印 warning 不抛异常（改为非阻塞）. """
+        from auto_engineering.init.scaffold_hooks import run_builtin_hooks
+
+        answers = AnswersMap(defaults={"package_manager": "", "use_lefthook": False})
+
+        def mock_run(cmd, **kwargs):
+            result = MagicMock()
+            cmd_str = " ".join(cmd)
+            if cmd_str == "git init -b main":
+                result.returncode = 1
+                result.stderr = "some other error"
+                result.stdout = ""
+            elif cmd_str == "git init":
+                result.returncode = 1
+                result.stderr = "fatal error"
+                result.stdout = ""
+            elif cmd_str.startswith("git"):
+                result.returncode = 0
+                result.stdout = ""
+                result.stderr = ""
+            else:
+                result.returncode = 0
+                result.stdout = ""
+                result.stderr = ""
+            return result
+
+        with patch("auto_engineering.init.scaffold_hooks.subprocess.run", mock_run):
+            # 不再抛异常，非阻塞
+            run_builtin_hooks(answers, tmp_path)
+
+    def test_git_add_warning_on_failure(self, tmp_path: Path):
+        """git add 失败时打印 warning 不抛异常 (lines 77-79)."""
+        from auto_engineering.init.scaffold_hooks import run_builtin_hooks
+
+        answers = AnswersMap(defaults={"package_manager": "", "use_lefthook": False})
+        git_calls = []
+
+        def mock_run(cmd, **kwargs):
+            result = MagicMock()
+            cmd_str = " ".join(cmd)
+            if cmd_str.startswith("git"):
+                git_calls.append(cmd_str)
+                if "add" in cmd_str:
+                    result.returncode = 1
+                    result.stderr = "fatal: unable to add"
+                    result.stdout = ""
+                else:
+                    result.returncode = 0
+                    result.stdout = ""
+                    result.stderr = ""
+            else:
+                result.returncode = 0
+                result.stdout = ""
+                result.stderr = ""
+            return result
+
+        with patch("auto_engineering.init.scaffold_hooks.subprocess.run", mock_run):
+            with patch("builtins.print") as mock_print:
+                run_builtin_hooks(answers, tmp_path)
+
+        # git add -A should have been called and printed a warning
+        assert any("add" in c for c in git_calls)
+
+    def test_git_commit_warning_on_failure(self, tmp_path: Path):
+        """git commit 失败时打印 warning 不抛异常 (lines 89-92)."""
+        from auto_engineering.init.scaffold_hooks import run_builtin_hooks
+
+        answers = AnswersMap(defaults={"package_manager": "", "use_lefthook": False})
+        git_calls = {}
+
+        def mock_run(cmd, **kwargs):
+            result = MagicMock()
+            cmd_str = " ".join(cmd)
+            git_calls[cmd_str] = result
+            if "commit" in cmd_str:
+                result.returncode = 1
+                result.stderr = "nothing to commit"
+                result.stdout = ""
+            else:
+                result.returncode = 0
+                result.stdout = ""
+                result.stderr = ""
+            return result
+
+        with patch("auto_engineering.init.scaffold_hooks.subprocess.run", mock_run):
+            with patch("builtins.print") as mock_print:
+                run_builtin_hooks(answers, tmp_path)
+
+        # Should not raise, just print warning
+
+    def test_lefthook_install_failure_warns_not_raises(self, tmp_path: Path):
+        """lefthook install 失败时打印 warning 不抛异常（改为非阻塞）. """
+        from auto_engineering.init.scaffold_hooks import run_builtin_hooks
+
+        answers = AnswersMap(defaults={"package_manager": "", "use_lefthook": True})
+        calls = {}
+
+        def mock_run(cmd, **kwargs):
+            result = MagicMock()
+            cmd_str = " ".join(cmd)
+            calls[cmd_str] = result
+            if "lefthook" in cmd_str:
+                result.returncode = 1
+                result.stderr = "lefthook not found"
+                result.stdout = ""
+            elif cmd_str.startswith("git"):
+                result.returncode = 0
+                result.stdout = ""
+                result.stderr = ""
+            else:
+                result.returncode = 0
+                result.stdout = ""
+                result.stderr = ""
+            return result
+
+        with patch("auto_engineering.init.scaffold_hooks.subprocess.run", mock_run):
+            # 不再抛异常，非阻塞
+            run_builtin_hooks(answers, tmp_path)
 
 
 class TestBuiltinHooksPackageManager:
-    """package_manager install / lefthook install 失败处理.
+    """package_manager install / lefthook install 失败处理."""
 
-    NOTE: 复杂的 subprocess mock 测试已移除。
-    """
-    pass
+    def test_package_manager_install_missing_file_skips(self, tmp_path: Path):
+        """package_manager install 无 package 文件时跳过不抛异常."""
+        from auto_engineering.init.scaffold_hooks import run_builtin_hooks
+
+        answers = AnswersMap(defaults={"package_manager": "npm", "use_lefthook": False})
+
+        def mock_run(cmd, **kwargs):
+            result = MagicMock()
+            cmd_str = " ".join(cmd)
+            if cmd_str.startswith("git"):
+                result.returncode = 0
+                result.stdout = ""
+                result.stderr = ""
+            else:
+                result.returncode = 0
+                result.stdout = ""
+                result.stderr = ""
+            return result
+
+        with patch("auto_engineering.init.scaffold_hooks.subprocess.run", mock_run):
+            # 跳过 npm install（无 package.json），不抛异常
+            run_builtin_hooks(answers, tmp_path)
 
 
 class TestCleanupHook:

@@ -1,0 +1,20 @@
+# {{ hook_name }}
+
+> {{ hook_description or 'Claude Code Hook — ' + hook_type }}
+
+## 类型
+
+{{ hook_type }}
+
+## 安装
+
+```bash
+chmod +x {{ hook_name }}.sh
+ln -sf "$(pwd)/{{ hook_name }}.sh" ~/.claude/hooks/{{ hook_name }}.sh
+```
+
+## 测试
+
+```bash
+echo '{"tool_name":"Bash","tool_input":{"command":"echo test"}}' | ./{{ hook_name }}.sh
+```

@@ -1,0 +1,28 @@
+run:
+  timeout: 5m
+  tests: true
+
+linters:
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - misspell
+    - gofmt
+    - goimports
+
+linters-settings:
+  goimports:
+    local-prefixes: {{ project_name }}
+  misspell:
+    locale: US
+
+issues:
+  exclude-dirs:
+    - vendor
+    - .direnv
+  max-issues-per-linter: 0
+  max-same-issues: 0

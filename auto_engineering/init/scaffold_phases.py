@@ -1,40 +1,45 @@
 """InitWorker — 5 阶段流水线编排器（参考 Copier Worker）。
 
-从 scaffold.py 拆分（v2.2 Phase I, P2.5）。
+v2.5 拆分（501→≤300 行）：阶段方法全部抽到 scaffold_phase_funcs.py，
+本模块只保留 InitWorker dataclass + execute() 编排器。
 
-本模块只含 InitResult dataclass + InitWorker 类（5 阶段方法 + 增量合并 + 顶层函数）。
-内置钩子执行逻辑在 scaffold_hooks.py。
+设计：
+- InitWorker 仅作"配置容器 + 编排器"（保持单一职责）
+- 5 阶段为模块级函数：phase_detect/phase_prompt/phase_render/phase_tasks/phase_finalize
+- 锁/前置条件/钩子等横切关注点继续下沉到 scaffold_lock/scaffold_prereq
 """
 
 from __future__ import annotations
 
-import re
+import logging
 import shutil
 import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime
 from pathlib import Path
 
-import jinja2
-
 from .answers import AnswersMap
-from .config import TEMPLATES_ROOT, TemplateConfig
-from .detector import ProjectDetector
-from .errors import (
-    ConfigFileError,
-    InitInterruptedError,
-    TargetDirectoryError,
-    UnsatisfiedPrerequisiteError,
+from .config import TemplateConfig
+from .errors import InitInterruptedError
+from .scaffold_lock import InitLock
+from .scaffold_phase_funcs import (
+    phase_detect,
+    phase_finalize,
+    phase_prompt,
+    phase_render,
 )
-from .hooks import HookRunner, TaskRunner
-from .prompts import (
-    InteractivePrompt,
-    prompt_for_nested_template,
-    prompt_for_project_type,
-)
-from .scaffold_hooks import merge_incremental, run_builtin_hooks
+from .scaffold_prereq import check_template_version
 from .scaffold_render import render_to as _render_to
+from .scaffold_tasks_runner import TaskRunner, run_builtin_hooks, run_tasks_phase
+
+# Backward-compat re-export: 测试 patch("auto_engineering.init.scaffold_phases.<name>")
+# 必须仍能找到该符号 — 实际实现迁移，但语义未变。
+TaskRunner = TaskRunner  # noqa: F811
+run_builtin_hooks = run_builtin_hooks  # noqa: F811
+# 同理：测试 patch("auto_engineering.init.scaffold_phases._render_to")
+_render_to = _render_to  # noqa: F811
+
+_logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -49,22 +54,26 @@ class InitResult:
 class InitWorker:
     dst_path: Path
     project_type: str | None = None
+    language: str | None = None
     package_manager: str | None = None
     ci_platform: str | None = None
     test_runner: str | None = None
     use_typescript: bool | None = None
     use_lefthook: bool | None = None
+    use_docker: bool | None = None
     force: bool = False
     defaults: bool = False
     overwrite: bool = False
     quiet: bool = False
+    verbose: bool = False
     pretend: bool = False
     skip_tasks: bool = False
     cleanup_on_error: bool = True
     incremental: bool = False
-    # P1-1: CLI 透传 templates_suffix + preserve_symlinks 到 TemplateRenderer
+    strict: bool = False
     templates_suffix: str | None = None
     preserve_symlinks: bool | None = None
+    template_dir_override: Path | None = None
 
     _current_phase: str = field(init=False, default="")
     _template: TemplateConfig = field(init=False, default=None)
@@ -73,6 +82,8 @@ class InitWorker:
     _previous_answers: AnswersMap | None = field(init=False, default=None)
     _created_files: set[str] = field(default_factory=set, init=False)
     _mode: str = field(init=False, default="fresh")
+    _lock: InitLock | None = field(init=False, default=None)
+    _detection: object = field(init=False, default=None)
 
     def __enter__(self):
         return self
@@ -88,17 +99,27 @@ class InitWorker:
                 hook()
             except Exception as e:
                 logging.warning("cleanup hook failed: %s", e)
+        if self._lock is not None:
+            self._lock.release()
+            self._lock = None
 
     def execute(self) -> InitResult:
+        if self.verbose:
+            _logger.debug("InitWorker starting: dst=%s type=%s", self.dst_path, self.project_type)
         if self.pretend and not self.quiet:
             print("[DRY RUN] 模拟执行，不产生文件")
 
+        dst_existed_before = self.dst_path.exists()
+
+        # Phase 1 — detect
         self._current_phase = "detect"
+        _logger.debug("Phase: detect")
         self._phase_detect()
 
+        # Phase 2 — prompt
         self._current_phase = "prompt"
+        _logger.debug("Phase: prompt")
         self._phase_prompt()
-        self._check_template_version()
 
         if self.pretend:
             return InitResult(
@@ -106,29 +127,28 @@ class InitWorker:
                 project_type=self.project_type or "",
             )
 
-        # P0-FIX: 必须在 try 块外记录 dst_path 初始状态
-        # Copier 模式: was_existing = dst_path.exists() 在 run_copy() 开始时记录
-        # AE 修复: _phase_detect() 可能在 fresh 模式下创建 dst_path,
-        #          因此在 _phase_detect() 后记录
-        dst_existed_before = self.dst_path.exists()
-
         tmpdir = Path(tempfile.mkdtemp(prefix="ae-init-"))
         self._cleanup_hooks.append(lambda: shutil.rmtree(tmpdir, ignore_errors=True))
-        did_create_dst = False
         generated: list[Path] = []
 
         try:
+            # Phase 3 — render
             self._current_phase = "render"
+            _logger.debug("Phase: render")
             if self._template.message_before and not self.quiet:
                 print(self._template.message_before)
             generated = self._phase_render(tmpdir)
 
+            # Phase 4 — tasks
             self._current_phase = "tasks"
+            _logger.debug("Phase: tasks")
             if not self.skip_tasks:
                 self._phase_tasks(tmpdir)
                 if self._template.message_after and not self.quiet:
                     print(self._template.message_after)
 
+            # Phase 5 — finalize
+            self._current_phase = "finalize"
             did_create_dst = self._phase_finalize(tmpdir, generated)
 
         except InitInterruptedError:
@@ -139,10 +159,6 @@ class InitWorker:
             raise
 
         except Exception:
-            # P0-FIX: 用 dst_existed_before 替代 did_create_dst
-            # did_create_dst 只在 _phase_finalize 成功后才有意义(它在 try 块内设置)
-            # 若异常发生在 _phase_render/_phase_tasks 中, _phase_finalize 未运行,
-            # did_create_dst 仍为初始值 False, 导致 dst_path 从不被清理
             if self.cleanup_on_error and not dst_existed_before and self.dst_path.exists():
                 shutil.rmtree(self.dst_path)
             raise
@@ -154,210 +170,89 @@ class InitWorker:
             project_type=self.project_type or "",
         )
 
-    def _phase_finalize(self, tmpdir: Path, generated: list[Path]) -> bool:
-        """写入 .ae-answers.yml + 增量/全量 copytree。
-
-        拆分自 execute()，保持 InitWorker.execute() < 50 行。
-
-        Returns:
-            did_create_dst: 是否本次创建了目标目录（用于错误时清理）
-        """
-        self._answers.write_to(tmpdir / ".ae-answers.yml")
-
-        # v2.5 P2-C-3: 验证 project_type 防止路径穿越. 攻击者控制的
-        # project_type 注入 `../../etc` 会让 replay_dir 写到 ~/.ae-replays/../../etc
-        # (mkdir(parents=True) 会创建任意路径).
-        raw_type = self.project_type or "unknown"
-        if not re.match(r"^[A-Za-z0-9_-]+$", raw_type):
-            raise ValueError(
-                f"project_type '{raw_type}' 含非法字符. "
-                f"只允许字母/数字/下划线/连字符 (防路径穿越)."
-            )
-        replay_dir = Path.home() / ".ae-replays" / raw_type
-        replay_dir.mkdir(parents=True, exist_ok=True)
-        replay_file = replay_dir / f"{datetime.now().strftime('%Y%m%d-%H%M%S')}.yml"
-        self._answers.write_to(replay_file)
-
-        self._current_phase = "finalize"
-        if self._mode == "incremental":
-            # A1: v2.0.5 — 增量合并
-            created, skipped = merge_incremental(tmpdir, self.dst_path, self._created_files)
-            if not self.quiet:
-                print(
-                    f"\n✓ 增量模式：已补充 {len(created)} 个文件，"
-                    f"跳过 {len(skipped)} 个已有文件"
-                )
-            return False
-        else:
-            did_create_dst = not self.dst_path.exists()
-            if did_create_dst:
-                self.dst_path.mkdir(parents=True)
-            shutil.copytree(tmpdir, self.dst_path, dirs_exist_ok=True)
-            if not self.quiet:
-                print(f"\n✓ 项目已生成: {self.dst_path}")
-                print(f"  文件数: {len(generated)}")
-                print(f"  下一步: cd {self.dst_path.name} && git log")
-            return did_create_dst
+    # ─── 兼容层：原内部方法（v2.5 拆到 scaffold_prereq/scaffold_phase_funcs 后保留 thin wrapper）──
 
     def _check_template_version(self) -> None:
-        """检查 ae 版本是否满足模板要求的最小版本。"""
-        from packaging.version import parse
-
-        from auto_engineering import __version__
-
-        installed = parse(__version__)
-        if self._template.min_ae_version:
-            required = parse(self._template.min_ae_version)
-            if installed < required:
-                raise ConfigFileError(
-                    f"模板要求 ae >= {self._template.min_ae_version}，当前版本 {__version__}"
-                )
-
-    def _phase_detect(self) -> None:
-        # A1: 增量模式检测
-        if self.dst_path.exists() and not self.force:
-            if any(self.dst_path.iterdir()):
-                if self.incremental:
-                    self._mode = "incremental"
-                else:
-                    raise TargetDirectoryError(
-                        f"目录 {self.dst_path} 非空。使用 --force 强制覆盖，"
-                        f"--incremental 增量补充缺失文件，"
-                        f"或在空目录/新目录中运行 ae init"
-                    )
-            else:
-                self._mode = "fresh"
-        else:
-            self._mode = "fresh"
-        if not self.project_type:
-            detector = ProjectDetector(self.dst_path)
-            self.project_type = detector.detect()
-            if not self.project_type:
-                if self.defaults:
-                    raise ConfigFileError("无法自动检测项目类型，请用 --type 指定")
-                available = [
-                    d.name
-                    for d in TEMPLATES_ROOT.iterdir()
-                    if d.is_dir() and not d.name.startswith("_")
-                ]
-                self.project_type = prompt_for_project_type(available)
-        self._check_prerequisites()
+        """模板 _min_ae_version vs 已安装 __version__."""
+        if self._template is None:
+            return
+        check_template_version(self._template.min_ae_version)
 
     def _check_prerequisites(self) -> None:
-        for cmd, name in [("git", "Git"), ("python3", "Python 3")]:
-            if shutil.which(cmd) is None:
-                raise UnsatisfiedPrerequisiteError(f"未找到 {name}。请先安装。")
+        """基础工具链 + 语言工具链检查."""
+        from .scaffold_prereq import check_basic_tools, check_language_tools
+        check_basic_tools()
+        check_language_tools(self.language, self.skip_tasks)
+
+    # ─── 阶段方法（薄包装，monkey-patch 友好）────────────────────────
+    # 历史：原 InitWorker 拥有 _phase_* 方法。v2.5 拆到 scaffold_phase_funcs.py
+    # 后保留为 thin wrapper — 一行委托，让 monkeypatch.setattr(worker, ...)
+    # 仍能替换阶段逻辑（向后兼容测试）。
+
+    def _phase_detect(self) -> None:
+        # B1: 必须捕获 lock 对象 — 否则 fd 立刻被 GC,锁瞬间释放,失去并发保护。
+        self.project_type, self._mode, self._detection, self._lock = phase_detect(
+            project_type=self.project_type,
+            dst_path=self.dst_path,
+            language=self.language,
+            skip_tasks=self.skip_tasks,
+            incremental=self.incremental,
+            force=self.force,
+            pretend=self.pretend,
+            defaults=self.defaults,
+        )
 
     def _phase_prompt(self) -> None:
-        self._template = TemplateConfig.load(self.project_type or "")
-        if self._template.nested_templates and not self.defaults:
-            chosen = prompt_for_nested_template(
-                self._template.nested_templates,
-                no_input=False,
-            )
-            if chosen:
-                self._template.template_dir = self._template.template_dir / chosen
-        cli_overrides = {}
-        for key in [
-            "package_manager",
-            "ci_platform",
-            "test_runner",
-            "use_typescript",
-            "use_lefthook",
-        ]:
-            val = getattr(self, key, None)
-            if val is not None:
-                cli_overrides[key] = val
-        self._answers = AnswersMap(
-            defaults={q.var_name: q.default for q in self._template.questions},
-            cli_overrides=cli_overrides,
-            previous=self._previous_answers.previous if self._previous_answers else {},
-            external=self._template.external_data,
-            # v2.5 P1-S3: external_data 路径沙箱到 template_dir (realpath 双侧
-            # 校验, 防 /etc/passwd 读取). 攻击者控制的模板无法越界.
-            external_sandbox_roots=[self._template.template_dir],
+        detection_for_prompt = (
+            self._detection if hasattr(self._detection, "language") else None
         )
-        self._answers.builtins["project_type"] = self.project_type or ""
-        if not self.defaults:
-            prompt = InteractivePrompt(self._template.questions, self._answers)
-            try:
-                self._answers = prompt.run()
-            except KeyboardInterrupt:
-                self._answers.save_partial()
-                raise InitInterruptedError() from None
+        self._template, self._answers = phase_prompt(
+            project_type=self.project_type,
+            defaults=self.defaults,
+            previous_answers=self._previous_answers,
+            language=self.language,
+            package_manager=self.package_manager,
+            ci_platform=self.ci_platform,
+            test_runner=self.test_runner,
+            use_typescript=self.use_typescript,
+            use_lefthook=self.use_lefthook,
+            use_docker=self.use_docker,
+            detection=detection_for_prompt,
+        )
+        check_template_version(self._template.min_ae_version)
 
     def _phase_render(self, tmpdir: Path) -> list[Path]:
-        # P1-1: CLI 传入值优先于 TemplateConfig 默认值
-        templates_suffix = (
-            self.templates_suffix
-            if self.templates_suffix is not None
-            else self._template.templates_suffix
-        )
-        preserve_symlinks = (
-            self.preserve_symlinks
-            if self.preserve_symlinks is not None
-            else self._template.preserve_symlinks
-        )
-
-        # P1-2: 渲染生命周期钩子 — before_renderer / after_renderer
-        # HookRunner(project_dir) 默认 spec=None，所有钩子为空实现（不阻断流程）
-        hook_runner = HookRunner(self.dst_path)
-        context = self._answers.combined()
-        hook_runner.before_renderer_hook(context)
-
-        generated = _render_to(
+        return phase_render(
             answers=self._answers,
-            folder_name=self.dst_path.name,
-            template_dir=self._template.template_dir,
-            subdirectory=self._template.subdirectory,
-            exclude=self._template.exclude,
-            skip_if_exists=self._template.skip_if_exists,
-            no_render=self._template.no_render,
-            envops=self._template.envops,
-            overwrite=self.overwrite,
+            template=self._template,
+            dst_path=self.dst_path,
             tmpdir=tmpdir,
-            exclude_callback=self._template.exclude_callback,
-            templates_suffix=templates_suffix,
-            preserve_symlinks=preserve_symlinks,
+            overwrite=self.overwrite,
+            templates_suffix=self.templates_suffix,
+            preserve_symlinks=self.preserve_symlinks,
+            template_dir_override=self.template_dir_override,
+            strict=self.strict,
         )
-
-        hook_runner.after_renderer_hook(context, generated)
-        return generated
 
     def _phase_tasks(self, tmpdir: Path) -> None:
-        # 与 TemplateRenderer.render_to() 保持一致: 使用 SandboxedEnvironment
-        # (防 Jinja2 沙箱穿透,参考 copier/_main.py SandboxedEnvironment)
-        from jinja2.sandbox import SandboxedEnvironment
-        from jinja2 import StrictUndefined
+        run_tasks_phase(
+            tmpdir=tmpdir,
+            dst_path=self.dst_path,
+            template=self._template,
+            answers=self._answers,
+            current_phase=self._current_phase,
+            strict=self.strict,
+            quiet=self.quiet,
+        )
 
-        jinja_env = SandboxedEnvironment(undefined=StrictUndefined)
-        context = self._answers.combined()
-
-        # Jinja2 内置函数（可用于 task when/cmd 模板）
-        import subprocess as _subprocess
-
-        def _git_status_clean() -> bool:
-            """检查 git 工作区是否干净（无待提交更改）。"""
-            result = _subprocess.run(
-                ["git", "status", "--porcelain"],
-                cwd=self.dst_path,
-                capture_output=True,
-                text=True,
-            )
-            return result.stdout.strip() == ""
-
-        def _project_exists(path: str) -> bool:
-            """检查项目目录下指定路径是否存在。"""
-            from pathlib import Path as _Path
-
-            p = (self.dst_path / path.strip()).resolve()
-            return p.exists()
-
-        jinja_env.globals["git_status_clean"] = _git_status_clean
-        jinja_env.globals["project_exists"] = _project_exists
-
-        # A2: 把 current_phase 传给 TaskRunner (TaskRunner 内部用于 AE_PHASE)
-        runner = TaskRunner(tmpdir, current_phase=self._current_phase)
-        runner.run(self._template.tasks_before, context, jinja_env)
-        run_builtin_hooks(self._answers, tmpdir)
-        runner.run(self._template.tasks_after, context, jinja_env)
+    def _phase_finalize(self, tmpdir: Path, generated: list[Path]) -> bool:
+        return phase_finalize(
+            answers=self._answers,
+            project_type=self.project_type,
+            template=self._template,
+            tmpdir=tmpdir,
+            dst_path=self.dst_path,
+            created_files=self._created_files,
+            mode=self._mode,
+            quiet=self.quiet,
+        )
