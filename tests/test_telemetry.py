@@ -106,6 +106,23 @@ class TestSend:
         with patch("urllib.request.build_opener", return_value=mock_opener):
             send(event)  # 不应抛出
 
+    def test_swallows_url_error(self, monkeypatch):
+        """F4: URL/network 错误 (URLError 来自真实 urllib) — 应静默吞掉."""
+        from urllib.error import URLError
+        monkeypatch.setenv("AE_TELEMETRY", "1")
+        event = TelemetryEvent()
+        mock_opener = Mock()
+        mock_opener.open.side_effect = URLError("no internet")
+        with patch("urllib.request.build_opener", return_value=mock_opener):
+            send(event)  # 不应抛出
+
+    def test_swallows_build_opener_failure(self, monkeypatch):
+        """F4: build_opener 本身失败 (极少见, 但 try/except 应覆盖)."""
+        monkeypatch.setenv("AE_TELEMETRY", "1")
+        event = TelemetryEvent()
+        with patch("urllib.request.build_opener", side_effect=ValueError("bad handler")):
+            send(event)  # 不应抛出
+
     def test_swallows_timeout(self, monkeypatch):
         monkeypatch.setenv("AE_TELEMETRY", "1")
         event = TelemetryEvent()

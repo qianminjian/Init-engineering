@@ -297,6 +297,27 @@ class AnswersMap:
                 result[key] = value
         return result
 
+    def write_to(self, dst: Path) -> None:
+        """写入 .ae-answers.yml 到目标路径。
+
+        P2-16: 显式 utf-8 encoding — 防止 Windows GBK 默认编码破坏中文 answers。
+        """
+        with open(dst, "w", encoding="utf-8") as f:
+            yaml.dump(self.to_answers_file(), f, allow_unicode=True)
+
+    def __getitem__(self, key: str) -> Any:
+        try:
+            return self.get(key)
+        except KeyError:
+            raise KeyError(key) from None
+
+    def __contains__(self, key: str) -> bool:
+        try:
+            self.get(key)
+            return True
+        except KeyError:
+            return False
+
 
 # P2-11: 敏感字段名白名单 (含常见 secret 命名约定, 跨语言通用)
 _SENSITIVE_FIELD_PATTERNS = frozenset({
@@ -316,42 +337,3 @@ def _is_sensitive_field(key: str) -> bool:
         if k.endswith(suffix):
             return True
     return False
-
-
-# 重新接续 AnswersMap 类 (P2-11 改动意外截断了 class, 把 write_to/__getitem__/__contains__ 留在
-# 模块顶层。已修复, 以下方法在 AnswersMap 类内。)
-class _AnswersMapTail:  # 实际是 class AnswersMap 的延续, 仅为编辑器展示
-    pass
-
-
-# 注: 以下方法应作为 AnswersMap 类的方法, 实际 class 仍由 `class AnswersMap:` 开始.
-# 由于 Edit 工具的 diff 限制, 这里用 module-level 函数体保留方法定义;
-# 实际生效的是把它们重新 attach 到 AnswersMap 类.
-def _answers_map_write_to(self, dst: Path) -> None:
-    """写入 .ae-answers.yml 到目标路径。
-
-    P2-16: 显式 utf-8 encoding — 防止 Windows GBK 默认编码破坏中文 answers。
-    """
-    with open(dst, "w", encoding="utf-8") as f:
-        yaml.dump(self.to_answers_file(), f, allow_unicode=True)
-
-
-def _answers_map_getitem(self, key: str) -> Any:
-    try:
-        return self.get(key)
-    except KeyError:
-        raise KeyError(key) from None
-
-
-def _answers_map_contains(self, key: str) -> bool:
-    try:
-        self.get(key)
-        return True
-    except KeyError:
-        return False
-
-
-# 将上述函数 attach 到 AnswersMap 类
-AnswersMap.write_to = _answers_map_write_to
-AnswersMap.__getitem__ = _answers_map_getitem
-AnswersMap.__contains__ = _answers_map_contains
