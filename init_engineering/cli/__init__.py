@@ -14,6 +14,8 @@ from pathlib import Path
 import click
 
 from init_engineering import __version__
+from init_engineering.cli._helpers import configure_logging as _configure_logging
+from init_engineering.cli._helpers import sanitize_error as _sanitize_error
 
 
 @click.group()
@@ -128,58 +130,19 @@ def init(
     from init_engineering.init.config import TEMPLATES_ROOT
     from init_engineering.init.detector import ProjectDetector
 
-    # --list-types: 列出可用项目类型
+    # P2-A: --list-types / --list-templates / --analyze 分支提到独立函数,
+    # 避免 init() 函数体超长 (target: cli/__init__.py ≤ 300 行)
     if list_types:
-        types = sorted(
-            d.name for d in TEMPLATES_ROOT.iterdir()
-            if d.is_dir() and not d.name.startswith("_")
-        )
-        click.echo("可用的项目类型:")
-        for t in types:
-            click.echo(f"  {t}")
+        _cmd_list_types(TEMPLATES_ROOT)
         return
-
-    # --list-templates: 列出每个类型的模板文件
     if list_templates:
-        types = sorted(
-            d.name for d in TEMPLATES_ROOT.iterdir()
-            if d.is_dir() and not d.name.startswith("_")
-        )
-        for t in types:
-            click.echo(f"\n[{t}]")
-            type_dir = TEMPLATES_ROOT / t
-            for f in sorted(type_dir.rglob("*")):
-                if f.is_file() and not f.name.startswith("."):
-                    rel = f.relative_to(type_dir)
-                    click.echo(f"  {rel}")
+        _cmd_list_templates(TEMPLATES_ROOT)
         return
 
     dst_path = Path(project) if project else Path.cwd()
 
-    # --analyze 模式：只运行代码分析，不初始化
     if analyze_only:
-        detector = ProjectDetector(dst_path)
-        result = detector.analyze()
-        click.echo(f"分析目录: {dst_path}")
-        click.echo(f"项目名称: {result.project_name}")
-        if result.candidates:
-            click.echo(f"检测到的项目类型候选: {', '.join(result.candidates)}")
-            if result.project_type:
-                click.echo(f"✓ 自动检测结果: {result.project_type}")
-            else:
-                click.echo("⚠ 多个候选，无法自动确定类型")
-        else:
-            click.echo("⚠ 未检测到已知项目类型（空目录或未知类型）")
-        if result.language:
-            click.echo(f"语言: {result.language}")
-        if result.package_manager:
-            click.echo(f"包管理器: {result.package_manager}")
-        if result.test_runner:
-            click.echo(f"测试框架: {result.test_runner}")
-        if result.ci_platform:
-            click.echo(f"CI 平台: {result.ci_platform}")
-        if result.frameworks:
-            click.echo(f"框架: {', '.join(result.frameworks)}")
+        _cmd_analyze(dst_path, ProjectDetector)
         return
 
     if answers_file:
@@ -303,127 +266,17 @@ def init(
             raise SystemExit(1) from e
 
 
-def _sanitize_error(msg: str) -> str:
-    """P2-13: 错误消息脱敏 — 替换常见 secret 模式为 [REDACTED]."""
-    import re as _re
-
-    patterns = [
-        # 长 token / api key (>=20 字符的 base64/hex)
-        (r"(?i)(token|api[_-]?key|secret|password|access[_-]?key)\s*[=:]\s*['\"]?[\w\-]{16,}['\"]?",
-         r"\1=[REDACTED]"),
-        # Bearer token
-        (r"(?i)Bearer\s+[\w\-\.]{16,}", "Bearer [REDACTED]"),
-        # JWT 风格 (xxx.yyy.zzz)
-        (r"eyJ[A-Za-z0-9_\-]+\.eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+", "[REDACTED-JWT]"),
-    ]
-    for pat, repl in patterns:
-        msg = _re.sub(pat, repl, msg)
-    return msg
-
-
-def _configure_logging(verbose: bool) -> None:
-    """配置 logging — B7: 结构化 + session_id；B9: dictConfig 强制覆盖。
-
-    设计：
-    - 默认 INFO 级别（plain text）
-    - --verbose 升级到 DEBUG
-    - 全局注入 ae_session_id (uuid4 前 8 位) 用于日志关联
-    - 使用 dictConfig 而非 basicConfig — 避免用户/agent 已有 logger 配置失效
-    """
-    import logging.config
-    import uuid
-
-    session_id = uuid.uuid4().hex[:8]
-    level = "DEBUG" if verbose else "INFO"
-
-    logging.config.dictConfig({
-        "version": 1,
-        "disable_existing_loggers": False,
-        "formatters": {
-            "structured": {
-                "format": f"%(asctime)s [%(levelname)s] [ae:{session_id}] [%(name)s] %(message)s",
-                "datefmt": "%Y-%m-%dT%H:%M:%S",
-            },
-        },
-        "handlers": {
-            "stderr": {
-                "class": "logging.StreamHandler",
-                "formatter": "structured",
-                "stream": "ext://sys.stderr",
-            },
-        },
-        "root": {
-            "level": level,
-            "handlers": ["stderr"],
-        },
-    })
-
-
-@main.command()
-@click.argument("project", required=False)
-@click.option(
-    "--conflict",
-    "conflict_strategy",
-    type=click.Choice(["skip", "overwrite", "prompt"]),
-    default="skip",
-    help="文件冲突处理策略 (默认 skip — 保护用户修改)",
+# P2-A: update / status 命令 + init 子分支拆到 cli/commands.py — cli/__init__.py 拆分后 ≤ 300 行
+from init_engineering.cli.commands import (  # noqa: E402
+    _cmd_analyze,
+    _cmd_list_templates,
+    _cmd_list_types,
+    status,
+    update,
 )
-@click.option("--dry-run", is_flag=True, help="只计算 diff 不写入")
-@click.option("--force", is_flag=True, help="无 .ae-answers.yml 时强制升级（自动推断 project_type）")
-@click.option("--quiet", is_flag=True, help="静默模式")
-def update(
-    project: str | None,
-    conflict_strategy: str,
-    dry_run: bool,
-    force: bool,
-    quiet: bool,
-):
-    """升级已存在的项目 — 重新渲染模板 + 合并到目标目录.
 
-    默认策略: skip (保护用户手动修改).  可选: overwrite / prompt.
-    """
-    from init_engineering.init.scaffold_update import run_update
-
-    dst_path = Path(project) if project else Path.cwd()
-    result = run_update(
-        dst_path=dst_path,
-        force=force,
-        dry_run=dry_run,
-        conflict_strategy=conflict_strategy,
-    )
-    if not quiet:
-        click.echo(result.summary())
-        for f in result.files_added:
-            click.echo(f"  + {f.relative_to(dst_path)}")
-        for f in result.files_updated:
-            click.echo(f"  ~ {f.relative_to(dst_path)}")
-        for f in result.files_skipped:
-            click.echo(f"  - {f.relative_to(dst_path)}  (skipped)")
-
-
-@main.command()
-def status():
-    """查看当前项目环境配置."""
-    from init_engineering.config.environment import ProjectEnvironment
-
-    cwd = Path.cwd()
-    click.echo(f"当前目录: {cwd}")
-
-    try:
-        env = ProjectEnvironment.resolve(cwd)
-        click.echo(f"  项目名称: {env.project_name}")
-        click.echo(f"  项目类型: {env.project_type or '未知'}")
-        click.echo(f"  包管理器: {env.package_manager or '未知'}")
-        click.echo(f"  测试框架: {env.test_runner or '未知'}")
-        click.echo(f"  TypeScript: {'是' if env.use_typescript else '否'}")
-        click.echo(f"  Lefthook: {'是' if env.use_lefthook else '否'}")
-        click.echo(f"  CI: {env.ci_platform or '无'}")
-        click.echo(f"  Git: {'是' if env.has_git else '否'}")
-        undetectable = env._warn_undetectable(cwd)
-        if undetectable:
-            click.echo(f"  ⚠ 不可自动判定: {', '.join(undetectable)}", err=True)
-    except Exception as e:
-        click.echo(f"  读取项目环境失败: {e}")
+main.add_command(update)
+main.add_command(status)
 
 
 if __name__ == "__main__":

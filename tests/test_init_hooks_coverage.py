@@ -309,11 +309,3 @@ class TestCleanupHook:
         # 不应抛异常
         worker._cleanup()
         assert called[0]
-
-
-class TestMessageBeforeAfter:
-    """message_before / message_after 输出覆盖 (scaffold_phases.py lines 111/118).
-
-    NOTE: 端到端测试已覆盖（test_init_e2e_scaffold.py），此处不再重复。
-    """
-    pass
