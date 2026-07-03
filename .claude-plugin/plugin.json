@@ -1,0 +1,18 @@
+{
+  "name": "init-engineering",
+  "version": "1.0.0",
+  "description": "AI 开发工程化初始化工具。一键生成项目骨架(8 类型 × 4 语言),含 5 阶段流水线、统一命令入口、CI 门禁、Lefthook 本地门禁。",
+  "author": {
+    "name": "钱敏健",
+    "url": "https://github.com/qianminjian"
+  },
+  "repository": "https://github.com/qianminjian/Init-engineering",
+  "license": "MIT",
+  "keywords": [
+    "init",
+    "scaffolding",
+    "project-template",
+    "claude-code",
+    "ai-engineering"
+  ]
+}

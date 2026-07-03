@@ -88,11 +88,11 @@ package = true
 # (运行时仍需 --require-hashes 才强制 hash 校验, 见 security job)
 
 [tool.hatch.build.targets.wheel]
-packages = ["init_engineering"]
+packages = ["src/init_engineering"]
 # D-P0-3: SKILL.md/README/CHANGELOG/LICENSE 必须进 wheel — Claude Code skill
 # 注册需 SKILL.md, PyPI 页面渲染需 README,法律需 LICENSE,版本说明需 CHANGELOG
 [tool.hatch.build.targets.wheel.force-include]
 "README.md" = "README.md"
 "CHANGELOG.md" = "CHANGELOG.md"
 "LICENSE" = "LICENSE"
-"SKILL.md" = "SKILL.md"
+"skills/init-engineering/SKILL.md" = "SKILL.md"

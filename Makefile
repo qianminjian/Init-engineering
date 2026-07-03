@@ -15,7 +15,7 @@ help:  ## 显示帮助
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-15s\033[0m %s\n", $$1, $$2}'
 
 install:  ## 安装 dev 依赖
-	uv sync --extra dev
+	uv sync --dev --extra dev
 
 ci: lint test  ## 完整 CI: lint + test
 

@@ -21,6 +21,11 @@ cd ~/.agents/skills/init-engineering
 ae --version
 ```
 
+**安装位置**:
+- Skill 入口: `~/.agents/skills/init-engineering/skills/init-engineering/SKILL.md`
+- Python 包: `~/.agents/skills/init-engineering/src/init_engineering/`
+- Plugin metadata: `~/.agents/skills/init-engineering/.claude-plugin/plugin.json`
+
 ### 方式 2：项目级安装（per-repo, 团队成员自动继承）
 
 在项目 `.claude/settings.json` 中添加：

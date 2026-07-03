@@ -14,6 +14,9 @@ htmlcov/
 .phase-execution/
 dist/
 .serena/
+.ruff_cache/
+*.egg-info/
+build/
 .claude/scheduled_tasks.json
 .claude/scheduled_tasks.lock
 

@@ -193,6 +193,7 @@ class TestInitPytestRules:
         """
         template_path = (
             Path(__file__).resolve().parent.parent
+            / "src"
             / "init_engineering"
             / "init"
             / "templates"

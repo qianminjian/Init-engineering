@@ -190,7 +190,7 @@ class TestBuildTemplateDirsPerformance:
         """build_template_dirs 应在 50ms 内完成."""
         from init_engineering.init.scaffold_render import build_template_dirs
 
-        type_dir = Path(__file__).parent.parent / "init_engineering" / "init" / "templates" / "app-service"
+        type_dir = Path(__file__).parent.parent / "src" / "init_engineering" / "init" / "templates" / "app-service"
 
         start = time.perf_counter()
         dirs = build_template_dirs(
