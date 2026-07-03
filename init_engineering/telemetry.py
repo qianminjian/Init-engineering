@@ -23,7 +23,6 @@ import platform
 import urllib.parse
 import urllib.request
 from dataclasses import asdict, dataclass
-
 from pathlib import Path
 
 _logger = logging.getLogger(__name__)

@@ -212,7 +212,7 @@ class TestPathTraversalProtection:
         """TemplateRenderer should reject paths with ../ escaping dst_dir."""
         import tempfile
 
-        from auto_engineering.init.renderer import TemplateRenderer
+        from init_engineering.init.renderer import TemplateRenderer
 
         # Create a template dir with a file named to escape
         src_dir = Path(tempfile.mkdtemp())
@@ -247,8 +247,8 @@ class TestBuiltinHooksErrorPropagation:
         """git init in a non-existent writable location should raise."""
         import pytest
 
-        from auto_engineering.init.errors import TaskExecutionError
-        from auto_engineering.init.scaffold import InitWorker
+        from init_engineering.init.errors import TaskExecutionError
+        from init_engineering.init.scaffold import InitWorker
 
         worker = InitWorker(
             dst_path=Path("/nonexistent/path/that/cannot/be/created"),
@@ -281,7 +281,7 @@ class TestProjectEnvPackageManagerDefault:
 
     def test_package_manager_defaults_to_npm(self):
         """RED: 缺 package_manager 锁文件时,默认 'npm'."""
-        from auto_engineering.config.environment import ProjectEnvironment
+        from init_engineering.config.environment import ProjectEnvironment
 
         env = ProjectEnvironment._from_detection(Path("/nonexistent-root"))
         assert env.package_manager == "npm", (
@@ -292,7 +292,7 @@ class TestProjectEnvPackageManagerDefault:
         """REGRESSION: uv.lock 存在时检测为 'uv'."""
         import tempfile
 
-        from auto_engineering.config.environment import ProjectEnvironment
+        from init_engineering.config.environment import ProjectEnvironment
 
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -308,7 +308,7 @@ class TestDetectorSpecDocGlob:
         """RED: 任何 design/*.md 文件存在时,项目被识别为 spec-doc."""
         import tempfile
 
-        from auto_engineering.init.detector import ProjectDetector
+        from init_engineering.init.detector import ProjectDetector
 
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -325,7 +325,7 @@ class TestDetectorSpecDocGlob:
         """REGRESSION: design/BEACON.md 仍应识别为 spec-doc."""
         import tempfile
 
-        from auto_engineering.init.detector import ProjectDetector
+        from init_engineering.init.detector import ProjectDetector
 
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -341,7 +341,7 @@ class TestProjectEnvironmentWarnUndetectable:
 
     def test_warn_undetectable_returns_undetectable_fields(self):
         """RED: 缺必要文件时,返回不可判定字段列表."""
-        from auto_engineering.config.environment import ProjectEnvironment
+        from init_engineering.config.environment import ProjectEnvironment
 
         # 用 _from_detection 但 root 是空目录 → 多数字段无法判定
         env = ProjectEnvironment._from_detection(Path("/nonexistent-root"))
@@ -355,7 +355,7 @@ class TestProjectEnvironmentWarnUndetectable:
         """RED: 部分文件存在时,只列出仍未判定的字段."""
         import tempfile
 
-        from auto_engineering.config.environment import ProjectEnvironment
+        from init_engineering.config.environment import ProjectEnvironment
 
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -383,7 +383,7 @@ class TestTemplateSuffixParameter:
         """RED: TemplateRenderer(templates_suffix=".j2") 时读取 .j2 文件作为模板."""
         import tempfile
 
-        from auto_engineering.init.renderer import TemplateRenderer
+        from init_engineering.init.renderer import TemplateRenderer
 
         src_dir = Path(tempfile.mkdtemp(prefix="ae-suffix-src-"))
         dst_dir = Path(tempfile.mkdtemp(prefix="ae-suffix-dst-"))
@@ -418,7 +418,7 @@ class TestTemplateSuffixParameter:
         """RED: 不传 templates_suffix 时默认使用 .jinja 后缀 (向后兼容)."""
         import tempfile
 
-        from auto_engineering.init.renderer import TemplateRenderer
+        from init_engineering.init.renderer import TemplateRenderer
 
         src_dir = Path(tempfile.mkdtemp(prefix="ae-suffix-default-src-"))
         dst_dir = Path(tempfile.mkdtemp(prefix="ae-suffix-default-dst-"))
@@ -454,7 +454,7 @@ class TestPreserveSymlinksParameter:
         """RED: preserve_symlinks=False 时 dangling symlink 被跳过不报错."""
         import tempfile
 
-        from auto_engineering.init.renderer import TemplateRenderer
+        from init_engineering.init.renderer import TemplateRenderer
 
         src_dir = Path(tempfile.mkdtemp(prefix="ae-symlink-cfg-src-"))
         dst_dir = Path(tempfile.mkdtemp(prefix="ae-symlink-cfg-dst-"))
@@ -487,7 +487,7 @@ class TestPreserveSymlinksParameter:
         """RED: preserve_symlinks=True 时有效 symlink 被保留为链接."""
         import tempfile
 
-        from auto_engineering.init.renderer import TemplateRenderer
+        from init_engineering.init.renderer import TemplateRenderer
 
         src_dir = Path(tempfile.mkdtemp(prefix="ae-symlink-cfg2-src-"))
         dst_dir = Path(tempfile.mkdtemp(prefix="ae-symlink-cfg2-dst-"))
@@ -528,7 +528,7 @@ class TestRendererSymlinkHandling:
         """RED: symlink 文件被正确处理,不报错且 dst 端可读."""
         import tempfile
 
-        from auto_engineering.init.renderer import TemplateRenderer
+        from init_engineering.init.renderer import TemplateRenderer
 
         src_dir = Path(tempfile.mkdtemp(prefix="ae-symlink-src-"))
         dst_dir = Path(tempfile.mkdtemp(prefix="ae-symlink-dst-"))
@@ -567,7 +567,7 @@ class TestRendererSymlinkHandling:
         """RED: 渲染路径中对 symlink 的判断存在 (= 不崩)."""
         import tempfile
 
-        from auto_engineering.init.renderer import TemplateRenderer
+        from init_engineering.init.renderer import TemplateRenderer
 
         src_dir = Path(tempfile.mkdtemp(prefix="ae-symlink2-"))
         dst_dir = Path(tempfile.mkdtemp(prefix="ae-symlink2-dst-"))
@@ -602,7 +602,7 @@ class TestBuiltinHooksGitCommitNonBlocking:
         """RED: _run_builtin_hooks 中 git commit 失败不应抛 TaskExecutionError."""
         from unittest.mock import MagicMock, patch
 
-        from auto_engineering.init.scaffold import InitWorker
+        from init_engineering.init.scaffold import InitWorker
 
         worker = InitWorker(
             dst_path=Path("/tmp/test-a3"),
@@ -632,7 +632,7 @@ class TestBuiltinHooksGitCommitNonBlocking:
         ]
 
         with patch("subprocess.run", side_effect=side_effects) as mock_run:
-            from auto_engineering.init.scaffold_hooks import run_builtin_hooks
+            from init_engineering.init.scaffold_hooks import run_builtin_hooks
             # 不应抛 TaskExecutionError — git commit 失败仅 warning
             try:
                 run_builtin_hooks(worker._answers, Path("/tmp/test-a3-dst"))
@@ -650,7 +650,7 @@ class TestInitPhaseTasksCurrentPhase:
         """RED: TaskRunner 必须收到 current_phase='tasks'."""
         from unittest.mock import MagicMock, patch
 
-        from auto_engineering.init.scaffold import InitWorker
+        from init_engineering.init.scaffold import InitWorker
 
         worker = InitWorker(
             dst_path=Path("/tmp/test-phase"),
@@ -671,8 +671,8 @@ class TestInitPhaseTasksCurrentPhase:
 
         # mock TaskRunner 类 + 子任务 run_builtin_hooks (实际实现在 scaffold_tasks_runner)
         with (
-            patch("auto_engineering.init.scaffold_tasks_runner.TaskRunner") as MockRunner,
-            patch("auto_engineering.init.scaffold_tasks_runner.run_builtin_hooks"),
+            patch("init_engineering.init.scaffold_tasks_runner.TaskRunner") as MockRunner,
+            patch("init_engineering.init.scaffold_tasks_runner.run_builtin_hooks"),
         ):
             import tempfile
 
@@ -842,8 +842,8 @@ class TestScaffoldPrerequisites:
     """覆盖 scaffold.py:220-223 _check_prerequisites."""
 
     def test_missing_git_raises(self, monkeypatch, tmp_path):
-        from auto_engineering.init.errors import UnsatisfiedPrerequisiteError
-        from auto_engineering.init.scaffold import InitWorker
+        from init_engineering.init.errors import UnsatisfiedPrerequisiteError
+        from init_engineering.init.scaffold import InitWorker
 
         # 模拟 git 不存在
         monkeypatch.setattr("shutil.which", lambda cmd: None if cmd == "git" else "/usr/bin/" + cmd)
@@ -857,7 +857,7 @@ class TestScaffoldPrerequisites:
             worker._check_prerequisites()
 
     def test_prerequisites_ok_when_git_and_python_present(self, tmp_path):
-        from auto_engineering.init.scaffold import InitWorker
+        from init_engineering.init.scaffold import InitWorker
 
         worker = InitWorker(
             dst_path=tmp_path / "p",
@@ -871,8 +871,8 @@ class TestScaffoldNonEmptyDir:
     """覆盖 scaffold.py:195-208 _phase_detect 目录存在性分支."""
 
     def test_non_empty_dir_without_force_or_incremental_raises(self, tmp_path):
-        from auto_engineering.init.errors import TargetDirectoryError
-        from auto_engineering.init.scaffold import InitWorker
+        from init_engineering.init.errors import TargetDirectoryError
+        from init_engineering.init.scaffold import InitWorker
 
         existing = tmp_path / "existing"
         existing.mkdir()
@@ -887,7 +887,7 @@ class TestScaffoldNonEmptyDir:
             worker._phase_detect()
 
     def test_non_empty_dir_with_incremental_sets_mode(self, tmp_path):
-        from auto_engineering.init.scaffold import InitWorker
+        from init_engineering.init.scaffold import InitWorker
 
         existing = tmp_path / "existing"
         existing.mkdir()
@@ -903,7 +903,7 @@ class TestScaffoldNonEmptyDir:
         assert worker._mode == "incremental"
 
     def test_empty_dir_sets_fresh_mode(self, tmp_path):
-        from auto_engineering.init.scaffold import InitWorker
+        from init_engineering.init.scaffold import InitWorker
 
         empty = tmp_path / "empty"
         empty.mkdir()
@@ -917,7 +917,7 @@ class TestScaffoldNonEmptyDir:
         assert worker._mode == "fresh"
 
     def test_nonexistent_dir_sets_fresh_mode(self, tmp_path):
-        from auto_engineering.init.scaffold import InitWorker
+        from init_engineering.init.scaffold import InitWorker
 
         worker = InitWorker(
             dst_path=tmp_path / "nonexistent",
@@ -932,7 +932,7 @@ class TestScaffoldPretendMode:
     """覆盖 scaffold.py:75-90 pretend 模式返回空 InitResult."""
 
     def test_pretend_returns_empty_files_list(self, tmp_path):
-        from auto_engineering.init.scaffold import InitWorker
+        from init_engineering.init.scaffold import InitWorker
 
         dst = tmp_path / "pretend-project"
         worker = InitWorker(
@@ -952,7 +952,7 @@ class TestScaffoldCleanupOnError:
     """覆盖 scaffold.py:139-142 异常处理 cleanup_on_error 行为."""
 
     def test_cleanup_removes_created_dst_on_exception(self, tmp_path, monkeypatch):
-        from auto_engineering.init.scaffold import InitWorker
+        from init_engineering.init.scaffold import InitWorker
 
         dst = tmp_path / "cleanup-test"
         worker = InitWorker(
@@ -979,7 +979,7 @@ class TestScaffoldCleanupOnError:
         设计: did_create_dst = not self.dst_path.exists() → 预先存在 → False
         即使 cleanup_on_error=True,也不会清理已有目录。
         """
-        from auto_engineering.init.scaffold import InitWorker
+        from init_engineering.init.scaffold import InitWorker
 
         dst = tmp_path / "pre-existing"
         dst.mkdir()
@@ -1012,14 +1012,14 @@ class TestHooksTaskRunner:
     """覆盖 hooks.py:33-77 TaskRunner 分支（when 条件 + shell/list 双模式）."""
 
     def test_empty_tasks_no_op(self, tmp_path):
-        from auto_engineering.init.hooks import TaskRunner
+        from init_engineering.init.hooks import TaskRunner
 
         runner = TaskRunner(tmp_path)
         runner.run([], context={})  # 不抛
 
     def test_when_false_skips_task(self, tmp_path, monkeypatch):
-        from auto_engineering.init.config import Task
-        from auto_engineering.init.hooks import TaskRunner
+        from init_engineering.init.config import Task
+        from init_engineering.init.hooks import TaskRunner
 
         called = []
 
@@ -1034,8 +1034,8 @@ class TestHooksTaskRunner:
         assert called == []  # 跳过了
 
     def test_list_cmd_renders_without_shell(self, tmp_path, monkeypatch):
-        from auto_engineering.init.config import Task
-        from auto_engineering.init.hooks import TaskRunner
+        from init_engineering.init.config import Task
+        from init_engineering.init.hooks import TaskRunner
 
         captured = {}
 
@@ -1070,7 +1070,7 @@ class TestV22PhaseIModuleSplit:
 
     def test_new_config_types_module_exports_question(self):
         """新拆出的 config_types 模块应导出 Question dataclass。"""
-        from auto_engineering.init.config_types import Question
+        from init_engineering.init.config_types import Question
 
         q = Question(var_name="x", default="y")
         assert q.var_name == "x"
@@ -1078,7 +1078,7 @@ class TestV22PhaseIModuleSplit:
 
     def test_new_config_types_module_exports_task(self):
         """新拆出的 config_types 模块应导出 Task dataclass。"""
-        from auto_engineering.init.config_types import Task
+        from init_engineering.init.config_types import Task
 
         t = Task(cmd=["echo", "hi"])
         assert t.cmd == ["echo", "hi"]
@@ -1086,14 +1086,14 @@ class TestV22PhaseIModuleSplit:
 
     def test_new_scaffold_phases_module_exports_init_worker(self):
         """新拆出的 scaffold_phases 模块应导出 InitWorker。"""
-        from auto_engineering.init.scaffold_phases import InitWorker
+        from init_engineering.init.scaffold_phases import InitWorker
 
         worker = InitWorker(dst_path=Path("/tmp/nonexistent-p2-5"))
         assert worker is not None
 
     def test_legacy_config_path_still_works(self):
         """旧路径 init.config 仍可导入 Question/Task/TemplateConfig (兼容)。"""
-        from auto_engineering.init.config import Question, Task, TemplateConfig
+        from init_engineering.init.config import Question, Task, TemplateConfig
 
         assert Question is not None
         assert Task is not None
@@ -1101,7 +1101,7 @@ class TestV22PhaseIModuleSplit:
 
     def test_legacy_scaffold_path_still_works(self):
         """旧路径 init.scaffold 仍可导入 InitResult/InitWorker/init_project (兼容)。"""
-        from auto_engineering.init.scaffold import InitResult, InitWorker, init_project
+        from init_engineering.init.scaffold import InitResult, InitWorker, init_project
 
         assert InitResult is not None
         assert InitWorker is not None
@@ -1118,7 +1118,7 @@ class TestExcludeCallback:
 
     def test_default_match_exclude_git_dir(self):
         """`.git/` 下任何文件都应被排除."""
-        from auto_engineering.init._shared.exclude import default_match_exclude
+        from init_engineering.init._shared.exclude import default_match_exclude
 
         assert default_match_exclude(Path(".git/config")) is True
         assert default_match_exclude(Path(".git/HEAD")) is True
@@ -1126,7 +1126,7 @@ class TestExcludeCallback:
 
     def test_default_match_exclude_pycache(self):
         """`__pycache__/` 目录 + `.pyc` 文件应被排除."""
-        from auto_engineering.init._shared.exclude import default_match_exclude
+        from init_engineering.init._shared.exclude import default_match_exclude
 
         assert default_match_exclude(Path("__pycache__/foo.pyc")) is True
         assert default_match_exclude(Path("src/__pycache__/x.pyc")) is True
@@ -1134,14 +1134,14 @@ class TestExcludeCallback:
 
     def test_default_match_exclude_venv(self):
         """`.venv/` 与 `node_modules/` 应被排除."""
-        from auto_engineering.init._shared.exclude import default_match_exclude
+        from init_engineering.init._shared.exclude import default_match_exclude
 
         assert default_match_exclude(Path(".venv/lib/python3.12/site.py")) is True
         assert default_match_exclude(Path("node_modules/react/index.js")) is True
 
     def test_default_match_exclude_keeps_source(self):
         """普通源码文件应保留, 不被排除."""
-        from auto_engineering.init._shared.exclude import default_match_exclude
+        from init_engineering.init._shared.exclude import default_match_exclude
 
         assert default_match_exclude(Path("src/main.py")) is False
         assert default_match_exclude(Path("README.md")) is False
@@ -1152,7 +1152,7 @@ class TestExcludeCallback:
 
         注意: 保留 .gitignore / .editorconfig 等配置 dotfile (与 Copier 一致).
         """
-        from auto_engineering.init._shared.exclude import default_match_exclude
+        from init_engineering.init._shared.exclude import default_match_exclude
 
         assert default_match_exclude(Path(".env")) is True
         assert default_match_exclude(Path(".DS_Store")) is True
@@ -1162,52 +1162,52 @@ class TestExcludeCallback:
 
     def test_parse_exclude_callback_resolves_default(self):
         """'module:function' 格式 spec 可解析为可调用对象."""
-        from auto_engineering.init._shared.exclude import (
+        from init_engineering.init._shared.exclude import (
             default_match_exclude,
             parse_exclude_callback,
         )
 
         callback = parse_exclude_callback(
-            "auto_engineering.init._shared.exclude:default_match_exclude"
+            "init_engineering.init._shared.exclude:default_match_exclude"
         )
         assert callback is default_match_exclude
 
     def test_parse_exclude_callback_raises_on_missing_module(self):
         """解析不存在的模块应抛 ImportError."""
-        from auto_engineering.init._shared.exclude import parse_exclude_callback
+        from init_engineering.init._shared.exclude import parse_exclude_callback
 
         with pytest.raises(ImportError):
             parse_exclude_callback("nonexistent.module:fn")
 
     def test_parse_exclude_callback_raises_on_missing_attr(self):
         """解析模块中不存在的函数应抛 AttributeError."""
-        from auto_engineering.init._shared.exclude import parse_exclude_callback
+        from init_engineering.init._shared.exclude import parse_exclude_callback
 
         with pytest.raises(AttributeError):
             parse_exclude_callback(
-                "auto_engineering.init._shared.exclude:no_such_function"
+                "init_engineering.init._shared.exclude:no_such_function"
             )
 
     def test_parse_exclude_callback_invalid_format(self):
         """非 'module:function' 格式应抛 ValueError."""
-        from auto_engineering.init._shared.exclude import parse_exclude_callback
+        from init_engineering.init._shared.exclude import parse_exclude_callback
 
         with pytest.raises(ValueError):
             parse_exclude_callback("invalid_format_no_colon")
 
     def test_template_config_exclude_callback_field_default(self):
         """TemplateConfig 暴露 exclude_callback 字段, 默认指向 default_match_exclude."""
-        from auto_engineering.init._shared.exclude import default_match_exclude
-        from auto_engineering.init.config import TemplateConfig
+        from init_engineering.init._shared.exclude import default_match_exclude
+        from init_engineering.init.config import TemplateConfig
 
         cfg = TemplateConfig(template_dir=Path("/tmp/none"))
         assert hasattr(cfg, "exclude_callback")
         # 默认值是字符串 (解析在 init 时完成)
         assert cfg.exclude_callback == (
-            "auto_engineering.init._shared.exclude:default_match_exclude"
+            "init_engineering.init._shared.exclude:default_match_exclude"
         )
         # 解析后应等于 default_match_exclude
-        from auto_engineering.init._shared.exclude import parse_exclude_callback
+        from init_engineering.init._shared.exclude import parse_exclude_callback
 
         assert parse_exclude_callback(cfg.exclude_callback) is default_match_exclude
 
@@ -1217,8 +1217,8 @@ class TestExcludeCallback:
         验证 P1.2 集成: 通过 TemplateRenderer 的 match_exclude 参数,
         .git/ 和 __pycache__/ 文件被排除.
         """
-        from auto_engineering.init._shared.exclude import default_match_exclude
-        from auto_engineering.init.renderer import TemplateRenderer
+        from init_engineering.init._shared.exclude import default_match_exclude
+        from init_engineering.init.renderer import TemplateRenderer
 
         # 创建模板目录: 含 .git/, __pycache__/, src/
         template_dir = tmp_path / "template"
@@ -1255,12 +1255,12 @@ class TestExcludeCallback:
         """
         import inspect
 
-        from auto_engineering.init.scaffold_render import render_to
+        from init_engineering.init.scaffold_render import render_to
 
         sig = inspect.signature(render_to)
         assert "exclude_callback" in sig.parameters
         # 默认值
         param = sig.parameters["exclude_callback"]
         assert param.default == (
-            "auto_engineering.init._shared.exclude:default_match_exclude"
+            "init_engineering.init._shared.exclude:default_match_exclude"
         )

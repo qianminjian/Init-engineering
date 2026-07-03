@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from auto_engineering.init.scaffold import init_project
+from init_engineering.init.scaffold import init_project
 
 
 class TestInitProject:

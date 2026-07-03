@@ -8,7 +8,7 @@ from unittest.mock import patch
 import pytest
 import yaml
 
-from auto_engineering.init.answers import BUILTIN_VARS, AnswersMap, _LazyExternalDict
+from init_engineering.init.answers import BUILTIN_VARS, AnswersMap, _LazyExternalDict
 
 
 class TestBuiltinVars:

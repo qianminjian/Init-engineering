@@ -290,7 +290,7 @@ class TestInitWorkerFivePhases:
     """C2: 直接调用 InitWorker 测 5 阶段流程."""
 
     def test_execute_incremental_mode(self, tmp_path: Path):
-        from auto_engineering.init.scaffold import InitWorker
+        from init_engineering.init.scaffold import InitWorker
 
         dst = tmp_path / "p"
         dst.mkdir()
@@ -312,7 +312,7 @@ class TestInitWorkerFivePhases:
         assert result.project_type == "library"
 
     def test_execute_returns_init_result(self, tmp_path: Path):
-        from auto_engineering.init.scaffold import InitResult, InitWorker
+        from init_engineering.init.scaffold import InitResult, InitWorker
 
         dst = tmp_path / "result"
         worker = InitWorker(
@@ -329,7 +329,7 @@ class TestInitWorkerFivePhases:
         assert len(result.files) > 0
 
     def test_execute_pretend_no_dst(self, tmp_path: Path):
-        from auto_engineering.init.scaffold import InitWorker
+        from init_engineering.init.scaffold import InitWorker
 
         dst = tmp_path / "pretend"
         worker = InitWorker(
@@ -345,7 +345,7 @@ class TestInitWorkerFivePhases:
 
     def test_phase_prompt_with_defaults(self, tmp_path: Path):
         """_phase_prompt 在 defaults=True 时不调用 InteractivePrompt."""
-        from auto_engineering.init.scaffold import InitWorker
+        from init_engineering.init.scaffold import InitWorker
 
         dst = tmp_path / "p"
         worker = InitWorker(
@@ -359,7 +359,7 @@ class TestInitWorkerFivePhases:
 
     def test_phase_render_generates_files(self, tmp_path: Path):
         """_phase_render 渲染到 tmpdir."""
-        from auto_engineering.init.scaffold import InitWorker
+        from init_engineering.init.scaffold import InitWorker
 
         dst = tmp_path / "p"
         worker = InitWorker(
@@ -377,7 +377,7 @@ class TestInitWorkerFivePhases:
 
     def test_context_manager_runs_cleanup(self, tmp_path: Path):
         """__enter__/__exit__ 自动 cleanup."""
-        from auto_engineering.init.scaffold import InitWorker
+        from init_engineering.init.scaffold import InitWorker
 
         dst = tmp_path / "p"
         with InitWorker(
@@ -406,7 +406,7 @@ class TestTemplatesSuffixE2E:
         """
         import tempfile
 
-        from auto_engineering.init.renderer import TemplateRenderer
+        from init_engineering.init.renderer import TemplateRenderer
 
         src_dir = Path(tempfile.mkdtemp(prefix="ae-tmpl-src-"))
         dst_dir = Path(tempfile.mkdtemp(prefix="ae-tmpl-dst-"))
@@ -441,7 +441,7 @@ class TestTemplatesSuffixE2E:
         """T2-5: 默认 templates_suffix=".jinja" 时 .jinja 文件被正确渲染."""
         import tempfile
 
-        from auto_engineering.init.renderer import TemplateRenderer
+        from init_engineering.init.renderer import TemplateRenderer
 
         src_dir = Path(tempfile.mkdtemp(prefix="ae-jinja-src-"))
         dst_dir = Path(tempfile.mkdtemp(prefix="ae-jinja-dst-"))

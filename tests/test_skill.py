@@ -1,13 +1,13 @@
 """skill.py 单元测试 — Agent Skill 入口.
 
-覆盖 auto_engineering/skill.py (0% → 测试目标)。
+覆盖 init_engineering/skill.py (0% → 测试目标)。
 """
 
 from pathlib import Path
 
 import pytest
 
-from auto_engineering.skill import (
+from init_engineering.skill import (
     _parse_prompt,
     _run_analyze,
     _run_detect,
@@ -24,7 +24,7 @@ class TestResolvePath:
 
     def test_resolve_existing_path(self, tmp_path: Path):
         """存在的路径直接 resolve."""
-        from auto_engineering.skill import _resolve_path
+        from init_engineering.skill import _resolve_path
 
         existing = tmp_path / "real"
         existing.mkdir()
@@ -33,14 +33,14 @@ class TestResolvePath:
 
     def test_resolve_dot_returns_cwd(self, tmp_path: Path):
         """path='.' 返回 cwd."""
-        from auto_engineering.skill import _resolve_path
+        from init_engineering.skill import _resolve_path
 
         result = _resolve_path(".", tmp_path)
         assert result == tmp_path
 
     def test_resolve_none_returns_cwd(self, tmp_path: Path):
         """path=None 返回 cwd."""
-        from auto_engineering.skill import _resolve_path
+        from init_engineering.skill import _resolve_path
 
         result = _resolve_path(None, tmp_path)
         assert result == tmp_path
@@ -48,7 +48,7 @@ class TestResolvePath:
     def test_resolve_expands_tilde(self, tmp_path: Path, monkeypatch):
         """~ 展开为家目录路径."""
         import os
-        from auto_engineering.skill import _resolve_path
+        from init_engineering.skill import _resolve_path
 
         # Patch os.path.expanduser to return tmp_path as home
         monkeypatch.setattr(os.path, "expanduser", lambda _: str(tmp_path))
@@ -233,7 +233,7 @@ class TestSkillResult:
     """SkillResult 数据类."""
 
     def test_skill_result_fields(self):
-        from auto_engineering.skill import SkillResult
+        from init_engineering.skill import SkillResult
 
         r = SkillResult(
             success=True,
@@ -253,7 +253,7 @@ class TestSkillResult:
         assert r.details == {"files": 10}
 
     def test_skill_result_defaults(self):
-        from auto_engineering.skill import SkillResult
+        from init_engineering.skill import SkillResult
 
         r = SkillResult(success=True, message="ok")
         assert r.action == ""

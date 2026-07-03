@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from auto_engineering.init.renderer import TemplateRenderer
+from init_engineering.init.renderer import TemplateRenderer
 
 
 class TestTemplateRendererEdgeCases:
@@ -393,7 +393,7 @@ class TestIsBinaryFallback:
 
         # Re-import renderer to trigger the import fallback
         import importlib
-        import auto_engineering.init.renderer as ren_mod
+        import init_engineering.init.renderer as ren_mod
         importlib.reload(ren_mod)
 
         try:
@@ -408,7 +408,7 @@ class TestIsBinaryFallback:
             (src / "a.txt").write_text("hello")
 
             dst = tmp_path / "dst"
-            from auto_engineering.init.renderer import TemplateRenderer
+            from init_engineering.init.renderer import TemplateRenderer
             renderer = TemplateRenderer(
                 template_dirs=[src],
                 context={},

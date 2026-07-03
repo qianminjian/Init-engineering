@@ -8,8 +8,8 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from auto_engineering.init.answers import AnswersMap
-from auto_engineering.init.scaffold_hooks import merge_incremental, run_builtin_hooks
+from init_engineering.init.answers import AnswersMap
+from init_engineering.init.scaffold_hooks import merge_incremental, run_builtin_hooks
 
 
 class TestMergeIncremental:
@@ -110,7 +110,7 @@ class TestBuiltinHooksGitFallback:
 
     def test_git_init_fallback_on_unknown_option(self, tmp_path: Path):
         """git init -b main 失败时回退到 git init (lines 35-46)."""
-        from auto_engineering.init.scaffold_hooks import run_builtin_hooks
+        from init_engineering.init.scaffold_hooks import run_builtin_hooks
 
         answers = AnswersMap(defaults={"package_manager": "", "use_lefthook": False})
         calls = []
@@ -137,7 +137,7 @@ class TestBuiltinHooksGitFallback:
                 result.stderr = ""
             return result
 
-        with patch("auto_engineering.init.scaffold_hooks.subprocess.run", mock_run):
+        with patch("init_engineering.init.scaffold_hooks.subprocess.run", mock_run):
             run_builtin_hooks(answers, tmp_path)
 
         assert ["git", "init", "-b", "main"] in calls
@@ -145,7 +145,7 @@ class TestBuiltinHooksGitFallback:
 
     def test_git_init_error_warns_not_raises(self, tmp_path: Path):
         """git init 失败时打印 warning 不抛异常（改为非阻塞）. """
-        from auto_engineering.init.scaffold_hooks import run_builtin_hooks
+        from init_engineering.init.scaffold_hooks import run_builtin_hooks
 
         answers = AnswersMap(defaults={"package_manager": "", "use_lefthook": False})
 
@@ -170,13 +170,13 @@ class TestBuiltinHooksGitFallback:
                 result.stderr = ""
             return result
 
-        with patch("auto_engineering.init.scaffold_hooks.subprocess.run", mock_run):
+        with patch("init_engineering.init.scaffold_hooks.subprocess.run", mock_run):
             # 不再抛异常，非阻塞
             run_builtin_hooks(answers, tmp_path)
 
     def test_git_add_warning_on_failure(self, tmp_path: Path):
         """git add 失败时打印 warning 不抛异常 (lines 77-79)."""
-        from auto_engineering.init.scaffold_hooks import run_builtin_hooks
+        from init_engineering.init.scaffold_hooks import run_builtin_hooks
 
         answers = AnswersMap(defaults={"package_manager": "", "use_lefthook": False})
         git_calls = []
@@ -200,7 +200,7 @@ class TestBuiltinHooksGitFallback:
                 result.stderr = ""
             return result
 
-        with patch("auto_engineering.init.scaffold_hooks.subprocess.run", mock_run):
+        with patch("init_engineering.init.scaffold_hooks.subprocess.run", mock_run):
             with patch("builtins.print") as mock_print:
                 run_builtin_hooks(answers, tmp_path)
 
@@ -209,7 +209,7 @@ class TestBuiltinHooksGitFallback:
 
     def test_git_commit_warning_on_failure(self, tmp_path: Path):
         """git commit 失败时打印 warning 不抛异常 (lines 89-92)."""
-        from auto_engineering.init.scaffold_hooks import run_builtin_hooks
+        from init_engineering.init.scaffold_hooks import run_builtin_hooks
 
         answers = AnswersMap(defaults={"package_manager": "", "use_lefthook": False})
         git_calls = {}
@@ -228,7 +228,7 @@ class TestBuiltinHooksGitFallback:
                 result.stderr = ""
             return result
 
-        with patch("auto_engineering.init.scaffold_hooks.subprocess.run", mock_run):
+        with patch("init_engineering.init.scaffold_hooks.subprocess.run", mock_run):
             with patch("builtins.print") as mock_print:
                 run_builtin_hooks(answers, tmp_path)
 
@@ -236,7 +236,7 @@ class TestBuiltinHooksGitFallback:
 
     def test_lefthook_install_failure_warns_not_raises(self, tmp_path: Path):
         """lefthook install 失败时打印 warning 不抛异常（改为非阻塞）. """
-        from auto_engineering.init.scaffold_hooks import run_builtin_hooks
+        from init_engineering.init.scaffold_hooks import run_builtin_hooks
 
         answers = AnswersMap(defaults={"package_manager": "", "use_lefthook": True})
         calls = {}
@@ -259,7 +259,7 @@ class TestBuiltinHooksGitFallback:
                 result.stderr = ""
             return result
 
-        with patch("auto_engineering.init.scaffold_hooks.subprocess.run", mock_run):
+        with patch("init_engineering.init.scaffold_hooks.subprocess.run", mock_run):
             # 不再抛异常，非阻塞
             run_builtin_hooks(answers, tmp_path)
 
@@ -269,7 +269,7 @@ class TestBuiltinHooksPackageManager:
 
     def test_package_manager_install_missing_file_skips(self, tmp_path: Path):
         """package_manager install 无 package 文件时跳过不抛异常."""
-        from auto_engineering.init.scaffold_hooks import run_builtin_hooks
+        from init_engineering.init.scaffold_hooks import run_builtin_hooks
 
         answers = AnswersMap(defaults={"package_manager": "npm", "use_lefthook": False})
 
@@ -286,7 +286,7 @@ class TestBuiltinHooksPackageManager:
                 result.stderr = ""
             return result
 
-        with patch("auto_engineering.init.scaffold_hooks.subprocess.run", mock_run):
+        with patch("init_engineering.init.scaffold_hooks.subprocess.run", mock_run):
             # 跳过 npm install（无 package.json），不抛异常
             run_builtin_hooks(answers, tmp_path)
 
@@ -296,7 +296,7 @@ class TestCleanupHook:
 
     def test_cleanup_hook_exception_swallowed(self, tmp_path: Path):
         """_cleanup 中的异常应被 suppress，不向外扩散."""
-        from auto_engineering.init.scaffold_phases import InitWorker
+        from init_engineering.init.scaffold_phases import InitWorker
 
         worker = InitWorker(dst_path=tmp_path / "proj")
         called = [False]

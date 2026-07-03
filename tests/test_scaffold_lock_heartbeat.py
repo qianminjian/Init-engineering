@@ -25,8 +25,8 @@ from unittest import mock
 
 import pytest
 
-from auto_engineering.init.errors import TargetDirectoryError
-from auto_engineering.init.scaffold_lock import InitLock
+from init_engineering.init.errors import TargetDirectoryError
+from init_engineering.init.scaffold_lock import InitLock
 
 
 # 注: scaffold_lock.acquire() 用 fcntl.flock — 在 Linux/macOS CI 上真实存在.

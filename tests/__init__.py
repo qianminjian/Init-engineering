@@ -1,1 +1,1 @@
-"""Tests for auto_engineering."""
+"""Tests for init_engineering."""

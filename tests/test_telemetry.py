@@ -8,7 +8,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from auto_engineering.telemetry import TelemetryEvent, _is_enabled, send
+from init_engineering.telemetry import TelemetryEvent, _is_enabled, send
 
 
 class TestIsEnabled:

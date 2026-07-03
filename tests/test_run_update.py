@@ -40,10 +40,10 @@ _meta:
 
 def test_run_update_adds_missing_files(project_with_answers: Path, monkeypatch: pytest.MonkeyPatch):
     """run_update 应补充之前未生成的新文件."""
-    from auto_engineering.init.scaffold_update import run_update
+    from init_engineering.init.scaffold_update import run_update
 
     # 模拟 render_to 在 tmpdir 中创建新文件
-    from auto_engineering.init import scaffold_render
+    from init_engineering.init import scaffold_render
 
     real_render_to = scaffold_render.render_to
 
@@ -52,7 +52,7 @@ def test_run_update_adds_missing_files(project_with_answers: Path, monkeypatch: 
         return real_render_to(answers=answers, tmpdir=tmpdir, **kwargs)
 
     monkeypatch.setattr(
-        "auto_engineering.init.scaffold_update._render_to", fake_render_to
+        "init_engineering.init.scaffold_update._render_to", fake_render_to
     )
 
     result = run_update(
@@ -69,12 +69,12 @@ def test_run_update_skip_keeps_user_modification(
     project_with_answers: Path, monkeypatch: pytest.MonkeyPatch
 ):
     """冲突策略 skip: 保留用户修改的文件."""
-    from auto_engineering.init.scaffold_update import run_update
+    from init_engineering.init.scaffold_update import run_update
 
     # 用户手动修改的 pyproject.toml
     (project_with_answers / "pyproject.toml").write_text("# USER MODIFIED\n")
 
-    from auto_engineering.init import scaffold_render
+    from init_engineering.init import scaffold_render
 
     real_render_to = scaffold_render.render_to
 
@@ -83,7 +83,7 @@ def test_run_update_skip_keeps_user_modification(
         return real_render_to(answers=answers, tmpdir=tmpdir, **kwargs)
 
     monkeypatch.setattr(
-        "auto_engineering.init.scaffold_update._render_to", fake_render_to
+        "init_engineering.init.scaffold_update._render_to", fake_render_to
     )
 
     result = run_update(
@@ -100,11 +100,11 @@ def test_run_update_overwrite_replaces(
     project_with_answers: Path, monkeypatch: pytest.MonkeyPatch
 ):
     """冲突策略 overwrite: 用新版本覆盖."""
-    from auto_engineering.init.scaffold_update import run_update
+    from init_engineering.init.scaffold_update import run_update
 
     (project_with_answers / "pyproject.toml").write_text("# USER MODIFIED\n")
 
-    from auto_engineering.init import scaffold_render
+    from init_engineering.init import scaffold_render
 
     real_render_to = scaffold_render.render_to
 
@@ -113,7 +113,7 @@ def test_run_update_overwrite_replaces(
         return real_render_to(answers=answers, tmpdir=tmpdir, **kwargs)
 
     monkeypatch.setattr(
-        "auto_engineering.init.scaffold_update._render_to", fake_render_to
+        "init_engineering.init.scaffold_update._render_to", fake_render_to
     )
 
     result = run_update(
@@ -129,9 +129,9 @@ def test_run_update_dry_run_no_write(
     project_with_answers: Path, monkeypatch: pytest.MonkeyPatch
 ):
     """dry_run 模式不写入文件."""
-    from auto_engineering.init.scaffold_update import run_update
+    from init_engineering.init.scaffold_update import run_update
 
-    from auto_engineering.init import scaffold_render
+    from init_engineering.init import scaffold_render
 
     real_render_to = scaffold_render.render_to
 
@@ -140,7 +140,7 @@ def test_run_update_dry_run_no_write(
         return real_render_to(answers=answers, tmpdir=tmpdir, **kwargs)
 
     monkeypatch.setattr(
-        "auto_engineering.init.scaffold_update._render_to", fake_render_to
+        "init_engineering.init.scaffold_update._render_to", fake_render_to
     )
 
     result = run_update(
@@ -154,7 +154,7 @@ def test_run_update_dry_run_no_write(
 
 def test_run_update_updates_meta(project_with_answers: Path, monkeypatch: pytest.MonkeyPatch):
     """run_update 应更新 .ae-answers.yml 的 _meta 字段."""
-    from auto_engineering.init.scaffold_update import run_update
+    from init_engineering.init.scaffold_update import run_update
 
     result = run_update(
         dst_path=project_with_answers,
@@ -170,7 +170,7 @@ def test_run_update_updates_meta(project_with_answers: Path, monkeypatch: pytest
 
 def test_run_update_force_without_answers(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """无 .ae-answers.yml + force → 退化为 fresh init."""
-    from auto_engineering.init.scaffold_update import run_update
+    from init_engineering.init.scaffold_update import run_update
 
     # 提供 package.json 触发 library 推断
     (tmp_path / "pyproject.toml").write_text("[project]\nname = 'x'\n")

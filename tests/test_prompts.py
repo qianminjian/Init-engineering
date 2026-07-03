@@ -5,12 +5,12 @@ from unittest.mock import patch
 
 import pytest
 
-from auto_engineering.init.prompts import (
+from init_engineering.init.prompts import (
     InteractivePrompt,
     prompt_for_nested_template,
     prompt_for_project_type,
 )
-from auto_engineering.init.config_types import Question
+from init_engineering.init.config_types import Question
 
 
 class TestPromptForNestedTemplate:
@@ -156,7 +156,7 @@ class TestPromptForProjectType:
 
     def test_prompt_for_project_type(self):
         """click.prompt 被调用."""
-        with patch("auto_engineering.init.prompts.click.prompt") as mock_prompt:
+        with patch("init_engineering.init.prompts.click.prompt") as mock_prompt:
             mock_prompt.return_value = "app-service"
             result = prompt_for_project_type(["app-service", "library"])
             assert result == "app-service"
@@ -378,7 +378,7 @@ class TestPromptForNestedTemplateInteractive:
             "ts": {"path": "./typescript", "title": "TypeScript"},
             "js": {"path": "./javascript", "title": "JavaScript"},
         }
-        with patch("auto_engineering.init.prompts.click.prompt") as mock_prompt:
+        with patch("init_engineering.init.prompts.click.prompt") as mock_prompt:
             mock_prompt.return_value = "ts"
             result = prompt_for_nested_template(nested, no_input=False)
             assert result == "./typescript"
@@ -386,7 +386,7 @@ class TestPromptForNestedTemplateInteractive:
     def test_interactive_returns_none_for_missing_choice(self):
         """无效选择返回空字符串."""
         nested = {"ts": {"path": "./ts", "title": "TS"}}
-        with patch("auto_engineering.init.prompts.click.prompt") as mock_prompt:
+        with patch("init_engineering.init.prompts.click.prompt") as mock_prompt:
             mock_prompt.return_value = "nonexistent"
             result = prompt_for_nested_template(nested, no_input=False)
             assert result == ""

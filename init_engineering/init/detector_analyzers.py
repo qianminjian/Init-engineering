@@ -14,10 +14,10 @@ import tomllib
 from pathlib import Path
 
 from .detector_constants import (
-    DetectionResult,
     _GO_FRAMEWORKS,
     _NODE_FRAMEWORKS,
     _PYTHON_FRAMEWORKS,
+    DetectionResult,
 )
 
 

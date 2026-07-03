@@ -32,12 +32,12 @@ from .scaffold_prereq import check_template_version
 from .scaffold_render import render_to as _render_to
 from .scaffold_tasks_runner import TaskRunner, run_builtin_hooks, run_tasks_phase
 
-# Backward-compat re-export: 测试 patch("auto_engineering.init.scaffold_phases.<name>")
+# Backward-compat re-export: 测试 patch("init_engineering.init.scaffold_phases.<name>")
 # 必须仍能找到该符号 — 实际实现迁移，但语义未变。
-TaskRunner = TaskRunner  # noqa: F811
-run_builtin_hooks = run_builtin_hooks  # noqa: F811
-# 同理：测试 patch("auto_engineering.init.scaffold_phases._render_to")
-_render_to = _render_to  # noqa: F811
+TaskRunner = TaskRunner
+run_builtin_hooks = run_builtin_hooks
+# 同理：测试 patch("init_engineering.init.scaffold_phases._render_to")
+_render_to = _render_to
 
 _logger = logging.getLogger(__name__)
 

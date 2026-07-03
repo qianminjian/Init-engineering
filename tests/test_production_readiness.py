@@ -21,8 +21,8 @@ class TestAnalyzeInitE2E:
 
     def test_analyze_python_library_then_init(self, tmp_path: Path):
         """在模拟 Python 库项目上 analyze → init 全流程."""
-        from auto_engineering.init.detector import ProjectDetector
-        from auto_engineering.init.scaffold import InitWorker
+        from init_engineering.init.detector import ProjectDetector
+        from init_engineering.init.scaffold import InitWorker
 
         # 1. 构造模拟的 Python 库项目
         proj = tmp_path / "my-pylib"
@@ -63,8 +63,8 @@ class TestAnalyzeInitE2E:
 
     def test_analyze_node_app_then_init(self, tmp_path: Path):
         """模拟 Node.js app-service 项目."""
-        from auto_engineering.init.detector import ProjectDetector
-        from auto_engineering.init.scaffold import InitWorker
+        from init_engineering.init.detector import ProjectDetector
+        from init_engineering.init.scaffold import InitWorker
 
         proj = tmp_path / "my-node-app"
         proj.mkdir()
@@ -105,7 +105,7 @@ class TestAnalyzeInitE2E:
 
     def test_analyze_go_project(self, tmp_path: Path):
         """模拟 Go 项目 — 验证 go.mod 解析和框架检测."""
-        from auto_engineering.init.detector import ProjectDetector
+        from init_engineering.init.detector import ProjectDetector
 
         proj = tmp_path / "my-go-svc"
         proj.mkdir()
@@ -124,7 +124,7 @@ class TestAnalyzeInitE2E:
 
     def test_analyze_ci_detection_github(self, tmp_path: Path):
         """检测 GitHub Actions CI."""
-        from auto_engineering.init.detector import ProjectDetector
+        from init_engineering.init.detector import ProjectDetector
 
         proj = tmp_path / "ci-github"
         proj.mkdir()
@@ -139,7 +139,7 @@ class TestAnalyzeInitE2E:
 
     def test_analyze_ci_detection_gitlab(self, tmp_path: Path):
         """检测 GitLab CI."""
-        from auto_engineering.init.detector import ProjectDetector
+        from init_engineering.init.detector import ProjectDetector
 
         proj = tmp_path / "ci-gitlab"
         proj.mkdir()
@@ -152,7 +152,7 @@ class TestAnalyzeInitE2E:
 
     def test_analyze_empty_dir(self, tmp_path: Path):
         """空目录 analyze 返回空 candidates."""
-        from auto_engineering.init.detector import ProjectDetector
+        from init_engineering.init.detector import ProjectDetector
 
         proj = tmp_path / "empty"
         proj.mkdir()
@@ -163,7 +163,7 @@ class TestAnalyzeInitE2E:
 
     def test_analyze_rust_project(self, tmp_path: Path):
         """Rust 项目基本检测."""
-        from auto_engineering.init.detector import ProjectDetector
+        from init_engineering.init.detector import ProjectDetector
 
         proj = tmp_path / "my-crate"
         proj.mkdir()
@@ -177,7 +177,7 @@ class TestAnalyzeInitE2E:
 
     def test_analyze_monorepo_over_library(self, tmp_path: Path):
         """pnpm-workspace + pyproject → monorepo 优先于 library."""
-        from auto_engineering.init.detector import ProjectDetector
+        from init_engineering.init.detector import ProjectDetector
 
         proj = tmp_path / "mono"
         proj.mkdir()
@@ -191,8 +191,8 @@ class TestAnalyzeInitE2E:
 
     def test_analyze_detection_feeds_init_defaults(self, tmp_path: Path):
         """analyze 结果正确注入 InitWorker 作为 builtin 默认值."""
-        from auto_engineering.init.detector import ProjectDetector
-        from auto_engineering.init.scaffold import InitWorker
+        from init_engineering.init.detector import ProjectDetector
+        from init_engineering.init.scaffold import InitWorker
 
         proj = tmp_path / "detect-feed"
         proj.mkdir()
@@ -223,7 +223,7 @@ class TestAnalyzeInitE2E:
 
     def test_analyze_result_as_answers(self, tmp_path: Path):
         """DetectionResult.as_answers() 生成正确字典."""
-        from auto_engineering.init.detector import DetectionResult
+        from init_engineering.init.detector import DetectionResult
 
         result = DetectionResult(
             project_type="library",
@@ -246,7 +246,7 @@ class TestAnalyzeInitE2E:
 
     def test_analyze_package_json_no_deps(self, tmp_path: Path):
         """package.json 无 dependencies 字段 — 不崩溃."""
-        from auto_engineering.init.detector import ProjectDetector
+        from init_engineering.init.detector import ProjectDetector
 
         proj = tmp_path / "minimal-node"
         proj.mkdir()
@@ -259,7 +259,7 @@ class TestAnalyzeInitE2E:
 
     def test_analyze_broken_json_graceful(self, tmp_path: Path):
         """损坏的 package.json 不抛异常."""
-        from auto_engineering.init.detector import ProjectDetector
+        from init_engineering.init.detector import ProjectDetector
 
         proj = tmp_path / "broken"
         proj.mkdir()
@@ -340,8 +340,8 @@ class TestStrictModeHooks:
 
     def test_hook_runner_strict_raises(self, tmp_path: Path):
         """strict=True 时钩子命令失败抛 HookExecutionError."""
-        from auto_engineering.init.errors import HookExecutionError
-        from auto_engineering.init.hooks import HookRunner, HookSpec
+        from init_engineering.init.errors import HookExecutionError
+        from init_engineering.init.hooks import HookRunner, HookSpec
 
         spec = HookSpec(before_renderer=["exit 1"])
         runner = HookRunner(tmp_path, spec=spec, strict=True)
@@ -353,7 +353,7 @@ class TestStrictModeHooks:
     def test_hook_runner_non_strict_warns(self, tmp_path: Path, caplog):
         """strict=False 时钩子失败只 warning."""
         import logging
-        from auto_engineering.init.hooks import HookRunner, HookSpec
+        from init_engineering.init.hooks import HookRunner, HookSpec
 
         spec = HookSpec(before_renderer=["exit 1"])
         runner = HookRunner(tmp_path, spec=spec, strict=False)
@@ -365,8 +365,8 @@ class TestStrictModeHooks:
 
     def test_builtin_hooks_strict_raises_on_git_fail(self, tmp_path: Path, monkeypatch):
         """strict=True 时 builtin git init 失败抛异常."""
-        from auto_engineering.init.errors import HookExecutionError
-        from auto_engineering.init.scaffold_hooks import run_builtin_hooks
+        from init_engineering.init.errors import HookExecutionError
+        from init_engineering.init.scaffold_hooks import run_builtin_hooks
 
         # Mock subprocess.run 让它返回失败
         import subprocess as sp
@@ -431,8 +431,8 @@ class TestConcurrencySafety:
         """
         import fcntl
         import os as _os
-        from auto_engineering.init.errors import TargetDirectoryError
-        from auto_engineering.init.scaffold import InitWorker
+        from init_engineering.init.errors import TargetDirectoryError
+        from init_engineering.init.scaffold import InitWorker
 
         target = tmp_path / "locked-target"
         target.mkdir()
@@ -475,8 +475,8 @@ class TestConcurrencySafety:
 
     def test_initworker_blocks_concurrent_init_after_phase_detect(self, tmp_path: Path):
         """B1 regression: phase_detect 之后,第二个 init 仍被阻止 (锁持续持有)."""
-        from auto_engineering.init.errors import TargetDirectoryError
-        from auto_engineering.init.scaffold import InitWorker
+        from init_engineering.init.errors import TargetDirectoryError
+        from init_engineering.init.scaffold import InitWorker
 
         target = tmp_path / "blocked"
         target.mkdir()

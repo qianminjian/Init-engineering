@@ -10,8 +10,9 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 from .config import TEMPLATES_ROOT
 
@@ -145,7 +146,7 @@ def render_to(
     envops: dict,
     overwrite: bool,
     tmpdir: Path,
-    exclude_callback: str = "auto_engineering.init._shared.exclude:default_match_exclude",
+    exclude_callback: str = "init_engineering.init._shared.exclude:default_match_exclude",
     templates_suffix: str = ".jinja",
     preserve_symlinks: bool = True,
     on_exists: Callable[[str], None] | None = None,

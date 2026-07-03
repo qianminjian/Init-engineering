@@ -68,7 +68,7 @@ class TemplateConfig:
     # （来源: Copier _main.py:753 match_exclude Callable[[Path], bool]）
     # 默认指向 _shared.exclude.default_match_exclude
     exclude_callback: str = (
-        "auto_engineering.init._shared.exclude:default_match_exclude"
+        "init_engineering.init._shared.exclude:default_match_exclude"
     )
 
     # P1#7: _envops — Jinja2 环境选项（来源: Copier copier.yaml _envops）

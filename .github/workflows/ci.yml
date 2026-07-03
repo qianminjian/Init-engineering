@@ -24,7 +24,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - run: uv sync --dev
       - run: uv run pytest tests/ --no-cov --timeout=120 -q
-      - run: uv run ruff check auto_engineering/
+      - run: uv run ruff check init_engineering/
 
   coverage:
     name: coverage gate
@@ -37,7 +37,7 @@ jobs:
       - run: uv sync --dev
       # PE-P1-6: 覆盖率门禁 — coverage fail-under=80 (CLAUDE.md 项目规则 ≥80%)
       # coverage gate fail 时整个 job 红, PR 无法 merge
-      - run: uv run pytest tests/ --cov=auto_engineering --cov-report=term-missing --cov-fail-under=80 --timeout=120 -q
+      - run: uv run pytest tests/ --cov=init_engineering --cov-report=term-missing --cov-fail-under=80 --timeout=120 -q
 
   # SE-P1-4: pip-audit — 检查依赖已知 CVE (PyPI Advisory Database)
   # --strict: 有 vuln 直接 exit 1, 阻断 PR

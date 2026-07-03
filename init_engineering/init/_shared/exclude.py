@@ -66,7 +66,7 @@ def parse_exclude_callback(spec: str) -> Callable[[Path], bool]:
     """解析 "module:function" 格式 spec, 返回可调用对象.
 
     Examples:
-        'auto_engineering.init._shared.exclude:default_match_exclude'
+        'init_engineering.init._shared.exclude:default_match_exclude'
         'my_project.custom_exclude:my_match'
 
     Args:

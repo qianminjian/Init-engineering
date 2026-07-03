@@ -19,7 +19,7 @@ class TestHookRunnerBeforeRenderer:
 
     def test_hook_runner_before_renderer(self, tmp_path, caplog):
         """before_renderer hook 应在渲染开始前被调用."""
-        from auto_engineering.init.hooks import HookRunner, HookSpec
+        from init_engineering.init.hooks import HookRunner, HookSpec
 
         project_dir = tmp_path / "project"
         project_dir.mkdir()
@@ -46,7 +46,7 @@ class TestHookRunnerBeforeRenderer:
 
     def test_hook_runner_before_renderer_skipped_when_spec_none(self, tmp_path, caplog):
         """before_renderer hook 应在 spec.before_renderer=None 时跳过."""
-        from auto_engineering.init.hooks import HookRunner, HookSpec
+        from init_engineering.init.hooks import HookRunner, HookSpec
 
         project_dir = tmp_path / "project"
         project_dir.mkdir()
@@ -66,7 +66,7 @@ class TestHookRunnerAfterRenderer:
 
     def test_hook_runner_after_renderer(self, tmp_path, caplog):
         """after_renderer hook 应在渲染结束后被调用，传入 generated_files."""
-        from auto_engineering.init.hooks import HookRunner, HookSpec
+        from init_engineering.init.hooks import HookRunner, HookSpec
 
         project_dir = tmp_path / "project"
         project_dir.mkdir()
@@ -95,7 +95,7 @@ class TestHookRunnerBeforeCopyFile:
 
     def test_hook_runner_before_copy_file(self, tmp_path, caplog):
         """before_copy_file hook 应在复制单个文件前被调用."""
-        from auto_engineering.init.hooks import HookRunner, HookSpec
+        from init_engineering.init.hooks import HookRunner, HookSpec
 
         project_dir = tmp_path / "project"
         project_dir.mkdir()
@@ -125,7 +125,7 @@ class TestHookRunnerAfterCopyFile:
 
     def test_hook_runner_after_copy_file(self, tmp_path, caplog):
         """after_copy_file hook 应在复制单个文件后被调用."""
-        from auto_engineering.init.hooks import HookRunner, HookSpec
+        from init_engineering.init.hooks import HookRunner, HookSpec
 
         project_dir = tmp_path / "project"
         project_dir.mkdir()
@@ -155,7 +155,7 @@ class TestHookRunnerOnExists:
 
     def test_hook_runner_on_exists(self, tmp_path, caplog):
         """on_exists hook 应在目标文件已存在时被调用."""
-        from auto_engineering.init.hooks import HookRunner, HookSpec
+        from init_engineering.init.hooks import HookRunner, HookSpec
 
         project_dir = tmp_path / "project"
         project_dir.mkdir()
@@ -183,7 +183,7 @@ class TestHookRunnerNonBlocking:
 
     def test_hook_runner_fails_are_non_blocking(self, tmp_path, caplog):
         """钩子执行失败应 log warning 并继续，不应抛出异常阻断主流程."""
-        from auto_engineering.init.hooks import HookRunner, HookSpec
+        from init_engineering.init.hooks import HookRunner, HookSpec
 
         project_dir = tmp_path / "project"
         project_dir.mkdir()
@@ -213,7 +213,7 @@ class TestHookSpecDataclass:
 
     def test_hook_spec_defaults_to_none(self):
         """HookSpec 所有字段默认应为 None."""
-        from auto_engineering.init.hooks import HookSpec
+        from init_engineering.init.hooks import HookSpec
 
         spec = HookSpec()
         assert spec.before_renderer is None
@@ -224,7 +224,7 @@ class TestHookSpecDataclass:
 
     def test_hook_spec_accepts_list_values(self):
         """HookSpec 字段应接受 list[str] 值."""
-        from auto_engineering.init.hooks import HookSpec
+        from init_engineering.init.hooks import HookSpec
 
         spec = HookSpec(
             before_renderer=["echo 1", "echo 2"],

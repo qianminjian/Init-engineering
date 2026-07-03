@@ -137,7 +137,7 @@ class TestInitDesignDocs:
 
 
 class TestInitPytestRules:
-    """R26+: ae init 生成的项目含 pytest 内存管理规则（沉淀自 auto-engineering 实战）."""
+    """R26+: ae init 生成的项目含 pytest 内存管理规则（沉淀自 init-engineering 实战）."""
 
     def test_pytest_rule_file_generated(self, tmp_path: Path):
         """Python 项目生成 .claude/rules/pytest-memory-management.md（来自 _features/python/）."""
@@ -193,7 +193,7 @@ class TestInitPytestRules:
         """
         template_path = (
             Path(__file__).resolve().parent.parent
-            / "auto_engineering"
+            / "init_engineering"
             / "init"
             / "templates"
             / "_features"

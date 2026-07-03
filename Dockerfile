@@ -13,7 +13,7 @@ COPY README.md .
 COPY CHANGELOG.md .
 COPY LICENSE .
 COPY SKILL.md .
-COPY auto_engineering/ auto_engineering/
+COPY init_engineering/ init_engineering/
 
 RUN pip install --no-cache-dir .
 

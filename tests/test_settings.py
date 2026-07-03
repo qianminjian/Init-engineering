@@ -6,7 +6,7 @@ import os
 
 import pytest
 
-from auto_engineering.config.settings import _float_env, _int_env
+from init_engineering.config.settings import _float_env, _int_env
 
 
 class TestIntEnv:
@@ -61,7 +61,7 @@ class TestSettingsFromEnv:
     def test_from_env_with_api_key(self, monkeypatch):
         """有 API key 时正常返回 Settings."""
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-key")
-        from auto_engineering.config.settings import Settings
+        from init_engineering.config.settings import Settings
         s = Settings.from_env()
         assert s.anthropic_api_key == "sk-test-key"
 
@@ -69,7 +69,7 @@ class TestSettingsFromEnv:
         """CLAUDE_CODE 环境变量存在时跳过 API key 检查."""
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         monkeypatch.setenv("CLAUDE_CODE", "true")
-        from auto_engineering.config.settings import Settings
+        from init_engineering.config.settings import Settings
         s = Settings.from_env()
         assert s.anthropic_api_key == ""
 
@@ -77,7 +77,7 @@ class TestSettingsFromEnv:
         """无 API key 且非 LLM agent 时抛 ValueError."""
         monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
         monkeypatch.delenv("CLAUDE_CODE", raising=False)
-        from auto_engineering.config.settings import Settings
+        from init_engineering.config.settings import Settings
         with pytest.raises(ValueError) as exc_info:
             Settings.from_env()
         assert "ANTHROPIC_API_KEY" in str(exc_info.value)

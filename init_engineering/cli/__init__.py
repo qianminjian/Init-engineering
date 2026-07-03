@@ -13,7 +13,7 @@ from pathlib import Path
 
 import click
 
-from auto_engineering import __version__
+from init_engineering import __version__
 
 
 @click.group()
@@ -124,9 +124,9 @@ def init(
     hook_timeout: int | None,
 ):
     """项目环境初始化."""
-    from auto_engineering.init import InitWorker
-    from auto_engineering.init.config import TEMPLATES_ROOT
-    from auto_engineering.init.detector import ProjectDetector
+    from init_engineering.init import InitWorker
+    from init_engineering.init.config import TEMPLATES_ROOT
+    from init_engineering.init.detector import ProjectDetector
 
     # --list-types: 列出可用项目类型
     if list_types:
@@ -183,7 +183,7 @@ def init(
         return
 
     if answers_file:
-        from auto_engineering.init import AnswersMap
+        from init_engineering.init import AnswersMap
 
         answers = AnswersMap.from_answers_file(Path(answers_file))
         if not quiet:
@@ -216,8 +216,9 @@ def init(
 
     if telemetry:
         import os as _os
+
         # B6: 首次开启强制引导用户同意 (避免静默收集)
-        from auto_engineering.telemetry import has_consent, request_consent
+        from init_engineering.telemetry import has_consent, request_consent
         if not has_consent():
             if not request_consent():
                 click.echo("已禁用 telemetry (本次 init 不发送数据)", err=False)
@@ -271,7 +272,8 @@ def init(
             elapsed_ms = int((_time.monotonic() - _start_ts) * 1000)
             # Success output is handled by InitWorker._phase_finalize()
             if telemetry:
-                from auto_engineering.telemetry import TelemetryEvent, send as _send_telemetry
+                from init_engineering.telemetry import TelemetryEvent
+                from init_engineering.telemetry import send as _send_telemetry
                 _send_telemetry(TelemetryEvent(
                     ae_version=__version__,
                     command="init",
@@ -283,7 +285,8 @@ def init(
         except Exception as e:
             elapsed_ms = int((_time.monotonic() - _start_ts) * 1000)
             if telemetry:
-                from auto_engineering.telemetry import TelemetryEvent, send as _send_telemetry
+                from init_engineering.telemetry import TelemetryEvent
+                from init_engineering.telemetry import send as _send_telemetry
                 _send_telemetry(TelemetryEvent(
                     ae_version=__version__,
                     command="init",
@@ -379,7 +382,7 @@ def update(
 
     默认策略: skip (保护用户手动修改).  可选: overwrite / prompt.
     """
-    from auto_engineering.init.scaffold_update import run_update
+    from init_engineering.init.scaffold_update import run_update
 
     dst_path = Path(project) if project else Path.cwd()
     result = run_update(
@@ -401,7 +404,7 @@ def update(
 @main.command()
 def status():
     """查看当前项目环境配置."""
-    from auto_engineering.config.environment import ProjectEnvironment
+    from init_engineering.config.environment import ProjectEnvironment
 
     cwd = Path.cwd()
     click.echo(f"当前目录: {cwd}")

@@ -8,23 +8,23 @@ from pathlib import Path
 
 import pytest
 
-from auto_engineering.init.answers import (
+from init_engineering.init.answers import (
     BUILTIN_VARS,
     AnswersMap,
     _LazyExternalDict,
 )
-from auto_engineering.init.config import (
+from init_engineering.init.config import (
     DEFAULT_EXCLUDE,
     Question,
     Task,
     TemplateConfig,
 )
-from auto_engineering.init.detector import (
+from init_engineering.init.detector import (
     FRAMEWORK_SIGNATURES,
     ProjectDetector,
     _signature_matches,
 )
-from auto_engineering.init.errors import (
+from init_engineering.init.errors import (
     ConfigFileError,
     InitError,
     InitInterruptedError,
@@ -34,8 +34,8 @@ from auto_engineering.init.errors import (
     UnsatisfiedPrerequisiteError,
     ValidationError,
 )
-from auto_engineering.init.hooks import TaskRunner
-from auto_engineering.init.renderer import TemplateRenderer
+from init_engineering.init.hooks import TaskRunner
+from init_engineering.init.renderer import TemplateRenderer
 
 # ─── BUILTIN_VARS ────────────────────────────────────────────────────────────
 
@@ -479,7 +479,7 @@ class TestLoadAeTemplate:
 
     def test_load_with_subdirectory(self):
         """测试 _subdirectory 配置."""
-        from auto_engineering.init.config import TEMPLATES_ROOT
+        from init_engineering.init.config import TEMPLATES_ROOT
 
         proj_dir = TEMPLATES_ROOT / "test_proj_sub"
         proj_dir.mkdir(exist_ok=True)
@@ -495,7 +495,7 @@ class TestLoadAeTemplate:
 
     def test_load_with_envops(self, tmp_path, monkeypatch):
         """测试 envops 配置."""
-        from auto_engineering.init.config import TEMPLATES_ROOT
+        from init_engineering.init.config import TEMPLATES_ROOT
 
         proj_dir = TEMPLATES_ROOT / "test_envops"
         proj_dir.mkdir(exist_ok=True)
@@ -513,7 +513,7 @@ class TestLoadAeTemplate:
 
     def test_load_with_no_render(self):
         """测试 _no_render 配置."""
-        from auto_engineering.init.config import TEMPLATES_ROOT
+        from init_engineering.init.config import TEMPLATES_ROOT
 
         proj_dir = TEMPLATES_ROOT / "test_norender"
         proj_dir.mkdir(exist_ok=True)
@@ -529,7 +529,7 @@ class TestLoadAeTemplate:
 
     def test_load_with_min_version(self):
         """测试 _min_ae_version 配置."""
-        from auto_engineering.init.config import TEMPLATES_ROOT
+        from init_engineering.init.config import TEMPLATES_ROOT
 
         proj_dir = TEMPLATES_ROOT / "test_minver"
         proj_dir.mkdir(exist_ok=True)
@@ -545,7 +545,7 @@ class TestLoadAeTemplate:
 
     def test_load_with_templates_suffix(self):
         """测试 _templates_suffix 配置."""
-        from auto_engineering.init.config import TEMPLATES_ROOT
+        from init_engineering.init.config import TEMPLATES_ROOT
 
         proj_dir = TEMPLATES_ROOT / "test_suffix"
         proj_dir.mkdir(exist_ok=True)
@@ -561,7 +561,7 @@ class TestLoadAeTemplate:
 
     def test_load_with_message_before_after(self):
         """测试 _message_before/_message_after."""
-        from auto_engineering.init.config import TEMPLATES_ROOT
+        from init_engineering.init.config import TEMPLATES_ROOT
 
         proj_dir = TEMPLATES_ROOT / "test_msg"
         proj_dir.mkdir(exist_ok=True)
@@ -580,7 +580,7 @@ class TestLoadAeTemplate:
 
     def test_load_with_secret_questions(self):
         """测试 _secret_questions 配置."""
-        from auto_engineering.init.config import TEMPLATES_ROOT
+        from init_engineering.init.config import TEMPLATES_ROOT
 
         proj_dir = TEMPLATES_ROOT / "test_secret"
         proj_dir.mkdir(exist_ok=True)
@@ -596,7 +596,7 @@ class TestLoadAeTemplate:
 
     def test_load_with_external_data(self):
         """测试 _external_data 配置."""
-        from auto_engineering.init.config import TEMPLATES_ROOT
+        from init_engineering.init.config import TEMPLATES_ROOT
 
         proj_dir = TEMPLATES_ROOT / "test_extdata"
         proj_dir.mkdir(exist_ok=True)
@@ -614,7 +614,7 @@ class TestLoadAeTemplate:
 
     def test_load_with_nested_templates(self):
         """测试 _nested_templates 配置."""
-        from auto_engineering.init.config import TEMPLATES_ROOT
+        from init_engineering.init.config import TEMPLATES_ROOT
 
         proj_dir = TEMPLATES_ROOT / "test_nested"
         proj_dir.mkdir(exist_ok=True)
@@ -632,7 +632,7 @@ class TestLoadAeTemplate:
 
     def test_load_with_tasks(self):
         """测试 _tasks 配置."""
-        from auto_engineering.init.config import TEMPLATES_ROOT
+        from init_engineering.init.config import TEMPLATES_ROOT
 
         proj_dir = TEMPLATES_ROOT / "test_tasks"
         proj_dir.mkdir(exist_ok=True)
@@ -651,7 +651,7 @@ class TestLoadAeTemplate:
 
     def test_load_with_skip_if_exists(self):
         """测试 _skip_if_exists 配置."""
-        from auto_engineering.init.config import TEMPLATES_ROOT
+        from init_engineering.init.config import TEMPLATES_ROOT
 
         proj_dir = TEMPLATES_ROOT / "test_skip"
         proj_dir.mkdir(exist_ok=True)

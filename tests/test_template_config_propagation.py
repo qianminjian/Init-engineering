@@ -15,10 +15,10 @@ from unittest.mock import patch
 
 import pytest
 
-from auto_engineering.init.config import TemplateConfig
-from auto_engineering.init.config_loader import load_template_config
-from auto_engineering.init.scaffold_phases import InitWorker
-from auto_engineering.init.scaffold_render import render_to
+from init_engineering.init.config import TemplateConfig
+from init_engineering.init.config_loader import load_template_config
+from init_engineering.init.scaffold_phases import InitWorker
+from init_engineering.init.scaffold_render import render_to
 
 
 class TestTemplateConfigFields:
@@ -33,7 +33,7 @@ class TestTemplateConfigFields:
 
     def test_template_config_has_templates_suffix_field(self) -> None:
         """TemplateConfig dataclass 有 templates_suffix: str 字段, 默认 .jinja."""
-        from auto_engineering.init.config_types import DEFAULT_TEMPLATES_SUFFIX
+        from init_engineering.init.config_types import DEFAULT_TEMPLATES_SUFFIX
 
         cfg = TemplateConfig(template_dir=Path("."))
         assert hasattr(cfg, "templates_suffix")
@@ -56,7 +56,7 @@ class TestConfigLoaderLoadsFields:
                   default: my-project
             """)
         )
-        from auto_engineering.init import config_loader
+        from init_engineering.init import config_loader
 
         monkeypatch.setattr(config_loader, "TEMPLATES_ROOT", tmp_path / "templates")
         cfg = load_template_config("mytype")
@@ -73,7 +73,7 @@ class TestConfigLoaderLoadsFields:
                   default: my-project
             """)
         )
-        from auto_engineering.init import config_loader
+        from init_engineering.init import config_loader
 
         monkeypatch.setattr(config_loader, "TEMPLATES_ROOT", tmp_path / "templates")
         cfg = load_template_config("mytype")
@@ -89,7 +89,7 @@ class TestConfigLoaderLoadsFields:
                   default: my-project
             """)
         )
-        from auto_engineering.init import config_loader
+        from init_engineering.init import config_loader
 
         monkeypatch.setattr(config_loader, "TEMPLATES_ROOT", tmp_path / "templates")
         cfg = load_template_config("mytype")
@@ -105,7 +105,7 @@ class TestConfigLoaderLoadsFields:
                   default: my-project
             """)
         )
-        from auto_engineering.init import config_loader
+        from init_engineering.init import config_loader
 
         monkeypatch.setattr(config_loader, "TEMPLATES_ROOT", tmp_path / "templates")
         cfg = load_template_config("mytype")
@@ -128,7 +128,7 @@ class TestRenderToReceivesFields:
                   default: my-project
             """)
         )
-        from auto_engineering.init import config_loader
+        from init_engineering.init import config_loader
 
         monkeypatch.setattr(config_loader, "TEMPLATES_ROOT", tmp_path / "templates")
         cfg = load_template_config("mytype")
@@ -149,7 +149,7 @@ class TestRenderToReceivesFields:
             "_check_template_version",
             return_value=None,
         ), patch(
-            "auto_engineering.init.scaffold_phase_funcs._render_to"
+            "init_engineering.init.scaffold_phase_funcs._render_to"
         ) as mock_render:
             mock_render.return_value = []
             worker = InitWorker(
@@ -176,7 +176,7 @@ class TestRenderToReceivesFields:
                   default: my-project
             """)
         )
-        from auto_engineering.init import config_loader
+        from init_engineering.init import config_loader
 
         monkeypatch.setattr(config_loader, "TEMPLATES_ROOT", tmp_path / "templates")
         cfg = load_template_config("mytype")
@@ -195,7 +195,7 @@ class TestRenderToReceivesFields:
             "_check_template_version",
             return_value=None,
         ), patch(
-            "auto_engineering.init.scaffold_phase_funcs._render_to"
+            "init_engineering.init.scaffold_phase_funcs._render_to"
         ) as mock_render:
             mock_render.return_value = []
             worker = InitWorker(
@@ -222,7 +222,7 @@ class TestRenderToReceivesFields:
                   default: my-project
             """)
         )
-        from auto_engineering.init import config_loader
+        from init_engineering.init import config_loader
 
         monkeypatch.setattr(config_loader, "TEMPLATES_ROOT", tmp_path / "templates")
         cfg = load_template_config("mytype")
@@ -241,7 +241,7 @@ class TestRenderToReceivesFields:
             "_check_template_version",
             return_value=None,
         ), patch(
-            "auto_engineering.init.scaffold_phase_funcs._render_to"
+            "init_engineering.init.scaffold_phase_funcs._render_to"
         ) as mock_render:
             mock_render.return_value = []
             # CLI 传入 preserve_symlinks=True, 应覆盖模板的 false
@@ -270,7 +270,7 @@ class TestRenderToReceivesFields:
                   default: my-project
             """)
         )
-        from auto_engineering.init import config_loader
+        from init_engineering.init import config_loader
 
         monkeypatch.setattr(config_loader, "TEMPLATES_ROOT", tmp_path / "templates")
         cfg = load_template_config("mytype")
@@ -289,7 +289,7 @@ class TestRenderToReceivesFields:
             "_check_template_version",
             return_value=None,
         ), patch(
-            "auto_engineering.init.scaffold_phase_funcs._render_to"
+            "init_engineering.init.scaffold_phase_funcs._render_to"
         ) as mock_render:
             mock_render.return_value = []
             # CLI 传入 templates_suffix=".custom", 应覆盖模板的 .tmpl

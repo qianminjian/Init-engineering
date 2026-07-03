@@ -21,10 +21,10 @@ def test_sigint_during_interactive_prompt_raises_init_interrupted(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     """SIGINT (KeyboardInterrupt) 在 InteractivePrompt 中应抛 InitInterruptedError."""
-    from auto_engineering.init.config import Question
-    from auto_engineering.init.errors import InitInterruptedError
-    from auto_engineering.init.answers import AnswersMap
-    from auto_engineering.init.prompts import InteractivePrompt
+    from init_engineering.init.config import Question
+    from init_engineering.init.errors import InitInterruptedError
+    from init_engineering.init.answers import AnswersMap
+    from init_engineering.init.prompts import InteractivePrompt
 
     questions = [
         Question(
@@ -59,9 +59,9 @@ def test_sigint_during_interactive_prompt_raises_init_interrupted(
 
 def test_sigint_saves_partial_answers(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """SIGINT 后应调用 answers.save_partial() 保留已收集的答案."""
-    from auto_engineering.init.config import Question
-    from auto_engineering.init.answers import AnswersMap
-    from auto_engineering.init.prompts import InteractivePrompt
+    from init_engineering.init.config import Question
+    from init_engineering.init.answers import AnswersMap
+    from init_engineering.init.prompts import InteractivePrompt
 
     questions = [
         Question(
@@ -85,7 +85,7 @@ def test_sigint_saves_partial_answers(tmp_path: Path, monkeypatch: pytest.Monkey
         raise KeyboardInterrupt()
     except KeyboardInterrupt:
         answers.save_partial()
-        from auto_engineering.init.errors import InitInterruptedError
+        from init_engineering.init.errors import InitInterruptedError
 
         with pytest.raises(InitInterruptedError):
             raise InitInterruptedError() from None
@@ -106,7 +106,7 @@ def test_write_to_readonly_path_raises_permission_error(tmp_path: Path):
 
 def test_project_type_invalid_chars_raises_value_error():
     """project_type 含非法字符 → ValueError（防路径穿越）."""
-    from auto_engineering.init.scaffold_phase_funcs import _validate_project_type
+    from init_engineering.init.scaffold_phase_funcs import _validate_project_type
 
     with pytest.raises(ValueError, match="非法字符"):
         _validate_project_type("../etc")
@@ -121,7 +121,7 @@ def test_project_type_invalid_chars_raises_value_error():
 
 def test_init_lock_release_handles_missing_file(tmp_path: Path):
     """InitLock.release() 处理 lock 文件已被外部删除的情况."""
-    from auto_engineering.init.scaffold_lock import InitLock
+    from init_engineering.init.scaffold_lock import InitLock
 
     lock = InitLock(tmp_path)
     # 即使没 acquire 过，release 也不应抛错
@@ -133,7 +133,7 @@ def test_init_lock_release_handles_missing_file(tmp_path: Path):
 
 def test_init_interrupted_error_has_exit_code():
     """InitInterruptedError 应有 exit_code=130 (SIGINT 标准码)."""
-    from auto_engineering.init.errors import InitInterruptedError
+    from init_engineering.init.errors import InitInterruptedError
 
     err = InitInterruptedError()
     assert err.exit_code == 130
@@ -141,7 +141,7 @@ def test_init_interrupted_error_has_exit_code():
 
 def test_template_render_error_preserves_src_path():
     """TemplateRenderError 应保留 src_path 用于调试."""
-    from auto_engineering.init.errors import TemplateRenderError
+    from init_engineering.init.errors import TemplateRenderError
 
     err = TemplateRenderError(
         src_path="templates/foo.jinja",

@@ -17,8 +17,8 @@ from pathlib import Path
 
 import pytest
 
-from auto_engineering.init.config_loader import _load_yaml_with_includes
-from auto_engineering.init.errors import ConfigLoaderSecurityError, InitError
+from init_engineering.init.config_loader import _load_yaml_with_includes
+from init_engineering.init.errors import ConfigLoaderSecurityError, InitError
 
 
 class TestConfigLoaderSecurityErrorClass:

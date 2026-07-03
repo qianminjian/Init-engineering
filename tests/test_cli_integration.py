@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from auto_engineering.cli import init, main, status
+from init_engineering.cli import init, main, status
 
 
 _runner = CliRunner()
@@ -80,7 +80,7 @@ class TestStatusCommand:
         def fake_resolve(root):
             raise RuntimeError("intentional resolve failure")
         with patch(
-            "auto_engineering.config.environment.ProjectEnvironment.resolve",
+            "init_engineering.config.environment.ProjectEnvironment.resolve",
             fake_resolve,
         ):
             result = _runner.invoke(status, [], input="", standalone_mode=False)
@@ -141,7 +141,7 @@ class TestInitFromAnswers:
         # Mock execute() to raise an exception to trigger the except block
         def fake_execute(self):
             raise RuntimeError("intentional failure")
-        with patch("auto_engineering.init.scaffold_phases.InitWorker.execute", fake_execute):
+        with patch("init_engineering.init.scaffold_phases.InitWorker.execute", fake_execute):
             result = _runner.invoke(init, [
                 str(target),
                 "--skip-tasks",

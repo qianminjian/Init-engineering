@@ -4,7 +4,7 @@
 v5.0 之前的历史错误码(ErrorCode/AEError)已废弃。
 """
 
-from auto_engineering.init.errors import (
+from init_engineering.init.errors import (
     ConfigFileError,
     ConfigLoaderSecurityError,
     HookExecutionError,
@@ -18,14 +18,14 @@ from auto_engineering.init.errors import (
 )
 
 __all__ = [
-    "InitError",
     "ConfigFileError",
-    "UnsatisfiedPrerequisiteError",
-    "TargetDirectoryError",
-    "ValidationError",
-    "TaskExecutionError",
-    "TemplateRenderError",
-    "InitInterruptedError",
     "ConfigLoaderSecurityError",
     "HookExecutionError",
+    "InitError",
+    "InitInterruptedError",
+    "TargetDirectoryError",
+    "TaskExecutionError",
+    "TemplateRenderError",
+    "UnsatisfiedPrerequisiteError",
+    "ValidationError",
 ]

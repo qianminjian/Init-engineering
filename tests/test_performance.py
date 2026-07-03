@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from auto_engineering.init.renderer import TemplateRenderer
+from init_engineering.init.renderer import TemplateRenderer
 
 
 class TestRenderingBenchmark:
@@ -188,9 +188,9 @@ class TestBuildTemplateDirsPerformance:
 
     def test_build_template_dirs_performance(self, tmp_path: Path):
         """build_template_dirs 应在 50ms 内完成."""
-        from auto_engineering.init.scaffold_render import build_template_dirs
+        from init_engineering.init.scaffold_render import build_template_dirs
 
-        type_dir = Path(__file__).parent.parent / "auto_engineering" / "init" / "templates" / "app-service"
+        type_dir = Path(__file__).parent.parent / "init_engineering" / "init" / "templates" / "app-service"
 
         start = time.perf_counter()
         dirs = build_template_dirs(

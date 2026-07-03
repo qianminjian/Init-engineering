@@ -1,4 +1,4 @@
-"""tests for auto_engineering.init._shared.exclude module.
+"""tests for init_engineering.init._shared.exclude module.
 
 Ref: Copier _main.py:753 match_exclude(self) -> Callable[[Path], bool].
 """
@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from auto_engineering.init._shared.exclude import (
+from init_engineering.init._shared.exclude import (
     default_match_exclude,
     parse_exclude_callback,
 )
@@ -92,7 +92,7 @@ class TestParseExcludeCallback:
     def test_valid_spec(self) -> None:
         """Valid 'module:function' spec should return callable."""
         callback = parse_exclude_callback(
-            "auto_engineering.init._shared.exclude:default_match_exclude"
+            "init_engineering.init._shared.exclude:default_match_exclude"
         )
         assert callable(callback)
         # Verify it works
@@ -108,13 +108,13 @@ class TestParseExcludeCallback:
         """Valid module but invalid function should raise AttributeError."""
         with pytest.raises(AttributeError):
             parse_exclude_callback(
-                "auto_engineering.init._shared.exclude:nonexistent_func"
+                "init_engineering.init._shared.exclude:nonexistent_func"
             )
 
     def test_missing_colon(self) -> None:
         """Spec without colon should raise ValueError."""
         with pytest.raises(ValueError, match="module:function"):
-            parse_exclude_callback("auto_engineering.init._shared.exclude")
+            parse_exclude_callback("init_engineering.init._shared.exclude")
 
     def test_empty_spec(self) -> None:
         """Empty spec should raise ValueError."""

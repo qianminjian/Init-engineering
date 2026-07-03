@@ -57,7 +57,7 @@ def test_template_render_handles_missing_optional(tmp_path: Path):
 
 def test_template_renderer_collects_errors_with_line_number(tmp_path: Path):
     """TemplateRenderError 应携带源文件路径和行号（用于调试）."""
-    from auto_engineering.init.errors import TemplateRenderError
+    from init_engineering.init.errors import TemplateRenderError
 
     err = TemplateRenderError(
         src_path="test.jinja",

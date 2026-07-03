@@ -166,7 +166,7 @@ package_manager: pnpm
 ## Directory Structure (as Claude Code Skill)
 
 ```
-auto-engineering/          # Python package (Skill implementation)
+init_engineering/         # Python package (Skill implementation)
 ├── __init__.py
 ├── skill.py               # Skill entry point
 ├── errors.py              # Shared errors

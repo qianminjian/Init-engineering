@@ -9,15 +9,15 @@ from collections import ChainMap
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+
+# B3: BUILTIN_VARS 改用 MappingProxyType 不可变视图, 防止任何位置污染模块级 dict
+# current_year 不再 import 时计算 (跨年 daemon 风险), 改在 AnswersMap.combined() 动态算
+from types import MappingProxyType
 from typing import Any
 
 import yaml
 
 from ._shared.path_utils import is_path_under_any_root
-
-# B3: BUILTIN_VARS 改用 MappingProxyType 不可变视图, 防止任何位置污染模块级 dict
-# current_year 不再 import 时计算 (跨年 daemon 风险), 改在 AnswersMap.combined() 动态算
-from types import MappingProxyType
 
 BUILTIN_VARS: MappingProxyType = MappingProxyType({
     # v1.0: 与 __version__ 同步 — 单版本号策略 (BEACON.md 决策 #5)。

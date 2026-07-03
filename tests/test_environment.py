@@ -16,7 +16,7 @@ from unittest.mock import patch
 
 import pytest
 
-from auto_engineering.config.environment import (
+from init_engineering.config.environment import (
     ProjectEnvironment,
     load_ae_answers,
     preflight,

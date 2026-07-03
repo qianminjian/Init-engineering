@@ -14,7 +14,7 @@ from unittest.mock import patch
 import pytest
 from click.testing import CliRunner
 
-from auto_engineering.cli import init
+from init_engineering.cli import init
 
 
 _runner = CliRunner()
@@ -41,7 +41,7 @@ class TestTemplatesSuffixPassthrough:
 
     def test_initworker_accepts_templates_suffix_param(self):
         """InitWorker.__init__ 接受 templates_suffix 参数."""
-        from auto_engineering.init.scaffold_phases import InitWorker
+        from init_engineering.init.scaffold_phases import InitWorker
 
         with InitWorker(
             dst_path=Path("/tmp/test"),
@@ -52,7 +52,7 @@ class TestTemplatesSuffixPassthrough:
 
     def test_initworker_accepts_preserve_symlinks_param(self):
         """InitWorker.__init__ 接受 preserve_symlinks 参数."""
-        from auto_engineering.init.scaffold_phases import InitWorker
+        from init_engineering.init.scaffold_phases import InitWorker
 
         with InitWorker(
             dst_path=Path("/tmp/test"),
@@ -66,7 +66,7 @@ class TestTemplatesSuffixPassthrough:
 
         通过验证 InitWorker 实例属性来确认参数被正确接收。
         """
-        from auto_engineering.init.scaffold_phases import InitWorker
+        from init_engineering.init.scaffold_phases import InitWorker
 
         target = tmp_path / "proj"
         target.mkdir()
@@ -84,8 +84,8 @@ class TestTemplatesSuffixPassthrough:
 
     def test_phase_render_uses_worker_templates_suffix(self, tmp_path: Path):
         """_phase_render 使用 worker.templates_suffix 而非仅用 TemplateConfig 值."""
-        from auto_engineering.init.scaffold_phases import InitWorker
-        from auto_engineering.init.config import TemplateConfig
+        from init_engineering.init.scaffold_phases import InitWorker
+        from init_engineering.init.config import TemplateConfig
 
         # 创建测试模板配置
         template_config = TemplateConfig(
@@ -107,8 +107,8 @@ class TestTemplatesSuffixPassthrough:
 
     def test_phase_render_uses_worker_preserve_symlinks(self, tmp_path: Path):
         """_phase_render 使用 worker.preserve_symlinks 而非仅用 TemplateConfig 值."""
-        from auto_engineering.init.scaffold_phases import InitWorker
-        from auto_engineering.init.config import TemplateConfig
+        from init_engineering.init.scaffold_phases import InitWorker
+        from init_engineering.init.config import TemplateConfig
 
         template_config = TemplateConfig(
             template_dir=tmp_path / "templates",

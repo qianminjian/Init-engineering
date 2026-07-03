@@ -283,8 +283,10 @@ def _update_answers_meta(answers_file: Path, project_type: str) -> None:
 
     保留用户之前的所有字段（包括已修改的答案）。
     """
-    import yaml
     from datetime import datetime
+
+    import yaml
+
     from .. import __version__
 
     if not answers_file.exists():

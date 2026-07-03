@@ -30,7 +30,6 @@ from jinja2.sandbox import SandboxedEnvironment
 
 from .errors import TemplateRenderError
 
-
 # PE-P1-5: 流式原子写 — 大文件 (大 README / 嵌入式 binary) 写到 dst.tmp-<pid>,
 # write 完成后 rename 替换 dst。SIGKILL 落入写过程 → dst.tmp-<pid> 残留,
 # dst 保持上次成功状态 (或不存在),不出现半文件。

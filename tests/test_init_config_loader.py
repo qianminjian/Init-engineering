@@ -18,13 +18,13 @@ from pathlib import Path
 
 import pytest
 
-from auto_engineering.init.config import TemplateConfig
-from auto_engineering.init.config_loader import (
+from init_engineering.init.config import TemplateConfig
+from init_engineering.init.config_loader import (
     _load_yaml_with_includes,
     _resolve_nested_template,
     load_template_config,
 )
-from auto_engineering.init.errors import ConfigFileError, ConfigLoaderSecurityError
+from init_engineering.init.errors import ConfigFileError, ConfigLoaderSecurityError
 
 
 # ============================================================
@@ -49,7 +49,7 @@ class TestLoadTemplateConfig:
             """)
         )
         # Patch TEMPLATES_ROOT
-        from auto_engineering.init import config_loader
+        from init_engineering.init import config_loader
         monkeypatch.setattr(config_loader, "TEMPLATES_ROOT", tmp_path / "templates")
 
         cfg = load_template_config("mytype")
@@ -62,7 +62,7 @@ class TestLoadTemplateConfig:
 
     def test_missing_template_raises(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         """项目类型不存在 → ConfigFileError."""
-        from auto_engineering.init import config_loader
+        from init_engineering.init import config_loader
         monkeypatch.setattr(config_loader, "TEMPLATES_ROOT", tmp_path)
 
         with pytest.raises(ConfigFileError) as exc_info:
@@ -192,7 +192,7 @@ class TestParseQuestions:
                   default: foo
             """)
         )
-        from auto_engineering.init import config_loader
+        from init_engineering.init import config_loader
         monkeypatch.setattr(config_loader, "TEMPLATES_ROOT", tmp_path / "templates")
 
         cfg = load_template_config("q1")
@@ -214,7 +214,7 @@ class TestParseQuestions:
                   default: python
             """)
         )
-        from auto_engineering.init import config_loader
+        from init_engineering.init import config_loader
         monkeypatch.setattr(config_loader, "TEMPLATES_ROOT", tmp_path / "templates")
 
         cfg = load_template_config("q2")
@@ -234,7 +234,7 @@ class TestParseQuestions:
                     key: value
             """)
         )
-        from auto_engineering.init import config_loader
+        from init_engineering.init import config_loader
         monkeypatch.setattr(config_loader, "TEMPLATES_ROOT", tmp_path / "templates")
 
         cfg = load_template_config("q3")
@@ -265,7 +265,7 @@ class TestUnderscorePrefixedFields:
                   default: x
             """)
         )
-        from auto_engineering.init import config_loader
+        from init_engineering.init import config_loader
         monkeypatch.setattr(config_loader, "TEMPLATES_ROOT", tmp_path / "templates")
 
         cfg = load_template_config("ext")
@@ -286,7 +286,7 @@ class TestUnderscorePrefixedFields:
                   default: x
             """)
         )
-        from auto_engineering.init import config_loader
+        from init_engineering.init import config_loader
         monkeypatch.setattr(config_loader, "TEMPLATES_ROOT", tmp_path / "templates")
 
         cfg = load_template_config("env")
@@ -307,7 +307,7 @@ class TestUnderscorePrefixedFields:
                   default: x
             """)
         )
-        from auto_engineering.init import config_loader
+        from init_engineering.init import config_loader
         monkeypatch.setattr(config_loader, "TEMPLATES_ROOT", tmp_path / "templates")
 
         cfg = load_template_config("skip")
@@ -327,7 +327,7 @@ class TestErrorPaths:
         template_dir = tmp_path / "templates" / "bad"
         template_dir.mkdir(parents=True)
         (template_dir / "ae-template.yml").write_text("not: valid: yaml: : :\n")
-        from auto_engineering.init import config_loader
+        from init_engineering.init import config_loader
         monkeypatch.setattr(config_loader, "TEMPLATES_ROOT", tmp_path / "templates")
 
         import yaml as _yaml

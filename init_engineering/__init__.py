@@ -14,7 +14,7 @@
 __version__ = "1.0.0"
 _AE_VERSION = "1.0.0"
 
-__all__ = ["__version__", "_AE_VERSION"]
+__all__ = ["_AE_VERSION", "__version__"]
 
 
 def get_ae_version() -> str:

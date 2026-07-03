@@ -11,7 +11,6 @@ import os
 from dataclasses import dataclass
 
 
-
 @dataclass
 class Settings:
     """项目级配置。从环境变量加载(v3.0 §八 8.1)."""
