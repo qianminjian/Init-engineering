@@ -8,7 +8,7 @@
 
 ```bash
 # 安装
-pip install auto-engineering
+pip install init-engineering
 # 或开发安装
 git clone <repo-url> && cd Init-engineering && uv sync
 
@@ -82,7 +82,7 @@ detect → prompt → render → tasks → finalize
 
 ```bash
 uv sync                    # 安装依赖
-uv run pytest tests/       # 运行测试 (492 tests)
+uv run pytest tests/       # 运行测试 (629 tests)
 uv run ae --help           # CLI 帮助
 ```
 

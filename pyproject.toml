@@ -1,17 +1,18 @@
 [project]
-name = "auto-engineering"
+name = "init-engineering"
 version = "1.0.0"
-description = "团队级 Loop 工程 + 多 Agent 协作 + 项目环境初始化"
+description = "Init-Engineering — Claude Code Agent Skill 模式项目环境初始化工具"
 readme = "README.md"
 # DI-P1-3: requires-python 与 classifiers 一致性 — classifiers 列表 (3.11/3.12/3.13)
 # 必须与 requires-python 范围匹配。上界 <3.14 防止 Python 3.14+ 静默装上,
 # 实际未在该版本验证 (潜在 deprecation/f-string change/syntax warning 等)。
 requires-python = ">=3.11,<3.14"
 license = { text = "MIT" }
+# PLACEHOLDER email — 发布到 PyPI 前请替换为真实维护者邮箱
 authors = [
-    { name = "钱敏健" },
+    { name = "钱敏健", email = "qianminjian@example.com" },
 ]
-keywords = ["agent", "loop", "scaffolding", "claude-api", "ai-engineering"]
+keywords = ["agent", "init", "scaffolding", "claude-code", "ai-engineering"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -56,7 +57,7 @@ dev = [
 ]
 
 [project.scripts]
-ae = "auto_engineering.cli:main"
+ae = "init_engineering.cli:main"
 
 [tool.ruff]
 target-version = "py311"
@@ -85,7 +86,7 @@ package = true
 # (运行时仍需 --require-hashes 才强制 hash 校验, 见 security job)
 
 [tool.hatch.build.targets.wheel]
-packages = ["auto_engineering"]
+packages = ["init_engineering"]
 # D-P0-3: SKILL.md/README/CHANGELOG/LICENSE 必须进 wheel — Claude Code skill
 # 注册需 SKILL.md, PyPI 页面渲染需 README,法律需 LICENSE,版本说明需 CHANGELOG
 [tool.hatch.build.targets.wheel.force-include]
