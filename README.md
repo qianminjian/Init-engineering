@@ -9,16 +9,11 @@
 ### 方式 1：GitHub 克隆（推荐, 团队 5-20 人内部用）
 
 ```bash
-# 1. 克隆到 Claude Code / agent skills 标准目录
 git clone https://github.com/qianminjian/Init-engineering.git \
   ~/.agents/skills/init-engineering
-
-# 2. 一键安装依赖
 cd ~/.agents/skills/init-engineering
-./scripts/setup.sh
-
-# 3. 验证
-ae --version
+uv sync
+uv run ae --version
 ```
 
 **安装位置**:
@@ -128,7 +123,7 @@ detect → prompt → render → tasks → finalize
 ```bash
 cd ~/.agents/skills/init-engineering
 git pull
-./scripts/setup.sh  # 同步依赖（如 pyproject.toml 有变化）
+uv sync  # 同步依赖（如 pyproject.toml 有变化）
 ```
 
 ## 开发
