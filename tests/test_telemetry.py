@@ -91,21 +91,27 @@ class TestSend:
     def test_sends_when_enabled(self, monkeypatch):
         monkeypatch.setenv("AE_TELEMETRY", "1")
         event = TelemetryEvent(ae_version="1.0.0", command="status")
-        mock_urlopen = Mock()
-        with patch("urllib.request.urlopen", mock_urlopen):
+        # P2-8: telemetry 改用自定义 opener (ProxyHandler({})) 禁 proxy,
+        # 所以 mock 需打 build_opener().open 链路
+        mock_opener = Mock()
+        with patch("urllib.request.build_opener", return_value=mock_opener):
             send(event)
-        mock_urlopen.assert_called_once()
+        mock_opener.open.assert_called_once()
 
     def test_swallows_network_error(self, monkeypatch):
         monkeypatch.setenv("AE_TELEMETRY", "1")
         event = TelemetryEvent()
-        with patch("urllib.request.urlopen", side_effect=OSError("network down")):
+        mock_opener = Mock()
+        mock_opener.open.side_effect = OSError("network down")
+        with patch("urllib.request.build_opener", return_value=mock_opener):
             send(event)  # 不应抛出
 
     def test_swallows_timeout(self, monkeypatch):
         monkeypatch.setenv("AE_TELEMETRY", "1")
         event = TelemetryEvent()
-        with patch("urllib.request.urlopen", side_effect=TimeoutError("timeout")):
+        mock_opener = Mock()
+        mock_opener.open.side_effect = TimeoutError("timeout")
+        with patch("urllib.request.build_opener", return_value=mock_opener):
             send(event)  # 不应抛出
 
     def test_swallows_json_error(self, monkeypatch):
@@ -123,7 +129,9 @@ class TestSend:
             captured_payload.append(req.data)
             return Mock(read=Mock(return_value=b"ok"))
 
-        with patch("urllib.request.urlopen", side_effect=capture):
+        mock_opener = Mock()
+        mock_opener.open.side_effect = capture
+        with patch("urllib.request.build_opener", return_value=mock_opener):
             send(event)
 
         data = json.loads(captured_payload[0])

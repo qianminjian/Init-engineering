@@ -22,9 +22,21 @@ _logger = logging.getLogger(__name__)
 class TaskRunner:
     """执行钩子任务列表。来源：Copier _execute_tasks 模式。"""
 
-    def __init__(self, project_dir: Path, current_phase: str = ""):
+    # PE-P1-4: 默认 task 超时 300s — 模板作者可对慢任务 (cargo build/large npm install)
+    # 在 Task.timeout 字段显式覆盖。CLI --hook-timeout 也可全局覆盖此默认
+    DEFAULT_TIMEOUT = 300
+
+    def __init__(
+        self,
+        project_dir: Path,
+        current_phase: str = "",
+        default_timeout: int | None = None,
+    ):
         self.project_dir = project_dir
         self._current_phase = current_phase
+        self._default_timeout = (
+            default_timeout if default_timeout is not None else self.DEFAULT_TIMEOUT
+        )
 
     def run(
         self,
@@ -105,13 +117,18 @@ class TaskRunner:
 
             # 5. 执行
             env = {**subprocess_os.environ, **extra_env}
+            # PE-P1-4: task 级 timeout 覆盖 default_timeout — 模板作者可对
+            # cargo build / large npm install 等慢任务显式设大值
+            effective_timeout = (
+                task.timeout if task.timeout is not None else self._default_timeout
+            )
             result = subprocess.run(
                 cmd,
                 shell=use_shell,
                 cwd=str(wd),
                 capture_output=True,
                 text=True,
-                timeout=300,
+                timeout=effective_timeout,
                 encoding="utf-8",
                 errors="replace",
                 env=env,

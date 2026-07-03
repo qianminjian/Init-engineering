@@ -144,6 +144,8 @@ def run_update(
     )
 
     # 用历史 answers 重新渲染到 tmpdir
+    # PE-P1-3: tmpdir 资源管理 — 整个 try 块(包括 dry_run 提前 return)都被
+    # finally 保护,任何路径返回(正常/dry_run/异常)都触发 rmtree 清理
     tmpdir = Path(tempfile.mkdtemp(prefix="ae-update-"))
     try:
         # Build context from previous answers

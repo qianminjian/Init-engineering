@@ -304,9 +304,11 @@ class TestSavePartial:
 
     def test_default_path_is_home_partial(self):
         am = AnswersMap(interactive={"key": "value"})
+        # P2-3: save_partial 改用 umask + chmod, 测试需 mock os.chmod 防 FileNotFoundError
         with (
             patch.object(Path, "home", return_value=Path("/tmp")),
             patch.object(Path, "write_text") as mock_write,
+            patch("os.chmod"),
         ):
             result = am.save_partial()
             assert result == Path("/tmp/.ae-partial-answers.yml")

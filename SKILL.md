@@ -25,6 +25,8 @@ inputs:
       - "init . --type <type>" — initialize in current directory
       - "analyze <path>" — analyze existing project type
       - "detect <path>" — detect project type without initializing
+      - "update <project> [--conflict=skip|overwrite|prompt]" — upgrade existing project
+      - "status" — show current ae configuration and template status
   project_type:
     type: string
     required: false

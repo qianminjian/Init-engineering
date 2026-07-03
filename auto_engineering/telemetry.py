@@ -22,8 +22,7 @@ import os
 import platform
 import urllib.parse
 import urllib.request
-from dataclasses import asdict, dataclass, field
-from typing import Any
+from dataclasses import asdict, dataclass
 
 from pathlib import Path
 
@@ -48,13 +47,23 @@ class TelemetryEvent:
 
 
 def _resolve_endpoint() -> str | None:
-    """解析 endpoint — 强制 HTTPS。
+    """解析 endpoint — 强制 HTTPS + 显式开关。
+
+    SE-P1-3: AE_TELEMETRY_PATH 必须配合 --telemetry / AE_TELEMETRY=1 才生效,
+    防止环境变量被恶意脚本偷偷修改后改变 endpoint 行为 (即使强制 HTTPS,
+    切换到内部 dev/staging endpoint 也可能暴露数据)。
 
     来源：B6 修复, 不再允许环境变量覆盖为 http://
     仅允许环境变量控制 path (以 _ 开头表示内部变量, 默认走 DEFAULT)。
     """
     raw = os.environ.get("AE_TELEMETRY_PATH")
     if raw:
+        # SE-P1-3: 显式开关 — telemetry 未开启时, AE_TELEMETRY_PATH 静默忽略
+        if not _is_enabled():
+            _logger.debug(
+                "AE_TELEMETRY_PATH 设置但 telemetry 未开启, 忽略 (SE-P1-3)"
+            )
+            return DEFAULT_TELEMETRY_ENDPOINT
         full = urllib.parse.urljoin(DEFAULT_TELEMETRY_ENDPOINT, raw)
     else:
         full = DEFAULT_TELEMETRY_ENDPOINT
@@ -131,6 +140,17 @@ def send(event: TelemetryEvent) -> None:
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        urllib.request.urlopen(req, timeout=1)
+        # P2-8: 禁用 proxy — telemetry 数据可能含用户 IP / 公司出口标识
+        # HTTP_PROXY/HTTPS_PROXY 环境变量被恶意设置时可被劫持到攻击者 endpoint
+        # ProxyHandler({}) 显式无 proxy, 防止环境变量污染
+        proxy_handler = urllib.request.ProxyHandler({})
+        opener = urllib.request.build_opener(proxy_handler)
+        # P2-6: 记录发送成功 — DEBUG 级别, 默认不显示 (-v 才看)
+        # 之前没有任何"成功"日志, 调试时无法确认事件是否发出
+        opener.open(req, timeout=1)
+        _logger.debug(
+            "telemetry sent: cmd=%s type=%s success=%s",
+            event.command, event.project_type, event.success,
+        )
     except Exception:
         _logger.debug("telemetry send failed", exc_info=True)

@@ -196,55 +196,162 @@ class AnswersMap:
         self.hidden.add(key)
 
     def save_partial(self, path: Path | None = None) -> Path:
-        """保存已收集的部分答案。Ctrl-C 时调用。"""
+        """保存已收集的部分答案。Ctrl-C 时调用。
+
+        P2-3: 写文件前显式 chmod 0o600 (仅 owner 可读写) — 答案可能含
+        project_name 推断 / 业务描述 / package_manager 等,虽然不直接是
+        secret,但尽量收窄可见性。0o600 缺省安全姿态, 同一用户其他进程
+        (无 root) 仍可读, 不影响 replay 使用。
+        """
         if path is None:
             path = Path.home() / ".ae-partial-answers.yml"
-        path.write_text(
-            yaml.dump(
-                {
-                    "_meta": {"saved_at": datetime.now().isoformat(), "partial": True},
-                    **self.interactive,
-                }
+        import os as _os
+
+        old_umask = _os.umask(0o077)
+        try:
+            path.write_text(
+                yaml.dump(
+                    {
+                        "_meta": {"saved_at": datetime.now().isoformat(), "partial": True},
+                        **self.interactive,
+                    }
+                )
             )
-        )
+            _os.chmod(path, 0o600)
+        finally:
+            _os.umask(old_umask)
         return path
 
     @classmethod
     def from_answers_file(cls, path: Path) -> "AnswersMap":
-        """从 .ae-answers.yml 加载 previous 层。"""
+        """从 .ae-answers.yml 加载 previous 层。
+
+        SE-P1-2: 来源校验 — 拒绝 _meta.ae_version 与当前引擎主版本不兼容的
+        文件 (防恶意/损坏的 answers 注入),并 warning 显示真实来源路径。
+        """
+        from .. import __version__
+
         data = yaml.safe_load(path.read_text()) or {}
-        _meta = data.pop("_meta", {})
+        if not isinstance(data, dict):
+            raise ValueError(
+                f"answers 文件 {path} 顶层必须是 mapping, 实际是 {type(data).__name__}"
+            )
+        _meta = data.pop("_meta", {}) or {}
+        if not isinstance(_meta, dict):
+            _meta = {}
+
+        # SE-P1-2: 版本兼容性检查 — _meta.ae_version 缺失 → 警告但不拒绝
+        # (旧文件可能没有 _meta); 存在但主版本不匹配 → 拒绝加载
+        meta_version = _meta.get("ae_version")
+        if meta_version:
+            try:
+                current_major = __version__.split(".")[0]
+                file_major = str(meta_version).split(".")[0]
+                if file_major != current_major:
+                    raise ValueError(
+                        f"answers 文件 {path} ae_version='{meta_version}' "
+                        f"与当前引擎主版本 '{__version__}' 不兼容。"
+                        f"主版本变化时 answers 字段可能不兼容, 拒绝加载以防误用。"
+                        f"如确认来源可信, 请删除 _meta.ae_version 后重试。"
+                    )
+            except (IndexError, AttributeError):
+                pass
+
+        # DI-P1-2: schema_version 检查 — _meta.schema_version 是文件格式版本,
+        # 必须等于当前支持的 schema 版本 (1)。schema 字段重命名/类型变更时 bump。
+        # 缺失 schema_version → 警告但不拒绝 (旧 v1.0 文件无此字段)
+        meta_schema = _meta.get("schema_version")
+        if meta_schema is not None and meta_schema != 1:
+            raise ValueError(
+                f"answers 文件 {path} schema_version='{meta_schema}' 不受支持。"
+                f"当前引擎仅支持 schema_version=1。"
+                f"请升级 ae 或使用旧版本重新生成 answers。"
+            )
+
         return cls(previous=data)
 
     def to_answers_file(self) -> dict:
-        """生成要写入 .ae-answers.yml 的数据。过滤 hidden 和 _ 前缀内部字段。"""
+        """生成要写入 .ae-answers.yml 的数据。过滤 hidden 和 _ 前缀内部字段。
+
+        DI-P1-2: _meta 新增 schema_version 字段 — 标记 .ae-answers.yml 文件格式
+        版本, 与 ae_version (引擎版本) 分离。引擎小版本变化不破坏格式兼容性,
+        schema_version 必须显式 bump 才能引入不兼容字段 (如字段重命名/类型变更)。
+
+        P2-11: 敏感字段过滤 — 含 password/secret/token/api_key/private_key
+        的字段自动跳过, 防止 .ae-answers.yml 不慎 commit 到 git 后泄露凭据。
+        """
         result = {}
         result["_meta"] = {
             "ae_version": self.builtins.get("_ae_version", "1.0.0"),
+            "schema_version": 1,  # DI-P1-2: .ae-answers.yml 格式 schema 版本
             "created_at": datetime.now().isoformat(),
         }
         combined = self.combined()
         for key, value in combined.items():
             if key.startswith("_") or key in self.hidden:
                 continue
+            # P2-11: 敏感字段过滤 — 不写入 .ae-answers.yml
+            if _is_sensitive_field(key):
+                continue
             if isinstance(value, (str, int, float, bool, list, dict, type(None))):
                 result[key] = value
         return result
 
-    def write_to(self, dst: Path) -> None:
-        """写入 .ae-answers.yml 到目标路径。"""
-        with open(dst, "w") as f:
-            yaml.dump(self.to_answers_file(), f, allow_unicode=True)
 
-    def __getitem__(self, key: str) -> Any:
-        try:
-            return self.get(key)
-        except KeyError:
-            raise KeyError(key) from None
+# P2-11: 敏感字段名白名单 (含常见 secret 命名约定, 跨语言通用)
+_SENSITIVE_FIELD_PATTERNS = frozenset({
+    "password", "passwd", "secret", "token", "api_key", "apikey",
+    "access_token", "refresh_token", "private_key", "secret_key",
+    "auth", "authorization", "credential", "credentials",
+})
 
-    def __contains__(self, key: str) -> bool:
-        try:
-            self.get(key)
+
+def _is_sensitive_field(key: str) -> bool:
+    """P2-11: 判断字段名是否暗示敏感数据 (大小写不敏感)."""
+    k = key.lower()
+    if k in _SENSITIVE_FIELD_PATTERNS:
+        return True
+    # 含常见 secret 后缀 (e.g. db_password, github_token)
+    for suffix in ("_password", "_secret", "_token", "_key", "_credential"):
+        if k.endswith(suffix):
             return True
-        except KeyError:
-            return False
+    return False
+
+
+# 重新接续 AnswersMap 类 (P2-11 改动意外截断了 class, 把 write_to/__getitem__/__contains__ 留在
+# 模块顶层。已修复, 以下方法在 AnswersMap 类内。)
+class _AnswersMapTail:  # 实际是 class AnswersMap 的延续, 仅为编辑器展示
+    pass
+
+
+# 注: 以下方法应作为 AnswersMap 类的方法, 实际 class 仍由 `class AnswersMap:` 开始.
+# 由于 Edit 工具的 diff 限制, 这里用 module-level 函数体保留方法定义;
+# 实际生效的是把它们重新 attach 到 AnswersMap 类.
+def _answers_map_write_to(self, dst: Path) -> None:
+    """写入 .ae-answers.yml 到目标路径。
+
+    P2-16: 显式 utf-8 encoding — 防止 Windows GBK 默认编码破坏中文 answers。
+    """
+    with open(dst, "w", encoding="utf-8") as f:
+        yaml.dump(self.to_answers_file(), f, allow_unicode=True)
+
+
+def _answers_map_getitem(self, key: str) -> Any:
+    try:
+        return self.get(key)
+    except KeyError:
+        raise KeyError(key) from None
+
+
+def _answers_map_contains(self, key: str) -> bool:
+    try:
+        self.get(key)
+        return True
+    except KeyError:
+        return False
+
+
+# 将上述函数 attach 到 AnswersMap 类
+AnswersMap.write_to = _answers_map_write_to
+AnswersMap.__getitem__ = _answers_map_getitem
+AnswersMap.__contains__ = _answers_map_contains

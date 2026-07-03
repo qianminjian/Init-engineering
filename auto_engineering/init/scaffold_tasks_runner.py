@@ -29,17 +29,25 @@ def run_tasks_phase(
     current_phase: str,
     strict: bool,
     quiet: bool,
+    default_timeout: int | None = None,
 ) -> None:
     """执行 template.tasks_before + run_builtin_hooks + template.tasks_after。
 
     SandboxedEnvironment 含项目级全局函数：
     - git_status_clean() : git 工作区是否干净
     - project_exists(path) : 项目目录下指定路径是否存在
+
+    PE-P1-4: default_timeout 透传到 TaskRunner — 模板作者可对慢任务在
+    Task.timeout 字段覆盖,也可通过 CLI --hook-timeout 全局覆盖
     """
     jinja_env = _build_jinja_env(dst_path)
     context = answers.combined()
 
-    runner = TaskRunner(tmpdir, current_phase=current_phase)
+    runner = TaskRunner(
+        tmpdir,
+        current_phase=current_phase,
+        default_timeout=default_timeout,
+    )
     runner.run(template.tasks_before, context, jinja_env)
     run_builtin_hooks(answers, tmpdir, strict=strict, quiet=quiet)
     runner.run(template.tasks_after, context, jinja_env)

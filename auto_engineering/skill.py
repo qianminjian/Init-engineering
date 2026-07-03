@@ -75,8 +75,6 @@ def skill(prompt: str, cwd: Path | None = None) -> SkillResult:
     Returns:
         SkillResult: 执行结果
     """
-    import subprocess
-
     if cwd is None:
         cwd = Path.cwd()
 

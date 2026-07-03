@@ -164,3 +164,6 @@ class Task:
     working_directory: str = ""
     extra_vars: dict[str, Any] = field(default_factory=dict)
     shell: bool = False
+    # PE-P1-4: 单任务超时(秒) — None 走 TaskRunner 默认 (300s)。
+    # 模板作者针对 cargo build/large npm install 等慢任务可显式设大值
+    timeout: int | None = None

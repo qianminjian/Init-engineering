@@ -145,7 +145,8 @@ def _load_yaml_with_includes(config_path: Path, sandbox_roots: list[str] | None 
                         f"sandbox roots {sandbox_roots}. Refusing to load "
                         f"(potential template injection)."
                     )
-            with open(path_obj) as fh:
+            # P2-16: 显式 utf-8 — 防止 Windows GBK 默认编码破坏中文 yaml
+            with open(path_obj, encoding="utf-8") as fh:
                 for doc in yaml.safe_load_all(fh):
                     if doc:
                         results.append(doc)
@@ -157,7 +158,8 @@ def _load_yaml_with_includes(config_path: Path, sandbox_roots: list[str] | None 
 
     _IncludeLoader.add_constructor("!include", _include)
 
-    with open(config_path) as fh:
+    # P2-16: 显式 utf-8
+    with open(config_path, encoding="utf-8") as fh:
         all_docs = list(yaml.load_all(fh, Loader=_IncludeLoader))
         result: dict[str, Any] = {}
         for doc in filter(None, all_docs):

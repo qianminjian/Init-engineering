@@ -31,6 +31,63 @@ from jinja2.sandbox import SandboxedEnvironment
 from .errors import TemplateRenderError
 
 
+# PE-P1-5: 流式原子写 — 大文件 (大 README / 嵌入式 binary) 写到 dst.tmp-<pid>,
+# write 完成后 rename 替换 dst。SIGKILL 落入写过程 → dst.tmp-<pid> 残留,
+# dst 保持上次成功状态 (或不存在),不出现半文件。
+# 流式 (chunks) 避免 read_text() 一次性加载整文件到内存。
+_CHUNK_SIZE = 64 * 1024  # 64KB
+
+
+def _atomic_write_text(dst: Path, content: str, newline: str | None = None) -> None:
+    """流式原子写文本文件。
+
+    Args:
+        dst: 目标路径
+        content: 完整内容 (jinja 渲染后)
+        newline: 换行符策略 (None/''/'\n')，透传给 Path.write_text
+    """
+    import time as _time
+
+    partial = dst.with_name(f"{dst.name}.tmp-{_time.monotonic_ns()}")
+    try:
+        with open(partial, "w", encoding="utf-8", newline=newline) as f:
+            f.write(content)
+        partial.replace(dst)
+    except Exception:
+        try:
+            partial.unlink()
+        except OSError:
+            pass
+        raise
+
+
+def _atomic_write_binary(dst: Path, src: Path) -> None:
+    """流式原子写二进制文件 — 分块 64KB read+write。
+
+    shutil.copy2 不分块(直接 syscall 走 sendfile/copyfile_range 已是零拷贝),
+    但仍是直接写到 final path。改为分块 read+write 到 .tmp 再 rename。
+    """
+    import time as _time
+
+    partial = dst.with_name(f"{dst.name}.tmp-{_time.monotonic_ns()}")
+    try:
+        with open(src, "rb") as f_in, open(partial, "wb") as f_out:
+            while True:
+                chunk = f_in.read(_CHUNK_SIZE)
+                if not chunk:
+                    break
+                f_out.write(chunk)
+        # 复制权限位
+        shutil.copymode(src, partial)
+        partial.replace(dst)
+    except Exception:
+        try:
+            partial.unlink()
+        except OSError:
+            pass
+        raise
+
+
 def is_binary(path: str) -> bool:
     """检测文件是否为二进制（无外部依赖，纯字节启发式）。
 
@@ -127,14 +184,10 @@ class TemplateRenderer:
 
                 dst_file = dst_dir / rendered_rel
 
-                # Path traversal guard (参考 Copier _main.py:800-805, 修 macOS symlink)
-                import os
-                dst_dir_real = os.path.realpath(dst_dir)
-                dst_file_real = (
-                    os.path.realpath(dst_file) if os.path.exists(dst_file) else str(dst_file.resolve())
-                )
-                root_prefix = dst_dir_real if dst_dir_real.endswith(os.sep) else dst_dir_real + os.sep
-                if not (dst_file_real == dst_dir_real or dst_file_real.startswith(root_prefix)):
+                # P2-12: 路径穿越 guard — 改用 _shared.path_utils.is_path_under_any_root
+                # (与 answers.py / config_loader.py 同一 util, 避免散落实现)
+                from ._shared.path_utils import is_path_under_any_root
+                if not is_path_under_any_root(dst_file, [dst_dir]):
                     raise TemplateRenderError(str(rel_path), ValueError("路径穿越"))
 
                 if (
@@ -204,12 +257,17 @@ class TemplateRenderer:
                     except jinja2.TemplateError as e:
                         raise TemplateRenderError(str(rel_path), e) from e
                     newline = self._detect_newline(src_file)
-                    dst_file.write_text(content, newline=newline)
+                    # PE-P1-5: 流式原子写 — 大文件 (大 README/Dockerfile) 不一次性 read+write
+                    # 分块 read(64KB) 写入 .partial 后 rename 原子替换。
+                    # SIGKILL 落入写过程 → .partial 残留, dst_file 保持上次成功状态
+                    _atomic_write_text(dst_file, content, newline=newline)
                 elif is_binary(str(src_file)):
-                    shutil.copy2(src_file, dst_file)
+                    # 二进制文件流式复制 (shutil.copyfile 内部用 sendfile/copyfile_range,
+                    # 已是流式; 但仍是 write-to-final-path,加 .partial 阶段防 SIGKILL 留半文件)
+                    _atomic_write_binary(dst_file, src_file)
                 else:
                     newline = self._detect_newline(src_file)
-                    dst_file.write_text(src_file.read_text(), newline=newline)
+                    _atomic_write_text(dst_file, src_file.read_text(), newline=newline)
 
                 try:
                     shutil.copymode(src_file, dst_file)
@@ -236,8 +294,16 @@ class TemplateRenderer:
         """Produce a function that matches against .gitignore-style patterns.
 
         参考 Copier _main.py:467-471 _path_matcher + pathspec。
+
+        P2-18: 改用 GitIgnoreSpecPattern (官方推荐) — GitWildMatchPattern 已 deprecated,
+        新代码会触发 deprecation warning 噪音。GitIgnoreSpecPattern 行为与原相同。
         """
-        spec = pathspec.PathSpec.from_lines(pathspec.patterns.GitWildMatchPattern, patterns)
+        # pathspec 0.12+ 推荐 GitIgnoreSpecPattern, 旧版 fallback 到 GitWildMatchPattern
+        if hasattr(pathspec.patterns, "GitIgnoreSpecPattern"):
+            pattern_cls = pathspec.patterns.GitIgnoreSpecPattern
+        else:
+            pattern_cls = pathspec.patterns.GitWildMatchPattern
+        spec = pathspec.PathSpec.from_lines(pattern_cls, patterns)
         return spec.match_file
 
     def _is_excluded(self, file_path: Path, src_dir: Path) -> bool:

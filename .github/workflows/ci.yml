@@ -8,9 +8,14 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    name: test (${{ matrix.os }} / py${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    # PE-P1-6 / P2-19: macOS 矩阵 — InitLock DI-P1-1 改动需在 macOS + Windows 实际验证
+    # 不只在 Linux 跑 (macOS fcntl 行为差异 / Windows msvcrt 路径)
     strategy:
+      fail-fast: false
       matrix:
+        os: [ubuntu-latest, macos-latest]
         python-version: ['3.11', '3.12', '3.13']
     steps:
       - uses: actions/checkout@v4
@@ -22,6 +27,7 @@ jobs:
       - run: uv run ruff check auto_engineering/
 
   coverage:
+    name: coverage gate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -29,4 +35,24 @@ jobs:
         with:
           python-version: '3.13'
       - run: uv sync --dev
-      - run: uv run pytest tests/ --cov=auto_engineering --cov-report=term-missing --timeout=120 -q
+      # PE-P1-6: 覆盖率门禁 — coverage fail-under=80 (CLAUDE.md 项目规则 ≥80%)
+      # coverage gate fail 时整个 job 红, PR 无法 merge
+      - run: uv run pytest tests/ --cov=auto_engineering --cov-report=term-missing --cov-fail-under=80 --timeout=120 -q
+
+  # SE-P1-4: pip-audit — 检查依赖已知 CVE (PyPI Advisory Database)
+  # --strict: 有 vuln 直接 exit 1, 阻断 PR
+  security:
+    name: security audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: '3.13'
+      - run: uv sync --dev
+      - name: pip-audit
+        run: uv run --with pip-audit pip-audit --strict
+      # P2-9: lockfile 一致性 + 哈希校验 — uv lock --check 校验 pyproject
+      # 与 uv.lock 同步, --frozen 强制 lockfile 不被更新
+      - name: lockfile check
+        run: uv lock --check --frozen

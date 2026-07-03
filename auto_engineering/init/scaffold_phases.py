@@ -74,6 +74,8 @@ class InitWorker:
     templates_suffix: str | None = None
     preserve_symlinks: bool | None = None
     template_dir_override: Path | None = None
+    # PE-P1-4: 全局钩子超时(秒),None 走 TaskRunner 默认 (300s)
+    hook_timeout: int | None = None
 
     _current_phase: str = field(init=False, default="")
     _template: TemplateConfig = field(init=False, default=None)
@@ -93,12 +95,13 @@ class InitWorker:
         return False
 
     def _cleanup(self) -> None:
-        import logging
+        # P2-4: cleanup logging 改用模块 logger (logging.warning 是 root logger,
+        # 无 handler 时默认吞掉, 调试时看不到错误)
         for hook in self._cleanup_hooks:
             try:
                 hook()
             except Exception as e:
-                logging.warning("cleanup hook failed: %s", e)
+                _logger.warning("cleanup hook failed: %s", e)
         if self._lock is not None:
             self._lock.release()
             self._lock = None
@@ -243,6 +246,8 @@ class InitWorker:
             current_phase=self._current_phase,
             strict=self.strict,
             quiet=self.quiet,
+            # PE-P1-4: hook_timeout 透传到 TaskRunner
+            default_timeout=self.hook_timeout,
         )
 
     def _phase_finalize(self, tmpdir: Path, generated: list[Path]) -> bool:
@@ -255,4 +260,6 @@ class InitWorker:
             created_files=self._created_files,
             mode=self._mode,
             quiet=self.quiet,
+            # P2-2: 传 generated 给 phase_finalize 打印真实文件数 (之前写死 0)
+            generated=generated,
         )

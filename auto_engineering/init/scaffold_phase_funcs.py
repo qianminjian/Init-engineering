@@ -40,6 +40,7 @@ def phase_finalize(
     created_files: set[str],
     mode: str,
     quiet: bool,
+    generated: list[Path] | None = None,
 ) -> bool:
     """写入 .ae-answers.yml + 增量/全量 copytree。
 
@@ -68,35 +69,49 @@ def phase_finalize(
         # A2: 原子写 — 先写 dst.partial-<ts>/ 再 rename，避免 SIGKILL/IO 错误留半成品
         _atomic_copytree(tmpdir, dst_path)
         if not quiet:
+            # P2-2: 真实文件数 — 之前写死 "文件数: 0" 是 bug, 用 generated 实际计数
+            file_count = len(generated) if generated else sum(1 for _ in dst_path.rglob("*") if _.is_file())
             print(f"✓ 项目已生成: {dst_path}")
-            print(f"  文件数: 0")  # caller to inject
+            print(f"  文件数: {file_count}")
             print(f"  下一步: cd {dst_path.name} && git log")
         return did_create_dst
 
 
 def _atomic_copytree(src: Path, dst: Path) -> None:
-    """原子复制目录树 — 先写 dst.partial-<ts>/ 再 rename。
+    """原子复制目录树 — partial 写完先 rename → dst.new 再 rmtree(dst) 最后 rename → dst。
 
     设计要点:
     - 写失败 → dst_path 保持原状（不污染）
-    - 写成功 → 单次 rename 操作 (POSIX 原子) 替换 dst_path 内容
+    - 写成功 → 真正的"原子替换"语义,任意步骤失败均可恢复
     - 失败后清理 partial 目录避免残留
 
-    注意: rename 不能直接覆盖非空目录,先 rmtree(dst) 再 rename 达到原子替换语义。
-    在 rmtree 之前 partial 已就绪,即使 rmtree 成功而 rename 失败,partial 仍可
-    fallback move;若 rmtree 失败则保留原状(优于直接污染 dst)。
+    三步原子化:
+    1. shutil.copytree(src, partial)         — 失败:仅 partial 不存在,无副作用
+    2. partial.replace(dst + ".new")         — 失败:dst/.new/partial 三者共存
+       (rename 不覆盖非空,先放到 .new 占位,旧 dst 不动)
+    3. rmtree(dst) + .new.replace(dst)       — 失败:旧 dst 已删但 .new 在,
+       极小窗口期,SIGKILL 后下次 init 可从 .new 恢复
+
+    对比 v1 (rmtree + rename): SIGKILL 在 rmtree 完成后/rename 前会导致数据全丢。
+    新版 SIGKILL 落入任何窗口,均保留至少一个完整版本(src-tmpdir 或 dst.new)。
     """
     import time as _time
 
     partial = dst.with_name(f"{dst.name}.partial-{int(_time.time() * 1000)}")
+    new_marker = dst.with_name(f"{dst.name}.new")
     try:
         shutil.copytree(src, partial)
-        # 原子替换:先移除旧 dst (如存在),再 rename partial → dst
+        # 第 1 步:将 partial 重命名为 .new (单次 rename 原子)
+        partial.replace(new_marker)
+        # 第 2 步:移除旧 dst (如存在)
         if dst.exists():
             shutil.rmtree(dst)
-        partial.replace(dst)
+        # 第 3 步:.new 原子替换为 dst
+        new_marker.replace(dst)
     except Exception:
+        # 失败清理:partial 和 .new 都尝试回收
         shutil.rmtree(partial, ignore_errors=True)
+        shutil.rmtree(new_marker, ignore_errors=True)
         raise
 
 
@@ -170,11 +185,23 @@ def phase_detect(
     # Acquire concurrent lock (after non-empty check, before project detection)
     # B1: 必须把锁对象返回给 worker,否则 fd 立刻 GC → 锁瞬间释放,两个 init 进程会
     # 同时进入渲染/合并阶段并破坏目标目录。
+    # PE-P1-1: 若 InitLock.acquire_for 失败,回滚刚 mkdir 的空目录,不留半成品
     lock: InitLock | None = None
     if not pretend:
+        created_dst = False
         if not dst_path.exists():
             dst_path.mkdir(parents=True, exist_ok=True)
-        lock = InitLock.acquire_for(dst_path)
+            created_dst = True
+        try:
+            lock = InitLock.acquire_for(dst_path)
+        except Exception:
+            # 锁获取失败 → 回滚空目录
+            if created_dst and dst_path.exists() and not any(dst_path.iterdir()):
+                try:
+                    dst_path.rmdir()
+                except OSError:
+                    pass
+            raise
 
     detector = None
     if not project_type:
@@ -282,9 +309,10 @@ def phase_prompt(
         if detection.ci_platform:
             answers.builtins.setdefault("ci_platform", detection.ci_platform)
 
+    # 检查 var 单个字符串,不是 list in AnswersMap (会触发 __contains__ 内部迭代 ChainMap)
     for var in ["project_description", "language", "package_manager",
                 "test_runner", "ci_platform", "project_type"]:
-        if var not in answers:
+        if var not in answers:  # __contains__ 处理单 key
             answers.builtins[var] = ""
 
     evaluate_question_defaults(template, answers)

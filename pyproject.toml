@@ -3,7 +3,10 @@ name = "auto-engineering"
 version = "1.0.0"
 description = "团队级 Loop 工程 + 多 Agent 协作 + 项目环境初始化"
 readme = "README.md"
-requires-python = ">=3.11"
+# DI-P1-3: requires-python 与 classifiers 一致性 — classifiers 列表 (3.11/3.12/3.13)
+# 必须与 requires-python 范围匹配。上界 <3.14 防止 Python 3.14+ 静默装上,
+# 实际未在该版本验证 (潜在 deprecation/f-string change/syntax warning 等)。
+requires-python = ">=3.11,<3.14"
 license = { text = "MIT" }
 authors = [
     { name = "钱敏健" },
@@ -77,12 +80,16 @@ build-backend = "hatchling.build"
 
 [tool.uv]
 package = true
+# P2-9: lockfile 强制哈希校验 — uv.lock 已在仓库, 添加 `uv lock --check`
+# 即可在 CI 校验 pyproject.toml / uv.lock 一致性, 防止依赖被悄悄改动
+# (运行时仍需 --require-hashes 才强制 hash 校验, 见 security job)
 
 [tool.hatch.build.targets.wheel]
-include = [
-    "auto_engineering",
-    "README.md",
-    "CHANGELOG.md",
-    "LICENSE",
-]
 packages = ["auto_engineering"]
+# D-P0-3: SKILL.md/README/CHANGELOG/LICENSE 必须进 wheel — Claude Code skill
+# 注册需 SKILL.md, PyPI 页面渲染需 README,法律需 LICENSE,版本说明需 CHANGELOG
+[tool.hatch.build.targets.wheel.force-include]
+"README.md" = "README.md"
+"CHANGELOG.md" = "CHANGELOG.md"
+"LICENSE" = "LICENSE"
+"SKILL.md" = "SKILL.md"

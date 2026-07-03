@@ -86,6 +86,14 @@ def main():
     default=None,
     help="是否保留 symlink (默认: True)",
 )
+# PE-P1-4: 全局钩子超时(秒) — 对慢任务 (cargo build/large npm install) 显式调大
+@click.option(
+    "--hook-timeout",
+    "hook_timeout",
+    type=int,
+    default=None,
+    help="钩子命令默认超时秒数 (默认 300, 模板 Task.timeout 可逐任务覆盖)",
+)
 def init(
     project: str | None,
     project_type: str | None,
@@ -113,6 +121,7 @@ def init(
     templates_suffix: str | None,
     preserve_symlinks: bool | None,
     template_dir_override: str | None,
+    hook_timeout: int | None,
 ):
     """项目环境初始化."""
     from auto_engineering.init import InitWorker
@@ -187,6 +196,24 @@ def init(
     else:
         answers = None
 
+    # P2-10: template-dir 白名单软警告 — 不阻断, 仅在 verbose 模式显示
+    # 防止用户从 internet/不明来源拖入恶意模板 (可能含 [AE-P0-1] Jinja 沙箱穿透)
+    if template_dir_override and verbose:
+        from pathlib import Path as _P
+        td = _P(template_dir_override).resolve()
+        safe_roots = [_P.cwd(), _P.home() / ".ae-templates", _P("/tmp")]
+        is_safe = any(
+            str(td).startswith(str(r.resolve()) + "/") or td == r.resolve()
+            for r in safe_roots if r.exists()
+        )
+        if not is_safe:
+            click.echo(
+                f"⚠ 警告: --template-dir {td} 不在常用安全路径内 "
+                f"({[str(r) for r in safe_roots]})。"
+                f"使用不明来源模板可能有 RCE 风险 (Jinja 沙箱穿透攻击).",
+                err=True,
+            )
+
     if telemetry:
         import os as _os
         # B6: 首次开启强制引导用户同意 (避免静默收集)
@@ -230,6 +257,8 @@ def init(
         # P1-1: templates_suffix + preserve_symlinks CLI 透传
         templates_suffix=templates_suffix,
         preserve_symlinks=preserve_symlinks,
+        # PE-P1-4: --hook-timeout 透传
+        hook_timeout=hook_timeout,
     ) as worker:
         if answers:
             worker._previous_answers = answers
@@ -264,8 +293,29 @@ def init(
                     duration_ms=elapsed_ms,
                     error_type=type(e).__name__,
                 ))
-            click.echo(f"✗ 初始化失败: {e}", err=True)
+            # P2-13: 错误消息脱敏 — 替换 token/api_key/password 等敏感字段为 [REDACTED]
+            # 防止 init 失败时把含 secret 的 stderr/traceback 打印到屏幕 + 写入日志
+            safe_msg = _sanitize_error(str(e))
+            click.echo(f"✗ 初始化失败: {safe_msg}", err=True)
             raise SystemExit(1) from e
+
+
+def _sanitize_error(msg: str) -> str:
+    """P2-13: 错误消息脱敏 — 替换常见 secret 模式为 [REDACTED]."""
+    import re as _re
+
+    patterns = [
+        # 长 token / api key (>=20 字符的 base64/hex)
+        (r"(?i)(token|api[_-]?key|secret|password|access[_-]?key)\s*[=:]\s*['\"]?[\w\-]{16,}['\"]?",
+         r"\1=[REDACTED]"),
+        # Bearer token
+        (r"(?i)Bearer\s+[\w\-\.]{16,}", "Bearer [REDACTED]"),
+        # JWT 风格 (xxx.yyy.zzz)
+        (r"eyJ[A-Za-z0-9_\-]+\.eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+", "[REDACTED-JWT]"),
+    ]
+    for pat, repl in patterns:
+        msg = _re.sub(pat, repl, msg)
+    return msg
 
 
 def _configure_logging(verbose: bool) -> None:
