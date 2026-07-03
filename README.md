@@ -2,16 +2,56 @@
 
 **Claude Code Agent Skill** — 项目环境初始化工具。
 
-5 阶段流水线（detect → prompt → render → tasks → finalize），8 种项目类型 × 4 种语言，76 个 Jinja2 模板。
+5 阶段流水线（detect → prompt → render → tasks → finalize），8 种项目类型 × 4 种语言，**78 个 Jinja2 模板**。
+
+## 分享与安装
+
+### 方式 1：GitHub 克隆（推荐, 团队 5-20 人内部用）
+
+```bash
+# 1. 克隆到 Claude Code / agent skills 标准目录
+git clone https://github.com/qianminjian/Init-engineering.git \
+  ~/.agents/skills/init-engineering
+
+# 2. 一键安装依赖
+cd ~/.agents/skills/init-engineering
+./scripts/setup.sh
+
+# 3. 验证
+ae --version
+```
+
+### 方式 2：项目级安装（per-repo, 团队成员自动继承）
+
+在项目 `.claude/settings.json` 中添加：
+
+```json
+{
+  "extraKnownMarketplaces": {
+    "qianminjian-tools": {
+      "source": {
+        "source": "github",
+        "repo": "qianminjian/Init-engineering"
+      }
+    }
+  }
+}
+```
+
+团队成员 `git pull` 项目后自动看到 skill。
+
+### 方式 3：开发安装（修改本项目后本地验证）
+
+```bash
+git clone https://github.com/qianminjian/Init-engineering.git
+cd Init-engineering
+uv sync --dev
+uv run ae --help
+```
 
 ## 快速开始
 
 ```bash
-# 安装
-pip install init-engineering
-# 或开发安装
-git clone <repo-url> && cd Init-engineering && uv sync
-
 # 新建 TypeScript 应用
 ae init my-app --type app-service --defaults
 
@@ -73,17 +113,26 @@ detect → prompt → render → tasks → finalize
   代码分析 + 签名匹配 + 框架识别
 ```
 
-76 个模板分三层：
+78 个模板分三层：
 - `_shared/` — 所有项目共有（CLAUDE.md, README, .gitignore, LICENSE, design/）
 - `_features/` — 条件包含（语言、CI、Docker、Lefthook）
 - `templates/<type>/` — 项目类型特定模板
 
+## 更新
+
+```bash
+cd ~/.agents/skills/init-engineering
+git pull
+./scripts/setup.sh  # 同步依赖（如 pyproject.toml 有变化）
+```
+
 ## 开发
 
 ```bash
-uv sync                    # 安装依赖
-uv run pytest tests/       # 运行测试 (629 tests)
-uv run ae --help           # CLI 帮助
+uv sync --dev                # 装开发依赖
+uv run pytest tests/         # 跑测试 (629 tests, 80%+ coverage gate)
+uv run ruff check init_engineering/  # Lint
+uv run ae --help             # CLI 帮助
 ```
 
 ## License

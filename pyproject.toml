@@ -8,9 +8,11 @@ readme = "README.md"
 # 实际未在该版本验证 (潜在 deprecation/f-string change/syntax warning 等)。
 requires-python = ">=3.11,<3.14"
 license = { text = "MIT" }
-# PLACEHOLDER email — 发布到 PyPI 前请替换为真实维护者邮箱
+# 项目分发方式: 团队内部 git clone 到 ~/.agents/skills/init-engineering,
+# 不发布到 PyPI。email 字段是 Python 包 metadata 要求, 用 maintainer
+# noreply 占位即可 (实际联系走 GitHub Issues / repo description).
 authors = [
-    { name = "钱敏健", email = "qianminjian@example.com" },
+    { name = "钱敏健", email = "noreply@qianminjian.com" },
 ]
 keywords = ["agent", "init", "scaffolding", "claude-code", "ai-engineering"]
 classifiers = [

@@ -1,6 +1,6 @@
 ---
 name: ae-init
-version: 0.1.0
+version: 1.0.0
 description: >-
   Initialize project environment for Claude Code agents. Supports two modes:
   (1)存量项目: analyzes existing codebase, auto-detects project type, scaffolds missing files.
