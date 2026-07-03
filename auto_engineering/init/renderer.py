@@ -203,7 +203,13 @@ class TemplateRenderer:
                 dst_file.parent.mkdir(parents=True, exist_ok=True)
 
                 if self._is_no_render(str(rel_path)):
-                    shutil.copy2(src_file, dst_file)
+                    # F1: 非原子 copy → 原子写,防 SIGKILL 留半文件
+                    # 复用 _atomic_write_text/binary (与 is_template 分支同机制)
+                    if is_binary(str(src_file)):
+                        _atomic_write_binary(dst_file, src_file)
+                    else:
+                        newline = self._detect_newline(src_file)
+                        _atomic_write_text(dst_file, src_file.read_text(), newline=newline)
                     generated[rendered_rel] = dst_file
                     continue
 
@@ -238,12 +244,12 @@ class TemplateRenderer:
                         # preserve_symlinks=False: 跳过 dangling; 有效 symlink 解析为内容复制
                         if not target.exists():
                             continue  # dangling symlink → 跳过
-                        # 解析 symlink 为内容,复制到目标
+                        # F1: 解析 symlink 为内容,复制到目标 (原子写防 SIGKILL 半文件)
                         if is_binary(str(target)):
-                            shutil.copy2(target, dst_file)
+                            _atomic_write_binary(dst_file, target)
                         else:
                             newline = self._detect_newline(target)
-                            dst_file.write_text(target.read_text(), newline=newline)
+                            _atomic_write_text(dst_file, target.read_text(), newline=newline)
                         try:
                             shutil.copymode(src_file, dst_file)
                         except OSError:
