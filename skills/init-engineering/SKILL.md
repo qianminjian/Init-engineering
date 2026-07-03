@@ -7,7 +7,7 @@ description: >-
   (2)新项目: wizard-style prompts, generates customized project skeleton.
 
   Core inspiration: Copier (5-phase pipeline) + Cookiecutter (template rendering) + SST (auto-detect).
-  Trigger: /ae-init or "ae init" in agent prompt.
+  Trigger: /ae-init
 allowed-tools:
   - Bash
   - Read
@@ -80,27 +80,19 @@ Agent Skill for project environment initialization. Run `/ae-init` in any projec
 
 Auto-detects project type by scanning known file signatures (package.json, pyproject.toml, Cargo.toml, etc.), then scaffolds missing configuration files without modifying existing source code.
 
-```bash
-# Analyze existing project
-ae init --analyze /path/to/project
-
-# Detect type only (no initialization)
-ae init --detect /path/to/project
+```
+/ae-init --analyze /path/to/project    # 存量项目分析
+/ae-init --detect /path/to/project     # 仅检测类型，不初始化
 ```
 
 ### Mode 2 — 新项目 (New Project Scaffolding)
 
 Wizard-style prompts for project configuration, generates a customized project skeleton from templates.
 
-```bash
-# New TypeScript project
-ae init my-project --type app-service --use-typescript
-
-# New Python library
-ae init my-lib --type library --package-manager uv
-
-# Non-interactive (all defaults)
-ae init my-project --type app-service --defaults
+```
+/ae-init my-project --type app-service      # 新建 TypeScript 项目
+/ae-init my-lib --type library --language python  # 新建 Python 库
+/ae-init my-project --type app-service --defaults  # 非交互，全部默认值
 ```
 
 ## 5-Phase Pipeline

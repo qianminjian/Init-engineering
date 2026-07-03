@@ -49,18 +49,23 @@ uv sync --dev
 uv run ae --help
 ```
 
-## 快速开始
+## 使用
 
-```bash
-# 新建 TypeScript 应用
-ae init my-app --type app-service --defaults
+在 Claude Code 中输入 `/ae-init` 即可调用。
 
-# 存量项目分析
-ae init --analyze .
-
-# 查看所有选项
-ae init --help
+**新建项目**：
 ```
+/ae-init my-app --type app-service
+```
+
+**存量项目分析**：
+```
+/ae-init --analyze .
+```
+
+**常用参数**：`--type app-service|library|cli-tool|skill|hook|mcp-server|spec-doc|monorepo`、`--language go|python|rust`、`--ci github|gitlab`、`--defaults`（非交互全部默认值）、`--force`（覆盖非空目录）、`--incremental`（增量补充缺失文件）。
+
+引擎层 CLI（`ae`）仅供开发调试，正常使用走 `/ae-init`。
 
 ## 项目类型
 
@@ -83,20 +88,6 @@ ae init --help
 | Python | uv/poetry | pytest | GitHub/GitLab |
 | Go | go mod | go test | GitHub/GitLab |
 | Rust | cargo | cargo test | GitHub/GitLab |
-
-## 常用选项
-
-```bash
-ae init <project> --type <type>     # 指定项目类型
-ae init --analyze <path>            # 存量项目代码分析
-ae init <project> --defaults        # 非交互，全部使用默认值
-ae init <project> --force           # 覆盖非空目录
-ae init <project> --incremental     # 增量补充缺失文件
-ae init <project> --pretend         # 模拟执行，不写文件
-ae init <project> --language go     # 指定语言
-ae init <project> --ci github       # 指定 CI 平台
-ae init <project> --strict          # 严格模式：钩子失败即中断
-```
 
 ## 模板变量
 
@@ -129,10 +120,9 @@ uv sync  # 同步依赖（如 pyproject.toml 有变化）
 ## 开发
 
 ```bash
-uv sync --dev                # 装开发依赖
-uv run pytest tests/         # 跑测试 (629 tests, 80%+ coverage gate)
-uv run ruff check init_engineering/  # Lint
-uv run ae --help             # CLI 帮助
+uv sync --dev --extra dev       # 装开发依赖
+uv run pytest tests/            # 跑测试 (689 tests, 90% coverage)
+uv run ruff check .             # Lint
 ```
 
 ## License
