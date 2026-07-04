@@ -30,6 +30,7 @@ def run_tasks_phase(
     strict: bool,
     quiet: bool,
     default_timeout: int | None = None,
+    no_install: bool = False,
 ) -> None:
     """执行 template.tasks_before + run_builtin_hooks + template.tasks_after。
 
@@ -39,6 +40,8 @@ def run_tasks_phase(
 
     PE-P1-4: default_timeout 透传到 TaskRunner — 模板作者可对慢任务在
     Task.timeout 字段覆盖,也可通过 CLI --hook-timeout 全局覆盖
+
+    PE-P0-1: no_install 透传到 run_builtin_hooks,跳过 package_manager install 阶段
     """
     jinja_env = _build_jinja_env(dst_path)
     context = answers.combined()
@@ -49,7 +52,7 @@ def run_tasks_phase(
         default_timeout=default_timeout,
     )
     runner.run(template.tasks_before, context, jinja_env)
-    run_builtin_hooks(answers, tmpdir, strict=strict, quiet=quiet)
+    run_builtin_hooks(answers, tmpdir, strict=strict, quiet=quiet, no_install=no_install)
     runner.run(template.tasks_after, context, jinja_env)
 
 

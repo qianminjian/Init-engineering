@@ -71,6 +71,8 @@ class InitWorker:
     cleanup_on_error: bool = True
     incremental: bool = False
     strict: bool = False
+    # PE-P0-1: --no-install CLI flag — 跳过 package_manager install 阶段
+    no_install: bool = False
     templates_suffix: str | None = None
     preserve_symlinks: bool | None = None
     template_dir_override: Path | None = None
@@ -248,10 +250,12 @@ class InitWorker:
             quiet=self.quiet,
             # PE-P1-4: hook_timeout 透传到 TaskRunner
             default_timeout=self.hook_timeout,
+            # PE-P0-1: no_install 跳过 pm install
+            no_install=self.no_install,
         )
 
     def _phase_finalize(self, tmpdir: Path, generated: list[Path]) -> bool:
-        return phase_finalize(
+        did_create = phase_finalize(
             answers=self._answers,
             project_type=self.project_type,
             template=self._template,
@@ -263,3 +267,13 @@ class InitWorker:
             # P2-2: 传 generated 给 phase_finalize 打印真实文件数 (之前写死 0)
             generated=generated,
         )
+        # PE-P0-4: 在 dst_path (而非 tmpdir) 重新跑依赖安装,修复 .venv shebang 断裂
+        from .phases.finalize import phase_post_install
+        phase_post_install(
+            answers=self._answers,
+            dst_path=self.dst_path,
+            strict=self.strict,
+            quiet=self.quiet,
+            no_install=self.no_install,
+        )
+        return did_create

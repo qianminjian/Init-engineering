@@ -26,6 +26,20 @@ _ALLOWED_PACKAGE_MANAGERS = frozenset({
     "cargo",                         # Rust
 })
 
+# PE-P0-1: 每个 PM 的依赖安装命令 — uv 不用 install 用 sync; cargo / go 无独立 install
+# 阶段 (build / mod download 时下载), 标 None 跳过
+_PM_INSTALL_CMD: dict[str, list[str] | None] = {
+    "npm": ["npm", "install"],
+    "pnpm": ["pnpm", "install"],
+    "yarn": ["yarn", "install"],
+    "bun": ["bun", "install"],
+    "uv": ["uv", "sync", "--extra", "dev"],  # uv sync 默认不含 dev extras, init 后需可跑测试 → 加上 dev
+    "poetry": ["poetry", "install"],
+    "pip": ["pip", "install", "-e", "."],
+    "cargo": None,                  # cargo build 自动 fetch, 无 install 阶段
+    "go": None,                     # go mod download 在 build 时执行, 无 install 阶段
+}
+
 
 def _validate_package_manager(pm: str) -> None:
     """SE-P1-1: pm 必须在白名单内 — 不在白名单直接拒绝, 不调用 subprocess.
@@ -90,11 +104,18 @@ def _coerce_bool(val) -> bool:
     return bool(val)
 
 
-def run_builtin_hooks(answers, tmpdir: Path, strict: bool = False, quiet: bool = False) -> None:
+def run_builtin_hooks(
+    answers,
+    tmpdir: Path,
+    strict: bool = False,
+    quiet: bool = False,
+    no_install: bool = False,
+) -> None:
     """执行内置钩子:git init / package_manager install / lefthook / git add+commit。
 
     strict=True 时任意步骤失败抛 HookExecutionError，否则 warning 继续。
     quiet=True 时抑制 warning 输出（strict 模式下异常正常抛出）。
+    no_install=True 时跳过 package_manager install 步骤（CI/离线场景）。
     """
     _ensure_git_config(tmpdir)
 
@@ -118,18 +139,29 @@ def run_builtin_hooks(answers, tmpdir: Path, strict: bool = False, quiet: bool =
             _fail("git init", result.returncode, result.stderr)
 
     pm = answers.get("package_manager")
-    if pm and _has_package_file(tmpdir, pm):
+    if no_install and pm:
+        if not quiet:
+            print(f"  (skipping {pm} install: --no-install flag set)")
+    elif pm and _has_package_file(tmpdir, pm):
         # SE-P1-1: 拒绝非白名单 PM (防 RCE via 恶意 answers 文件)
         _validate_package_manager(pm)
-        try:
-            result = subprocess.run([pm, "install"], cwd=tmpdir, capture_output=True, text=True,
-                                     encoding="utf-8", errors="replace")
-            if result.returncode != 0:
-                _fail(f"{pm} install", result.returncode,
-                      f"exit={result.returncode}, run '{pm} install' manually")
-        except (FileNotFoundError, OSError) as e:
-            _fail(f"{pm} install", 127,
-                  f"'{pm}' not found ({e}), run '{pm} install' manually")
+        # PE-P0-1: 按 PM 选用正确命令 (uv sync / cargo 跳过 / go 跳过)
+        install_cmd = _PM_INSTALL_CMD.get(pm)
+        if install_cmd is None:
+            if not quiet:
+                print(f"  (skipping {pm} install: no separate install phase)")
+        else:
+            try:
+                result = subprocess.run(install_cmd, cwd=tmpdir, capture_output=True, text=True,
+                                         encoding="utf-8", errors="replace")
+                if result.returncode != 0:
+                    cmd_str = " ".join(install_cmd)
+                    _fail(cmd_str, result.returncode,
+                          f"exit={result.returncode}, run '{cmd_str}' manually")
+            except (FileNotFoundError, OSError) as e:
+                cmd_str = " ".join(install_cmd)
+                _fail(cmd_str, 127,
+                      f"'{install_cmd[0]}' not found ({e}), run '{cmd_str}' manually")
     elif pm and not _has_package_file(tmpdir, pm):
         if not getattr(answers, 'quiet', False):
             print(f"  (skipping {pm} install: no package file found)")
