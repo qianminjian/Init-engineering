@@ -3,18 +3,27 @@ name = "{{ project_name }}"
 version = "0.1.0"
 description = "{{ project_description }}"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "click>=8",  # cli.py 用 click 构建 CLI
+]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8",
     "pytest-cov>=5",
+    # pytest-timeout 2.4+ 修复与 pytest 9 的 plugin 加载兼容; <2.4 与 pytest 9 加载失败
+    "pytest-timeout>=2.4",
     "ruff>=0.8",
 ]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+# PE-P0-2: 显式声明 wheel 包目录,匹配模板 {{ project_name | replace("-", "_") }}/__init__.py 结构
+# project_name 用 hyphen (PyPI 规范), Python 模块名需 snake_case, replace filter 转换
+[tool.hatch.build.targets.wheel]
+packages = ["{{ project_name | replace('-', '_') }}"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

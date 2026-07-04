@@ -8,6 +8,8 @@ from __future__ import annotations
 import logging
 import os as _os
 import shutil
+import subprocess
+import sys as _sys
 from datetime import datetime
 from pathlib import Path
 
@@ -78,15 +80,31 @@ def _atomic_copytree(src: Path, dst: Path) -> None:
     3. rmtree(dst) + .new.replace(dst)       — 失败:旧 dst 已删但 .new 在,
        极小窗口期,SIGKILL 后下次 init 可从 .new 恢复
 
-    对比 v1 (rmtree + rename): SIGKILL 在 rmtree 完成后/rename 前会导致数据全丢。
-    新版 SIGKILL 落入任何窗口,均保留至少一个完整版本(src-tmpdir 或 dst.new)。
+    PE-P0-4: 排除生成产物目录 (.venv / node_modules / target / dist / __pycache__)。
+    这些是 run_builtin_hooks 在 tmpdir 创建的 build artifacts,
+    含指向 tmpdir 路径的 shebang/二进制引用 — 复制到 dst 后会失效。
+    dst 的依赖安装在 phase_post_install 重新执行。
     """
     import time as _time
 
     partial = dst.with_name(f"{dst.name}.partial-{int(_time.time() * 1000)}")
     new_marker = dst.with_name(f"{dst.name}.new")
+
+    # PE-P0-4: 复制时排除生成产物 (与 .gitignore 默认行为一致)
+    _EXCLUDED_FROM_COPY = frozenset({
+        ".venv", "venv", "env", ".env",  # Python venv
+        "node_modules", ".pnpm-store",   # Node.js
+        "target",                         # Rust
+        "dist", "build", ".next",         # 构建产物
+        "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache",  # Python 缓存
+        ".turbo", ".parcel-cache",        # 各类缓存
+    })
+
+    def _ignore_build_artifacts(directory: str, names: list[str]) -> set[str]:
+        return {n for n in names if n in _EXCLUDED_FROM_COPY}
+
     try:
-        shutil.copytree(src, partial)
+        shutil.copytree(src, partial, ignore=_ignore_build_artifacts)
         # 第 1 步:将 partial 重命名为 .new (单次 rename 原子)
         partial.replace(new_marker)
         # 第 2 步:移除旧 dst (如存在)
@@ -99,6 +117,61 @@ def _atomic_copytree(src: Path, dst: Path) -> None:
         shutil.rmtree(partial, ignore_errors=True)
         shutil.rmtree(new_marker, ignore_errors=True)
         raise
+
+
+def phase_post_install(
+    answers,
+    dst_path: Path,
+    strict: bool = False,
+    quiet: bool = False,
+    no_install: bool = False,
+) -> None:
+    """PE-P0-4: 在 dst_path (而非 tmpdir) 重新执行依赖安装。
+
+    run_builtin_hooks 在 tmpdir 跑 uv sync 创建的 .venv,
+    复制到 dst 后 shebang 指向已清理的 tmpdir 路径 → venv 失效。
+    此函数在 dst 重新安装依赖,生成正确 shebang 的 .venv。
+
+    no_install=True 时跳过 (与 --no-install CLI flag 联动)。
+    """
+    from ..scaffold_hooks import _PM_INSTALL_CMD, _has_package_file, _validate_package_manager
+
+    if no_install:
+        if not quiet:
+            print("  (skipping post-install: --no-install flag set)")
+        return
+
+    pm = answers.get("package_manager")
+    if not pm or not _has_package_file(dst_path, pm):
+        return
+
+    install_cmd = _PM_INSTALL_CMD.get(pm)
+    if install_cmd is None:
+        if not quiet:
+            print(f"  (skipping {pm} install: no separate install phase)")
+        return
+
+    _validate_package_manager(pm)
+
+    try:
+        result = subprocess.run(
+            install_cmd, cwd=dst_path, capture_output=True, text=True,
+            encoding="utf-8", errors="replace",
+        )
+        if result.returncode != 0:
+            cmd_str = " ".join(install_cmd)
+            if strict:
+                from ..errors import HookExecutionError
+                raise HookExecutionError(command=cmd_str, exit_code=result.returncode, stderr=result.stderr)
+            if not quiet:
+                print(f"warning: {cmd_str} failed: exit={result.returncode}", file=_sys.stderr)
+    except (FileNotFoundError, OSError) as e:
+        cmd_str = " ".join(install_cmd)
+        if strict:
+            from ..errors import HookExecutionError
+            raise HookExecutionError(command=cmd_str, exit_code=127, stderr=str(e))
+        if not quiet:
+            print(f"warning: {cmd_str} not found: {e}", file=_sys.stderr)
 
 
 def _write_replay(answers: AnswersMap, raw_type: str) -> None:

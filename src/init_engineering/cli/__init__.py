@@ -58,6 +58,10 @@ def main():
 )
 @click.option("--pretend", is_flag=True, help="模拟执行，不产生文件")
 @click.option("--skip-tasks", is_flag=True, help="跳过钩子任务执行")
+# PE-P0-1: --no-install 跳过 package_manager install 阶段 (CI/离线场景)
+@click.option(
+    "--no-install", "no_install", is_flag=True, help="跳过依赖安装 (uv sync/npm install)"
+)
 @click.option(
     "--no-cleanup", "cleanup_on_error", flag_value=False, default=True, help="出错时不清理目标目录"
 )
@@ -111,6 +115,7 @@ def init(
     use_docker: bool | None,
     pretend: bool,
     skip_tasks: bool,
+    no_install: bool,
     cleanup_on_error: bool,
     quiet: bool,
     verbose: bool,
@@ -212,6 +217,8 @@ def init(
         force=force,
         pretend=pretend,
         skip_tasks=skip_tasks,
+        # PE-P0-1: --no-install 透传
+        no_install=no_install,
         cleanup_on_error=cleanup_on_error,
         quiet=quiet,
         verbose=verbose,
