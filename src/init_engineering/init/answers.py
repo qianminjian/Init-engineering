@@ -3,6 +3,7 @@
 来源：Copier _user_data.py:70-133 AnswersMap + _external_data + LazyDict
 """
 
+import json
 import os as _os
 import sys
 import tempfile
@@ -25,7 +26,7 @@ BUILTIN_VARS: MappingProxyType = MappingProxyType({
     # 模板中可用 {{ _ae_version }} 判断引擎能力，向后兼容字段名 `_ae_version`。
     "_ae_version": "1.0.0",
     "_folder_name": "",
-    "_ae_python": sys.executable,
+    # P2-2: _ae_python 不再 import 时冻结 — 在 combined() 动态计算 (与 current_year 同模式)
     "sep": _os.sep,
     "os": {"linux": "linux", "darwin": "macos", "win32": "windows"}.get(sys.platform, "linux"),
 })
@@ -34,6 +35,49 @@ BUILTIN_VARS: MappingProxyType = MappingProxyType({
 def _current_year_builtin() -> str:
     """动态计算 current_year — 避免 import 时 frozen 跨年任务."""
     return str(datetime.now().year)
+
+
+def _python_executable_builtin() -> str:
+    """P2-2: 动态取 sys.executable — 避免 import 时冻结.
+
+    场景: 进程内 Python 升级 (如 uv pip install --python 重定向) 后,
+    import 阶段的 sys.executable 已过时. combined() 每次重读确保最新.
+    """
+    return sys.executable
+
+
+def _load_external_file(
+    file_path: Path,
+    effective_roots: list[Path],
+    var_key: str = "",
+) -> Any:
+    """P2-9: 共享 external_data 文件加载 + sandbox 校验.
+
+    Args:
+        file_path: 外部数据文件路径
+        effective_roots: 已应用的 sandbox roots (调用方负责 fallback 策略).
+                         空列表 = 跳过校验 (caller 显式选择信任).
+        var_key: 可选,用于错误信息 (提示哪个模板变量触发了此路径).
+
+    Returns:
+        解析后的数据 (dict / list / scalar),文件不存在返回 None.
+
+    Raises:
+        ValueError: 路径不在 sandbox 内 (potential template injection).
+    """
+    if effective_roots and not is_path_under_any_root(file_path, effective_roots):
+        key_hint = f" (key='{var_key}')" if var_key else ""
+        raise ValueError(
+            f"external_data path '{file_path}'{key_hint} "
+            f"not under sandbox roots {effective_roots}. "
+            f"Refusing to load (potential template injection)."
+        )
+    if not file_path.exists():
+        return None
+    if file_path.suffix == ".json":
+        return json.loads(file_path.read_text())
+    # YAML: safe_load = SafeLoader (禁用任意 Python 对象反序列化)
+    return yaml.safe_load(file_path.read_text())
 
 
 class _LazyExternalDict:
@@ -57,28 +101,12 @@ class _LazyExternalDict:
 
     def __getitem__(self, key: str) -> Any:
         if key not in self._cache:
-            file_path = Path(self._external_map[key])
-            if self._sandbox_roots and not is_path_under_any_root(
-                file_path, self._sandbox_roots
-            ):
-                raise ValueError(
-                    f"external_data path '{file_path}' (key='{key}') "
-                    f"not under sandbox roots {self._sandbox_roots}. "
-                    f"Refusing to load (potential template injection)."
-                )
-            if file_path.exists():
-                if file_path.suffix in (".yml", ".yaml"):
-                    data = yaml.safe_load(file_path.read_text())
-                elif file_path.suffix == ".json":
-                    import json
-
-                    data = json.loads(file_path.read_text())
-                else:
-                    # 非 YAML/JSON 后缀：显式用 SafeLoader，禁用任意 Python 对象反序列化
-                    data = yaml.load(file_path.read_text(), Loader=yaml.SafeLoader)
-                self._cache[key] = data
-            else:
-                self._cache[key] = None
+            # P2-9: 委托给共享 helper — sandbox 校验 + YAML/JSON dispatch
+            self._cache[key] = _load_external_file(
+                Path(self._external_map[key]),
+                effective_roots=self._sandbox_roots,
+                var_key=key,
+            )
         return self._cache[key]
 
     def __contains__(self, key: str) -> bool:
@@ -146,6 +174,7 @@ class AnswersMap:
         """全量合并。用于 Jinja2 渲染上下文。外挂 _external_data 键（懒加载）。
 
         B3: current_year 在此方法调用时动态计算 (跨年 daemon / agent 任务场景)。
+        P2-2: _ae_python 同模式 — 避免 import 时 frozen, 跨进程 Python 升级后失效。
         """
         result = dict(
             ChainMap(
@@ -158,6 +187,8 @@ class AnswersMap:
         )
         # B3: 动态注入 current_year — 每次调用重新计算, 避免 frozen 在 import 时的年份
         result["current_year"] = _current_year_builtin()
+        # P2-2: 动态注入 _ae_python — 同 current_year 模式, 防止跨升级失效
+        result["_ae_python"] = _python_executable_builtin()
         if self.external:
             result["_external_data"] = _LazyExternalDict(
                 self.external,
@@ -178,27 +209,21 @@ class AnswersMap:
         通过 external_data 读 ~/.ssh/ /etc/passwd 等敏感文件.
         tempfile.gettempdir() 是必要的 — 测试与 install hook 常把临时文件
         放这里, 不纳入会让所有 tmpfile-based fixture 报路径穿越.
+
+        P2-9: 委托 _load_external_file — 共享 sandbox 校验 + YAML/JSON dispatch.
         """
         if key not in self._external_cache:
-            file_path = Path(self.external[key])
             # PR#4 P1-5: 默认 fallback, 永不跳过检查
             effective_roots = (
                 [Path(r) for r in self.external_sandbox_roots]
                 if self.external_sandbox_roots
                 else [Path.cwd(), Path.home(), Path(tempfile.gettempdir())]
             )
-            if not is_path_under_any_root(file_path, effective_roots):
-                raise ValueError(
-                    f"external_data path '{file_path}' (key='{key}') "
-                    f"not under sandbox roots {effective_roots}. "
-                    f"Refusing to load (potential template injection)."
-                )
-            if file_path.exists():
-                # 显式 SafeLoader — 禁用 YAML 反序列化任意 Python 对象
-                data = yaml.load(file_path.read_text(), Loader=yaml.SafeLoader)
-                self._external_cache[key] = data
-            else:
-                self._external_cache[key] = None
+            self._external_cache[key] = _load_external_file(
+                Path(self.external[key]),
+                effective_roots=effective_roots,
+                var_key=key,
+            )
         return self._external_cache[key]
 
     def hide(self, key: str) -> None:
@@ -222,7 +247,11 @@ class AnswersMap:
             path.write_text(
                 yaml.dump(
                     {
-                        "_meta": {"saved_at": datetime.now().isoformat(), "partial": True},
+                        "_meta": {
+                            # PR#5 P2-10: 加 UTC tz — 跨时区复用无歧义
+                            "saved_at": datetime.now().astimezone().isoformat(),
+                            "partial": True,
+                        },
                         **self.interactive,
                     }
                 )
@@ -294,7 +323,8 @@ class AnswersMap:
         result["_meta"] = {
             "ae_version": self.builtins.get("_ae_version", "1.0.0"),
             "schema_version": 1,  # DI-P1-2: .ae-answers.yml 格式 schema 版本
-            "created_at": datetime.now().isoformat(),
+            # PR#5 P2-10: 加 UTC tz — datetime.now() 无时区信息, 跨时区复用易混淆
+            "created_at": datetime.now().astimezone().isoformat(),
         }
         combined = self.combined()
         for key, value in combined.items():

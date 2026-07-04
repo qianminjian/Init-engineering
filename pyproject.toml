@@ -75,7 +75,13 @@ ignore = ["RUF001", "RUF002", "RUF003"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = ["--timeout=60", "-p no:cacheprovider"]
+# PR#5 P1-7: 默认排除 integration 标记 (真实 subprocess ae CLI ~60s/file).
+# 跑全部用 `pytest -m ""` 或 `pytest -m integration` 显式启用.
+addopts = ["--timeout=60", "-p no:cacheprovider", "-m", "not integration"]
+markers = [
+    "integration: marks tests as integration (real subprocess ae CLI, ~60s/file)",
+    "slow: marks tests as slow (large data fixtures, perf-sensitive)",
+]
 
 [build-system]
 requires = ["hatchling"]

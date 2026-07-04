@@ -78,6 +78,12 @@ class TemplateRenderer:
             undefined=StrictUndefined,
             **(envops or {"keep_trailing_newline": True}),
         )
+        # PR#5 P1-8: 预算 PathSpec 实例, render_to 循环内复用
+        # 之前每个文件都重新 pathspec.PathSpec.from_lines(...)
+        # 100 文件 × 3 matcher = 300 次 re.compile, 30k+ glob 编译开销
+        self._exclude_matcher = self._path_matcher(self.exclude)
+        self._no_render_matcher = self._path_matcher(self.no_render)
+        self._skip_if_exists_matcher = self._path_matcher(self.skip_if_exists)
 
     def render_to(self, dst_dir: Path) -> list[Path]:
         """遍历所有模板目录，渲染到目标目录。返回生成的文件列表。"""
@@ -207,24 +213,23 @@ class TemplateRenderer:
         1. self.exclude 路径模式 (gitignore-style) — 来自 _exclude YAML
         2. self.match_exclude 回调 (Callable[[Path], bool]) — P1.2 动态排除
            默认指向 _shared.exclude.default_match_exclude, 排除 .git/ 等
+
+        PR#5 P1-8: 使用预算的 _exclude_matcher, 不再每次重新构造 PathSpec
         """
-        matcher = self._path_matcher(self.exclude)
         rel = str(file_path.relative_to(src_dir))
-        if matcher(rel):
+        if self._exclude_matcher(rel):
             return True
         return self.match_exclude is not None and self.match_exclude(file_path)
 
     def _is_no_render(self, rel_path: str) -> bool:
         """检查文件是否应原样复制不渲染。"""
-        matcher = self._path_matcher(self.no_render)
-        return matcher(rel_path)
+        return self._no_render_matcher(rel_path)
 
     def _should_overwrite(self, rel_path: str) -> bool:
         """判断是否覆盖已存在的文件。"""
         if self.overwrite:
             return True
-        matcher = self._path_matcher(self.skip_if_exists)
-        if matcher(rel_path):
+        if self._skip_if_exists_matcher(rel_path):
             return False
         if self.conflict_handler:
             return self.conflict_handler(rel_path)

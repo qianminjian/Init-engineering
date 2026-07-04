@@ -1,4 +1,7 @@
-"""P1: analyze→init E2E pipeline + 深度分析覆盖 + 矩阵烟雾测试."""
+"""P1: analyze→init E2E pipeline + 深度分析覆盖 + 矩阵烟雾测试.
+
+PR#5 P1-7: 标记 integration — 真实 ae 子进程调用 + 矩阵组合 ~30s/file.
+"""
 
 import json
 import subprocess
@@ -6,6 +9,8 @@ import tempfile
 from pathlib import Path
 
 import pytest
+
+pytestmark = pytest.mark.integration
 
 
 def run_ae(args: list[str], cwd: str | None = None) -> subprocess.CompletedProcess:

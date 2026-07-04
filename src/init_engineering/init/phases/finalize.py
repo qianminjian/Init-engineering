@@ -39,8 +39,14 @@ def phase_finalize(
     """
     answers.write_to(tmpdir / ".ae-answers.yml")
 
-    # project_type 已在 phase_detect 入口做过白名单校验 (防路径穿越)
+    # P2-15: defense-in-depth 二次校验 — phase_detect 已校验,但 phase_finalize
+    # 也可能从测试 / 内部 API 直接调用,绕过 phase_detect 校验链。
+    # _write_replay 把 raw_type 拼到 ~/.ae-replays/<type>/ 路径,无校验即被路径穿越。
+    from .detect import _validate_project_type
+
     raw_type = project_type or "unknown"
+    if project_type:
+        _validate_project_type(project_type)
     _write_replay(answers, raw_type)
 
     if mode == "incremental":
@@ -219,12 +225,15 @@ def merge_incremental(
     """
     created: list[Path] = []
     skipped: list[Path] = []
+    # PR#5 P2-5: 早跳过 _shared.exclude._EXCLUDED_DIRS (与 renderer 一致)
+    # 之前只在循环内后置过滤 .git, 嵌套深时仍需遍历 pack/idx
+    from .._shared.exclude import _EXCLUDED_DIRS
     for src_file in tmpdir.rglob("*"):
         if src_file.is_dir():
             continue
         rel = src_file.relative_to(tmpdir)
-        # A1: 跳过 .git/ 目录
-        if any(part == ".git" for part in rel.parts):
+        # A1: 早跳过 .git/ / node_modules/ / __pycache__/ / .venv/
+        if any(part in _EXCLUDED_DIRS for part in rel.parts):
             continue
         dst_file = dst_path / rel
         if dst_file.exists():

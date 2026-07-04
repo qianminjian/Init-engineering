@@ -293,7 +293,7 @@ def _update_answers_meta(answers_file: Path, project_type: str) -> None:
         return
     data = yaml.safe_load(answers_file.read_text()) or {}
     meta = data.get("_meta", {})
-    meta["updated_at"] = datetime.now().isoformat()
+    meta["updated_at"] = datetime.now().astimezone().isoformat()  # PR#5 P2-10: 加 tz
     meta["ae_version"] = __version__
     meta["project_type"] = project_type
     data["_meta"] = meta

@@ -157,13 +157,8 @@ class InitLock:
                     pass
         if pid is None or ts is None:
             return  # 无心跳格式, 不动
-        # 检查 PID 是否存活
-        try:
-            os.kill(pid, 0)  # signal 0 = 不真发信号, 仅检查
-            alive = True
-        except (OSError, ProcessLookupError):
-            alive = False
-        if alive:
+        # P2-3: 跨平台 PID 存活检测 — os.kill(pid, 0) Windows 不支持
+        if _is_pid_alive(pid):
             return  # 进程在, 锁有效
         if time.time() - ts < self._HEARTBEAT_TIMEOUT:
             return  # 时间未到, 等待
@@ -216,4 +211,56 @@ class InitLock:
 
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:
         self.release()
+        return False
+
+
+def _is_pid_alive(pid: int) -> bool:
+    """P2-3: 跨平台 PID 存活检测.
+
+    Unix:  os.kill(pid, 0) — signal 0 = 不真发信号, 仅检查存在/权限.
+          进程不存在 → ProcessLookupError; 权限不足 → PermissionError (但存活).
+    Windows: os.kill 不支持 signal 0 (直接调 TerminateProcess, signal 0 参数非法).
+          改用 ctypes OpenProcess + GetExitCodeProcess,STILL_ACTIVE=259 表示存活.
+
+    Returns:
+        True if process exists and is running, False otherwise.
+    """
+    if IS_WINDOWS:
+        return _is_pid_alive_windows(pid)
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        # 存在但无权限 → 进程确实活着
+        return True
+    except OSError:
+        return False
+
+
+def _is_pid_alive_windows(pid: int) -> bool:
+    """P2-3: Windows 专用 — ctypes 调用 OpenProcess + GetExitCodeProcess.
+
+    PROCESS_QUERY_LIMITED_INFORMATION (0x1000) 是最低权限查询句柄,
+    普通用户 token 即可打开. STILL_ACTIVE (259) 表示进程尚未退出.
+    """
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        STILL_ACTIVE = 259
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if not handle:
+            return False
+        try:
+            exit_code = wintypes.DWORD()
+            if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+                return False
+            return exit_code.value == STILL_ACTIVE
+        finally:
+            kernel32.CloseHandle(handle)
+    except OSError:
         return False

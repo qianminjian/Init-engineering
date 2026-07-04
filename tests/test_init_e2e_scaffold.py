@@ -1,10 +1,18 @@
 """C2: scaffold.py 端到端 E2E 测试 — 5 阶段流水线 + 全 8 project types + 失败清理 + 增量模式.
 
 B2: 8 种项目类型 E2E 验证.
+
+PR#5 P1-7: 标记为 integration 测试 — 用真实 subprocess.run 跑 ae CLI,
+默认 `pytest -m "not integration"` 跳过 (PR#4 已建议), 本文件标记后即可分离.
 """
 
 import subprocess
 from pathlib import Path
+
+import pytest
+
+# PR#5 P1-7: 整个文件标记为 integration — 真实 ae 子进程调用 + ~3s/test
+pytestmark = pytest.mark.integration
 
 
 def run_ae(args: list[str], cwd: str | None = None) -> subprocess.CompletedProcess:

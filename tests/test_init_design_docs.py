@@ -5,9 +5,15 @@
 - design/BEACON.md（含来源字段 + 项目明灯结构）
 - design/his_bak/README.md（含归档说明）
 - design/his_bak/（目录存在）
+
+PR#5 P1-7: 标记 integration — 真实 ae 子进程调用.
 """
 
 import subprocess
+
+import pytest
+
+pytestmark = pytest.mark.integration
 from pathlib import Path
 
 

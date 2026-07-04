@@ -11,9 +11,18 @@ init 的子分支作为模块函数, 由 init() 内部直接调用.
 
 from __future__ import annotations
 
+import contextlib
+import os as _os
+import time as _time
 from pathlib import Path
 
 import click
+
+from init_engineering import __version__
+from init_engineering.cli._helpers import (
+    configure_logging as _configure_logging,
+    sanitize_error as _sanitize_error,
+)
 
 
 @click.command()
@@ -138,3 +147,185 @@ def _cmd_analyze(dst_path: Path, project_detector_cls) -> None:
         click.echo(f"CI 平台: {result.ci_platform}")
     if result.frameworks:
         click.echo(f"框架: {', '.join(result.frameworks)}")
+
+
+def _cmd_init(
+    *,
+    project: str | None,
+    project_type: str | None,
+    defaults: bool,
+    force: bool,
+    answers_file: str | None,
+    language: str | None,
+    package_manager: str | None,
+    ci_platform: str | None,
+    test_runner: str | None,
+    use_typescript: bool | None,
+    use_lefthook: bool | None,
+    use_docker: bool | None,
+    pretend: bool,
+    skip_tasks: bool,
+    no_install: bool,
+    cleanup_on_error: bool,
+    quiet: bool,
+    verbose: bool,
+    incremental: bool,
+    strict: bool,
+    analyze_only: bool,
+    telemetry: bool,
+    list_types: bool,
+    list_templates: bool,
+    templates_suffix: str | None,
+    preserve_symlinks: bool | None,
+    template_dir_override: str | None,
+    hook_timeout: int | None,
+    force_unsafe_template: bool,
+) -> None:
+    """P2-12: init 命令实现 — 从 cli/__init__.py 拆分以满足 ≤ 300 行约束.
+
+    纯函数,接收已 click-解析的所有参数,执行 init 主体逻辑.
+    调用方 (init click 装饰函数) 只负责参数收集和转发.
+    """
+    from init_engineering.init import InitWorker
+    from init_engineering.init.config import TEMPLATES_ROOT
+    from init_engineering.init.detector import ProjectDetector
+
+    # --list-types / --list-templates / --analyze 早返回分支
+    if list_types:
+        _cmd_list_types(TEMPLATES_ROOT)
+        return
+    if list_templates:
+        _cmd_list_templates(TEMPLATES_ROOT)
+        return
+
+    dst_path = Path(project) if project else Path.cwd()
+
+    if analyze_only:
+        _cmd_analyze(dst_path, ProjectDetector)
+        return
+
+    # --from-answers: 从 .ae-answers.yml 恢复 + 隐式非交互
+    if answers_file:
+        from init_engineering.init import AnswersMap
+
+        answers = AnswersMap.from_answers_file(Path(answers_file))
+        if not quiet:
+            click.echo(f"从 {answers_file} 恢复答案")
+        if not project_type:
+            with contextlib.suppress(KeyError):
+                project_type = answers.get("project_type") or ""
+        defaults = True
+    else:
+        answers = None
+
+    # PR#4 P1-4: --template-dir 白名单硬阻断 + --force-unsafe-template 显式绕过
+    if template_dir_override:
+        td = Path(template_dir_override).resolve()
+        safe_roots = [Path.cwd(), Path.home() / ".ae-templates", Path("/tmp")]
+        is_safe = any(
+            str(td).startswith(str(r.resolve()) + "/") or td == r.resolve()
+            for r in safe_roots if r.exists()
+        )
+        if not is_safe and not force_unsafe_template:
+            raise click.UsageError(
+                f"❌ --template-dir {td} 不在常用安全路径内 "
+                f"({[str(r) for r in safe_roots if r.exists()]})。"
+                f"使用不明来源模板可能含 RCE 风险 (Jinja 沙箱穿透攻击)。"
+                f"如确认模板来源可信, 加 --force-unsafe-template 显式绕过。"
+            )
+        if not is_safe and verbose:
+            click.echo(
+                f"⚠ 已用 --force-unsafe-template 绕过白名单检查: {td}",
+                err=True,
+            )
+
+    # --telemetry: 首次开启强制引导用户同意 (避免静默收集)
+    if telemetry:
+        from init_engineering.telemetry import has_consent, request_consent
+        if not has_consent():
+            if not request_consent():
+                click.echo("已禁用 telemetry (本次 init 不发送数据)", err=False)
+                telemetry = False
+            else:
+                _os.environ["AE_TELEMETRY"] = "1"
+        else:
+            _os.environ["AE_TELEMETRY"] = "1"
+
+    _configure_logging(verbose=verbose)
+
+    _worker_kwargs = dict(
+        dst_path=dst_path,
+        project_type=project_type,
+        language=language,
+        package_manager=package_manager,
+        ci_platform=ci_platform,
+        test_runner=test_runner,
+        use_typescript=use_typescript,
+        use_lefthook=use_lefthook,
+        use_docker=use_docker,
+        defaults=defaults,
+        force=force,
+        pretend=pretend,
+        skip_tasks=skip_tasks,
+        no_install=no_install,
+        cleanup_on_error=cleanup_on_error,
+        quiet=quiet,
+        verbose=verbose,
+        incremental=incremental,
+        strict=strict,
+        template_dir_override=Path(template_dir_override) if template_dir_override else None,
+        force_unsafe_template=force_unsafe_template,
+        templates_suffix=templates_suffix,
+        preserve_symlinks=preserve_symlinks,
+        hook_timeout=hook_timeout,
+    )
+
+    # B1: 必须用 with 块 — __exit__ → _cleanup() 释放 InitLock,
+    # 否则 .ae-init.lock 残留,导致后续 --incremental 看到陈旧锁 / 第二个 init 误判
+    with InitWorker(**_worker_kwargs) as worker:
+        if answers:
+            worker._previous_answers = answers
+
+        _start_ts = _time.monotonic()
+        try:
+            result = worker.execute()
+            elapsed_ms = int((_time.monotonic() - _start_ts) * 1000)
+            _emit_telemetry(
+                telemetry, project_type=result.project_type, language=language,
+                success=True, elapsed_ms=elapsed_ms,
+            )
+        except Exception as e:
+            elapsed_ms = int((_time.monotonic() - _start_ts) * 1000)
+            _emit_telemetry(
+                telemetry, project_type=project_type or "", language=language,
+                success=False, elapsed_ms=elapsed_ms, error_type=type(e).__name__,
+            )
+            # P2-13: 错误消息脱敏 — 替换 token/api_key/password 等为 [REDACTED]
+            safe_msg = _sanitize_error(str(e))
+            click.echo(f"✗ 初始化失败: {safe_msg}", err=True)
+            raise SystemExit(1) from e
+
+
+def _emit_telemetry(
+    enabled: bool,
+    *,
+    project_type: str,
+    language: str | None,
+    success: bool,
+    elapsed_ms: int,
+    error_type: str | None = None,
+) -> None:
+    """P2-12: 提取 init 成功/失败两条 telemetry send 分支 — 消除 11 行重复."""
+    if not enabled:
+        return
+    from init_engineering.telemetry import TelemetryEvent
+    from init_engineering.telemetry import send as _send_telemetry
+    _send_telemetry(TelemetryEvent(
+        ae_version=__version__,
+        command="init",
+        project_type=project_type,
+        language=language or "",
+        success=success,
+        duration_ms=elapsed_ms,
+        error_type=error_type,
+    ))

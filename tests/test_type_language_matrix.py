@@ -8,11 +8,17 @@
   - mcp-server × typescript = 1 组合
   - spec-doc × typescript / python / go / rust = 4 组合
   合计：27 组合
+
+PR#5 P1-7: 标记 integration — 27 组合 × 真实 ae 子进程, 默认 ~60s 跑完.
 """
 
 from __future__ import annotations
 
 import subprocess
+
+import pytest
+
+pytestmark = pytest.mark.integration
 from pathlib import Path
 
 import pytest

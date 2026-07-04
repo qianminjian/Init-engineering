@@ -49,7 +49,9 @@ class TestBUILTINVARS:
         am = AnswersMap()
         assert "current_year" in am.combined()
         assert "_folder_name" in BUILTIN_VARS
-        assert "_ae_python" in BUILTIN_VARS
+        # P2-2: _ae_python 改为 dynamic — 同 current_year 模式
+        assert "_ae_python" not in BUILTIN_VARS
+        assert "_ae_python" in am.combined()
         assert "sep" in BUILTIN_VARS
         assert "os" in BUILTIN_VARS
 

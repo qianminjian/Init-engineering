@@ -167,7 +167,7 @@ class ProjectEnvironment:
             meta = existing.get("_meta", {})
         else:
             meta = {}
-        meta["updated_at"] = datetime.now().isoformat()
+        meta["updated_at"] = datetime.now().astimezone().isoformat()  # PR#5 P2-10: 加 tz
         data["_meta"] = meta
         answers_file.write_text(yaml.dump(data, allow_unicode=True))
 
