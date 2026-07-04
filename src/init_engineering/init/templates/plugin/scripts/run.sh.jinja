@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# {{ plugin_name }} — {{ plugin_description }}
+set -euo pipefail
+
+PLUGIN_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+
+echo "[{{ plugin_name }}] Plugin loaded"

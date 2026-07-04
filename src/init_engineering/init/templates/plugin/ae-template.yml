@@ -1,0 +1,52 @@
+_min_ae_version: "1.0.0"
+_exclude_callback: "auto_engineering.init._shared.exclude:default_match_exclude"
+plugin_name:
+  type: str
+  help: Plugin 名称 (kebab-case)
+  default: my-plugin
+plugin_description:
+  type: str
+  help: Plugin 描述（多行可选）
+  default: ""
+author_name:
+  type: str
+  help: 作者名
+  default: ""
+author_email:
+  type: str
+  help: 作者邮箱（可选, plugin.json 必填但可 noc reply）
+  default: noreply@dev.null
+marketplace_name:
+  type: str
+  help: Marketplace 名称（kebab-case,用于 marketplace.json）
+  default: "{{ author_name | lower | replace(' ', '-') if author_name else plugin_name }}-tools"
+license:
+  type: choice
+  help: 开源许可证
+  choices: [MIT, Apache-2.0, GPL-3.0, BSD-3-Clause]
+  default: MIT
+language:
+  type: choice
+  help: 脚本实现语言
+  choices:
+    bash: Bash
+    python: Python
+    typescript: TypeScript
+  default: bash
+package_manager:
+  type: choice
+  help: 包管理器（与 language 对应）
+  choices: [npm, pnpm, yarn, bun, uv, poetry]
+  default: "{{ 'uv' if language == 'python' else 'pnpm' if language == 'typescript' else '' }}"
+  when: "{{ language != 'bash' }}"
+test_runner:
+  type: choice
+  help: 测试框架
+  choices: [vitest, jest, pytest]
+  default: "{{ 'vitest' if language == 'typescript' else 'pytest' if language == 'python' else '' }}"
+  when: "{{ language != 'bash' }}"
+ci_platform:
+  type: choice
+  help: CI 平台
+  choices: [github, gitlab, none]
+  default: github

@@ -1,0 +1,40 @@
+# {{ plugin_name }}
+
+> {{ plugin_description or 'Claude Code Plugin 项目' }}
+
+## 命令
+
+```bash
+{% if package_manager %}{{ package_manager }} install
+{% endif %}{% if test_runner %}{{ test_runner }}{% endif %}
+```
+
+## 项目结构
+
+```
+{{ plugin_name }}/
+├── .claude-plugin/
+│   ├── plugin.json         # Plugin 元数据
+│   └── marketplace.json    # Marketplace 注册
+├── skills/
+│   └── example-skill/
+│       └── SKILL.md        # Skill 定义
+├── scripts/                # 入口脚本
+├── references/             # AI 上下文文档
+├── CLAUDE.md               # 项目开发指南
+└── README.md
+```
+
+## Skill 开发指南
+
+1. 在 `skills/<skill-name>/SKILL.md` 中定义新 Skill
+2. SKILL.md frontmatter 需含 `name` + `description`（触发匹配用）
+3. 每个 Skill 目录可放 `references/` 和 `scripts/` 子目录
+4. 重启 Claude Code 后自动加载
+
+## 技术栈
+
+{%- if language %}- 语言: {{ language }}{% endif %}
+{%- if package_manager %}- 包管理: {{ package_manager }}{% endif %}
+{%- if test_runner %}- 测试: {{ test_runner }}{% endif %}
+{%- if ci_platform and ci_platform != 'none' %}- CI: {{ ci_platform }}{% endif -%}

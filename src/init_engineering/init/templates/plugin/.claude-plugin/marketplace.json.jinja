@@ -1,0 +1,19 @@
+{
+  "name": "{{ marketplace_name }}",
+  "owner": {
+    "name": "{{ author_name }}",
+    "url": "{{ 'https://github.com/' + author_name if author_name else '' }}"
+  },
+  "metadata": {
+    "version": "0.1.0",
+    "description": "{{ plugin_description }}"
+  },
+  "plugins": [
+    {
+      "name": "{{ plugin_name }}",
+      "source": "./",
+      "description": "{{ plugin_description }}",
+      "version": "0.1.0"
+    }
+  ]
+}
