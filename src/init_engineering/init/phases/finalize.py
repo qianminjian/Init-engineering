@@ -12,6 +12,7 @@ import logging
 import os as _os
 import shutil
 import subprocess
+import time as _time
 from datetime import datetime
 from pathlib import Path
 
@@ -92,8 +93,6 @@ def _atomic_copytree(src: Path, dst: Path) -> None:
     含指向 tmpdir 路径的 shebang/二进制引用 — 复制到 dst 后会失效。
     dst 的依赖安装在 phase_post_install 重新执行。
     """
-    import time as _time
-
     partial = dst.with_name(f"{dst.name}.partial-{int(_time.time() * 1000)}")
     new_marker = dst.with_name(f"{dst.name}.new")
 
@@ -261,7 +260,10 @@ def _write_replay(answers: AnswersMap, raw_type: str) -> None:
         try:
             replay_dir.mkdir(parents=True, exist_ok=True)
             _os.chmod(replay_dir, 0o700)
-            replay_file = replay_dir / f"{datetime.now().astimezone().strftime('%Y%m%d-%H%M%S')}.yml"
+            replay_file = replay_dir / (
+                f"{datetime.now().astimezone().strftime('%Y%m%d-%H%M%S')}"
+                f"-{_os.getpid()}-{_time.monotonic_ns()}.yml"
+            )
             answers.write_to(replay_file)
             _os.chmod(replay_file, 0o600)
         finally:

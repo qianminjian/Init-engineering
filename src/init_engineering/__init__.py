@@ -12,11 +12,5 @@
 # 所有 ae-engineering 副本（CLI、模板引擎、AE_PHASE 钩子）必须
 # 引用本变量，避免版本漂移。详见 design/BEACON.md 设计决策 #5。
 __version__ = "1.0.0"
-_AE_VERSION = "1.0.0"
 
-__all__ = ["_AE_VERSION", "__version__"]
-
-
-def get_ae_version() -> str:
-    """导出 ae 版本号 — 用于模板渲染与兼容检查."""
-    return _AE_VERSION
+__all__ = ["__version__"]

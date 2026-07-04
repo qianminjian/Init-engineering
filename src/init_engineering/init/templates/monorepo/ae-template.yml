@@ -52,6 +52,14 @@ ci_platform:
   help: CI 平台
   choices: [github, gitlab, none]
   default: github
+use_lefthook:
+  type: bool
+  help: 使用 Lefthook 管理 git hooks（推荐）
+  default: false
+use_docker:
+  type: bool
+  help: 添加 Docker 支持（Dockerfile + docker-compose）
+  default: false
 
 # Nested template variants — 按 language 注入对应语言的 workspace 模板
 _nested_templates:

@@ -11,12 +11,15 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
 import time
 from pathlib import Path
 
 from .errors import TargetDirectoryError
+
+_logger = logging.getLogger(__name__)
 
 try:
     import fcntl  # Linux/macOS only
@@ -163,8 +166,7 @@ class InitLock:
         if time.time() - ts < self._HEARTBEAT_TIMEOUT:
             return  # 时间未到, 等待
         # 死锁 — 强制清理
-        import logging
-        logging.getLogger(__name__).warning(
+        _logger.warning(
             "reaping stale lock file %s (pid=%d, last heartbeat %.0fs ago)",
             self.lock_file, pid, time.time() - ts,
         )
@@ -182,19 +184,19 @@ class InitLock:
             else:
                 # DI-P1-1: Windows 释放锁 — 解锁那 1 字节
                 msvcrt.locking(self._fd, self._LK_UNLCK, 1)  # type: ignore[union-attr]
-        except Exception:
-            pass
+        except Exception as exc:
+            _logger.debug("flock unlock failed (ignored): %s", exc)
         try:
             os.close(self._fd)
-        except Exception:
-            pass
+        except Exception as exc:
+            _logger.debug("fd close failed (ignored): %s", exc)
         finally:
             self._fd = None
         try:
             if self.lock_file.exists():
                 self.lock_file.unlink()
-        except Exception:
-            pass
+        except Exception as exc:
+            _logger.debug("lock file unlink failed (ignored): %s", exc)
 
     @classmethod
     def acquire_for(cls, dst_path: Path) -> InitLock:

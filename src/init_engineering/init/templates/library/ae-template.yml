@@ -33,9 +33,17 @@ use_typescript:
   type: bool
   help: 使用 TypeScript
   default: "{{ language == 'typescript' }}"
-  when: "{{ language == 'typescript' or language == 'node' }}"
+  when: "{{ language == 'typescript' }}"
 ci_platform:
   type: choice
   help: CI 平台
   choices: [github, gitlab, none]
   default: github
+use_lefthook:
+  type: bool
+  help: 使用 Lefthook 管理 git hooks（推荐）
+  default: false
+use_docker:
+  type: bool
+  help: 添加 Docker 支持（Dockerfile + docker-compose）
+  default: false

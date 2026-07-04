@@ -66,17 +66,17 @@ class ProjectEnvironment:
 
     @staticmethod
     def _detect_package_manager(root: Path) -> str | None:
-        from init_engineering.init.detector_helpers import detect_package_manager as _detect_pm
+        from init_engineering._shared.detection import detect_package_manager as _detect_pm
         return _detect_pm(root)
 
     @staticmethod
     def _detect_test_runner(root: Path) -> str | None:
-        from init_engineering.init.detector_helpers import detect_test_runner as _detect_tr
+        from init_engineering._shared.detection import detect_test_runner as _detect_tr
         return _detect_tr(root)
 
     @staticmethod
     def _detect_ci(root: Path) -> str | None:
-        from init_engineering.init.detector_helpers import detect_ci_platform as _detect_ci_plat
+        from init_engineering._shared.detection import detect_ci_platform as _detect_ci_plat
         return _detect_ci_plat(root)
 
     # 6 个可客观判定的字段 — _sync_detectable 只处理这些

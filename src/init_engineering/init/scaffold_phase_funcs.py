@@ -12,11 +12,12 @@ P2-B (2026-07-03 深度审计): scaffold_phase_funcs.py 379 行超 300 行约束
 
 from __future__ import annotations
 
-# Re-export 4 个 phase_* 函数保持向后兼容
+# Re-export 5 个 phase_* 函数保持向后兼容
 from .phases.detect import _validate_project_type, phase_detect
 from .phases.finalize import phase_finalize
 from .phases.prompt import phase_prompt
 from .phases.render import phase_render
+from .phases.tasks import phase_tasks
 
 # 测试 patch("init_engineering.init.scaffold_phase_funcs._render_to") 需暴露此名.
 # 用 __getattr__ (PEP 562) 懒加载, 避免与 phases/ 子包 import 时的循环依赖:
@@ -37,4 +38,5 @@ __all__ = [
     "phase_finalize",
     "phase_prompt",
     "phase_render",
+    "phase_tasks",
 ]

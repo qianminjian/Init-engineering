@@ -549,6 +549,65 @@ class TestLazyExternalDict:
         assert "_LazyExternalDict" in r
 
 
+class TestSensitiveFieldFilter:
+    """_is_sensitive_field + to_answers_file 敏感字段过滤."""
+
+    def test_exact_match_patterns(self):
+        from init_engineering.init.answers import _is_sensitive_field
+
+        assert _is_sensitive_field("password") is True
+        assert _is_sensitive_field("secret") is True
+        assert _is_sensitive_field("token") is True
+        assert _is_sensitive_field("api_key") is True
+        assert _is_sensitive_field("access_token") is True
+        assert _is_sensitive_field("private_key") is True
+        assert _is_sensitive_field("credential") is True
+        assert _is_sensitive_field("credentials") is True
+
+    def test_suffix_match_patterns(self):
+        from init_engineering.init.answers import _is_sensitive_field
+
+        assert _is_sensitive_field("db_password") is True
+        assert _is_sensitive_field("github_token") is True
+        assert _is_sensitive_field("aws_secret") is True
+        assert _is_sensitive_field("admin_credential") is True
+        assert _is_sensitive_field("api_secret_key") is True
+
+    def test_non_sensitive_fields_pass(self):
+        from init_engineering.init.answers import _is_sensitive_field
+
+        assert _is_sensitive_field("project_name") is False
+        assert _is_sensitive_field("language") is False
+        assert _is_sensitive_field("package_manager") is False
+        assert _is_sensitive_field("ci_platform") is False
+        assert _is_sensitive_field("test_runner") is False
+
+    def test_case_insensitive(self):
+        from init_engineering.init.answers import _is_sensitive_field
+
+        assert _is_sensitive_field("PASSWORD") is True
+        assert _is_sensitive_field("Api_Key") is True
+        assert _is_sensitive_field("SECRET_TOKEN") is True
+        assert _is_sensitive_field("DB_PASSWORD") is True
+
+    def test_to_answers_file_filters_sensitive_keys(self):
+        """to_answers_file 自动过滤含敏感字段名的 key."""
+        am = AnswersMap(
+            cli_overrides={
+                "project_name": "my-project",
+                "db_password": "should-be-filtered",
+                "api_token": "also-filtered",
+                "language": "python",
+            },
+            builtins={"_ae_version": "1.0.0"},
+        )
+        result = am.to_answers_file()
+        assert "project_name" in result
+        assert "language" in result
+        assert "db_password" not in result
+        assert "api_token" not in result
+
+
 class TestExternalDataSandbox:
     """P1-S3 (deep audit C-P1-3): external_data 路径沙箱.
 
