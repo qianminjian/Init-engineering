@@ -16,9 +16,11 @@
 - no_render 列表中的文件始终原样复制
 - 文件冲突：调用 conflict_handler 回调决定覆盖/跳过/询问
 - Jinja2 环境使用 SandboxedEnvironment
+
+PR#3 P1-2: 拆分 — atomic_write + is_binary 迁至 _shared/io.py,
+symlink 处理迁至 renderer_symlinks.py。本文件瘦身到 <300 行。
 """
 
-import os
 import shutil
 from collections.abc import Callable
 from pathlib import Path
@@ -28,90 +30,9 @@ import pathspec
 from jinja2 import StrictUndefined
 from jinja2.sandbox import SandboxedEnvironment
 
+from ._shared.io import _atomic_write_binary, _atomic_write_text, detect_newline, is_binary
 from .errors import TemplateRenderError
-
-# PE-P1-5: 流式原子写 — 大文件 (大 README / 嵌入式 binary) 写到 dst.tmp-<pid>,
-# write 完成后 rename 替换 dst。SIGKILL 落入写过程 → dst.tmp-<pid> 残留,
-# dst 保持上次成功状态 (或不存在),不出现半文件。
-# 流式 (chunks) 避免 read_text() 一次性加载整文件到内存。
-_CHUNK_SIZE = 64 * 1024  # 64KB
-
-
-def _atomic_write_text(dst: Path, content: str, newline: str | None = None) -> None:
-    """流式原子写文本文件。
-
-    Args:
-        dst: 目标路径
-        content: 完整内容 (jinja 渲染后)
-        newline: 换行符策略 (None/''/'\n')，透传给 Path.write_text
-    """
-    import time as _time
-
-    partial = dst.with_name(f"{dst.name}.tmp-{_time.monotonic_ns()}")
-    try:
-        with open(partial, "w", encoding="utf-8", newline=newline) as f:
-            f.write(content)
-        partial.replace(dst)
-    except Exception:
-        try:
-            partial.unlink()
-        except OSError:
-            pass
-        raise
-
-
-def _atomic_write_binary(dst: Path, src: Path) -> None:
-    """流式原子写二进制文件 — 分块 64KB read+write。
-
-    shutil.copy2 不分块(直接 syscall 走 sendfile/copyfile_range 已是零拷贝),
-    但仍是直接写到 final path。改为分块 read+write 到 .tmp 再 rename。
-    """
-    import time as _time
-
-    partial = dst.with_name(f"{dst.name}.tmp-{_time.monotonic_ns()}")
-    try:
-        with open(src, "rb") as f_in, open(partial, "wb") as f_out:
-            while True:
-                chunk = f_in.read(_CHUNK_SIZE)
-                if not chunk:
-                    break
-                f_out.write(chunk)
-        # 复制权限位
-        shutil.copymode(src, partial)
-        partial.replace(dst)
-    except Exception:
-        try:
-            partial.unlink()
-        except OSError:
-            pass
-        raise
-
-
-def is_binary(path: str) -> bool:
-    """检测文件是否为二进制（无外部依赖，纯字节启发式）。
-
-    算法：
-    1. 读首 8KB 字节
-    2. 含 NUL 字节（\\x00）→ 二进制
-    3. 全部 UTF-8 可解码 → 文本
-    4. 否则 → 二进制
-
-    替代 binaryornot（最后发布 2020，无 3.13 兼容性保证）。
-    """
-    try:
-        with open(path, "rb") as f:
-            chunk = f.read(8192)
-    except OSError:
-        return False
-    if not chunk:
-        return False
-    if b"\x00" in chunk:
-        return True
-    try:
-        chunk.decode("utf-8")
-        return False
-    except UnicodeDecodeError:
-        return True
+from .renderer_symlinks import resolve_symlink
 
 
 class TemplateRenderer:
@@ -202,77 +123,22 @@ class TemplateRenderer:
                 dst_file.parent.mkdir(parents=True, exist_ok=True)
 
                 if self._is_no_render(str(rel_path)):
-                    # F1: 非原子 copy → 原子写,防 SIGKILL 留半文件
-                    # 复用 _atomic_write_text/binary (与 is_template 分支同机制)
-                    if is_binary(str(src_file)):
-                        _atomic_write_binary(dst_file, src_file)
-                    else:
-                        newline = self._detect_newline(src_file)
-                        _atomic_write_text(dst_file, src_file.read_text(), newline=newline)
+                    self._write_copy(src_file, dst_file)
                     generated[rendered_rel] = dst_file
                     continue
 
-                # A4: symlink 处理 — preserve_symlinks=True 保留为 symlink; False 解析为内容
-                if src_file.is_symlink():
-                    target = src_file.resolve()
-                    if self.preserve_symlinks:
-                        if target.exists():
-                            # 安全: 只拒绝含 .. 的相对 symlink（可穿越到 dst_dir 外）
-                            # 绝对路径 symlink 可保留（目标位置在渲染后不变）
-                            try:
-                                raw_target = os.readlink(src_file)
-                            except OSError:
-                                continue
-                            if ".." in raw_target:
-                                raise TemplateRenderError(
-                                    str(rel_path),
-                                    ValueError(
-                                        f"symlink target '{raw_target}' contains '..', refusing to copy"
-                                    ),
-                                )
-                            # 复制 symlink 本身 (保留为指向 target 的链接)
-                            try:
-                                dst_file.symlink_to(target)
-                            except OSError:
-                                continue
-                            generated[rendered_rel] = dst_file
-                            continue
-                        # dangling symlink → 跳过 (目标不存在,无法保留)
-                        continue
-                    else:
-                        # preserve_symlinks=False: 跳过 dangling; 有效 symlink 解析为内容复制
-                        if not target.exists():
-                            continue  # dangling symlink → 跳过
-                        # F1: 解析 symlink 为内容,复制到目标 (原子写防 SIGKILL 半文件)
-                        if is_binary(str(target)):
-                            _atomic_write_binary(dst_file, target)
-                        else:
-                            newline = self._detect_newline(target)
-                            _atomic_write_text(dst_file, target.read_text(), newline=newline)
-                        try:
-                            shutil.copymode(src_file, dst_file)
-                        except OSError:
-                            pass
+                # PR#3 P1-2: symlink 处理委托 renderer_symlinks.resolve_symlink
+                handled, skip_reason = resolve_symlink(
+                    src_file, dst_file, preserve_symlinks=self.preserve_symlinks,
+                )
+                if handled:
+                    # skip_reason 非空表示 dangling/symlink_failed 等跳过场景,
+                    # 不应记录到 generated (测试要求 dangling 不在 generated 中)
+                    if skip_reason is None:
                         generated[rendered_rel] = dst_file
-                        continue
+                    continue
 
-                if is_template:
-                    try:
-                        content = self._render(src_file.read_text())
-                    except jinja2.TemplateError as e:
-                        raise TemplateRenderError(str(rel_path), e) from e
-                    newline = self._detect_newline(src_file)
-                    # PE-P1-5: 流式原子写 — 大文件 (大 README/Dockerfile) 不一次性 read+write
-                    # 分块 read(64KB) 写入 .partial 后 rename 原子替换。
-                    # SIGKILL 落入写过程 → .partial 残留, dst_file 保持上次成功状态
-                    _atomic_write_text(dst_file, content, newline=newline)
-                elif is_binary(str(src_file)):
-                    # 二进制文件流式复制 (shutil.copyfile 内部用 sendfile/copyfile_range,
-                    # 已是流式; 但仍是 write-to-final-path,加 .partial 阶段防 SIGKILL 留半文件)
-                    _atomic_write_binary(dst_file, src_file)
-                else:
-                    newline = self._detect_newline(src_file)
-                    _atomic_write_text(dst_file, src_file.read_text(), newline=newline)
+                self._write_rendered(src_file, dst_file, is_template=is_template)
 
                 try:
                     shutil.copymode(src_file, dst_file)
@@ -281,6 +147,29 @@ class TemplateRenderer:
                 generated[rendered_rel] = dst_file
 
         return list(generated.values())
+
+    def _write_copy(self, src_file: Path, dst_file: Path) -> None:
+        """F1: no_render 文件原子复制 — 二进制/文本都走流式原子写。"""
+        if is_binary(str(src_file)):
+            _atomic_write_binary(dst_file, src_file)
+        else:
+            newline = detect_newline(src_file)
+            _atomic_write_text(dst_file, src_file.read_text(), newline=newline)
+
+    def _write_rendered(self, src_file: Path, dst_file: Path, *, is_template: bool) -> None:
+        """核心渲染分支:template 走 jinja,其他按二进制/文本复制。"""
+        if is_template:
+            try:
+                content = self._render(src_file.read_text())
+            except jinja2.TemplateError as e:
+                raise TemplateRenderError(str(src_file.relative_to(src_file.parents[-2])), e) from e
+            newline = detect_newline(src_file)
+            _atomic_write_text(dst_file, content, newline=newline)
+        elif is_binary(str(src_file)):
+            _atomic_write_binary(dst_file, src_file)
+        else:
+            newline = detect_newline(src_file)
+            _atomic_write_text(dst_file, src_file.read_text(), newline=newline)
 
     def _render_path(self, path_str: str) -> str:
         """渲染路径模板。"""
@@ -341,15 +230,9 @@ class TemplateRenderer:
             return self.conflict_handler(rel_path)
         return False
 
+    # PR#3 P1-2: _detect_newline 已迁至 _shared.io.detect_newline
+    # 保留 staticmethod 薄壳供旧调用方 (例如子类的扩展) 兼容
     @staticmethod
     def _detect_newline(file_path: Path) -> str | None:
-        """检测文件的换行符风格。"""
-        try:
-            with open(file_path, encoding="utf-8") as f:
-                f.readline()
-                newline = getattr(f, "newlines", None)
-                if isinstance(newline, tuple):
-                    newline = newline[0]
-                return newline
-        except Exception:
-            return None
+        """检测文件的换行符风格 — PR#3 P1-2 后薄壳,实际调用 _shared.io.detect_newline."""
+        return detect_newline(file_path)

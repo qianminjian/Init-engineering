@@ -1,10 +1,10 @@
-"""InitWorker 钩子执行 — 内置钩子 + 增量合并 + 顶层 init_project()。
+"""InitWorker 钩子执行 — 内置钩子 + 顶层 init_project()。
 
 从 scaffold.py 拆分（v2.2 Phase I, P2.5）。
+PR#3 P1-1: merge_incremental 迁出至 phases/finalize.py (消除跨模块延迟 import 循环)。
 
 模块内容：
 - run_builtin_hooks()  : git init / package_manager install / lefthook install / git add+commit
-- merge_incremental()   : 增量模式合并（v2.0.5）
 - init_project()       : 顶层便利函数
 """
 
@@ -243,41 +243,3 @@ def run_builtin_hooks(
         result = type("R", (), {"returncode": -1, "stderr": "git commit timed out after 30s"})()
     if result.returncode != 0:
         _fail("git commit", result.returncode, result.stderr)
-
-
-def merge_incremental(
-    tmpdir: Path,
-    dst_path: Path,
-    created_files: set[str],
-) -> tuple[list[Path], list[Path]]:
-    """A1: 增量模式合并 — 逐文件复制,跳过已存在 + .git/。
-
-    拆分自 InitWorker._phase_merge()，避免 scaffold_phases.py 超过 200 行。
-
-    Args:
-        tmpdir: 临时生成目录
-        dst_path: 目标目录
-        created_files: 收集已创建文件相对路径的集合 (会被原地修改)
-
-    Returns:
-        (created_files, skipped_files) 绝对路径列表
-    """
-    created: list[Path] = []
-    skipped: list[Path] = []
-    for src_file in tmpdir.rglob("*"):
-        if src_file.is_dir():
-            continue
-        rel = src_file.relative_to(tmpdir)
-        # A1: 跳过 .git/ 目录
-        if any(part == ".git" for part in rel.parts):
-            continue
-        dst_file = dst_path / rel
-        if dst_file.exists():
-            skipped.append(dst_file)
-            continue
-        dst_file.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(src_file, dst_file)
-        shutil.copymode(src_file, dst_file)
-        created_files.add(str(rel))
-        created.append(dst_file)
-    return created, skipped

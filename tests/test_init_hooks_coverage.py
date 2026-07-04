@@ -1,6 +1,8 @@
 """scaffold_hooks 单元测试 — run_builtin_hooks / merge_incremental.
 
 覆盖 scaffold_hooks.py (77%) 和 scaffold_phases.py 缺失的清理/消息处理。
+
+PR#3 P1-1: merge_incremental 已迁至 init_engineering.init.phases.finalize.
 """
 
 import subprocess
@@ -10,7 +12,8 @@ from unittest.mock import patch, MagicMock
 import pytest
 
 from init_engineering.init.answers import AnswersMap
-from init_engineering.init.scaffold_hooks import merge_incremental, run_builtin_hooks
+from init_engineering.init.phases.finalize import merge_incremental
+from init_engineering.init.scaffold_hooks import run_builtin_hooks
 
 
 class TestMergeIncremental:

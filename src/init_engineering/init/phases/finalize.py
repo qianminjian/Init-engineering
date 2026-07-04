@@ -1,6 +1,9 @@
 """Phase 4: finalize — 写入 .ae-answers.yml + 增量/全量 copytree.
 
 来源: scaffold_phase_funcs.py phase_finalize + _atomic_copytree + _write_replay (2026-07-03 拆分).
+
+PR#3 P1-1: merge_incremental 从 scaffold_hooks.py 迁入 — 消除跨模块延迟 import,
+phases/finalize 真正自包含,与 scaffold_hooks 解耦。
 """
 
 from __future__ import annotations
@@ -41,7 +44,7 @@ def phase_finalize(
     _write_replay(answers, raw_type)
 
     if mode == "incremental":
-        from ..scaffold_hooks import merge_incremental
+        # PR#3 P1-1: merge_incremental 已在同模块,无需延迟 import
         created, skipped = merge_incremental(tmpdir, dst_path, created_files)
         if not quiet:
             # PE-AUDIT-P0-2: 进度消息走 logger
@@ -193,6 +196,46 @@ def phase_post_install(
             raise HookExecutionError(command=cmd_str, exit_code=-1, stderr=f"timed out after {effective_timeout}s")
         if not quiet:
             _logger.warning("warning: %s timed out after %ds", cmd_str, effective_timeout)
+
+
+def merge_incremental(
+    tmpdir: Path,
+    dst_path: Path,
+    created_files: set[str],
+) -> tuple[list[Path], list[Path]]:
+    """A1: 增量模式合并 — 逐文件复制,跳过已存在 + .git/。
+
+    PR#3 P1-1: 从 scaffold_hooks.py 迁入 — 让 phases/finalize.py 自包含,
+    消除 scaffold.py → scaffold_hooks.merge_incremental 与 phases/finalize.py
+    的跨模块延迟 import 循环隐患。
+
+    Args:
+        tmpdir: 临时生成目录
+        dst_path: 目标目录
+        created_files: 收集已创建文件相对路径的集合 (会被原地修改)
+
+    Returns:
+        (created_files, skipped_files) 绝对路径列表
+    """
+    created: list[Path] = []
+    skipped: list[Path] = []
+    for src_file in tmpdir.rglob("*"):
+        if src_file.is_dir():
+            continue
+        rel = src_file.relative_to(tmpdir)
+        # A1: 跳过 .git/ 目录
+        if any(part == ".git" for part in rel.parts):
+            continue
+        dst_file = dst_path / rel
+        if dst_file.exists():
+            skipped.append(dst_file)
+            continue
+        dst_file.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src_file, dst_file)
+        shutil.copymode(src_file, dst_file)
+        created_files.add(str(rel))
+        created.append(dst_file)
+    return created, skipped
 
 
 def _write_replay(answers: AnswersMap, raw_type: str) -> None:
