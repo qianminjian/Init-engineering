@@ -7,6 +7,7 @@
 
 import logging
 import os as subprocess_os
+import shlex
 import subprocess
 from pathlib import Path
 
@@ -113,6 +114,20 @@ class TaskRunner:
                         ),
                     )
                 cmd = jinja_env.from_string(task.cmd).render(**render_context)
+                # PR#4 P1-3 安全加固: string-mode cmd 强制 shlex.split → argv 数组,
+                # 防止 "evil && calc" 这类被空格分隔的多参数串执行
+                # (即便 shell=False, 字符串 cmd 也可能被 tokenize 拆成多个 argv)
+                try:
+                    cmd = shlex.split(cmd)
+                except ValueError as e:
+                    raise TaskExecutionError(
+                        command=task.cmd,
+                        returncode=-1,
+                        stderr=(
+                            f"task.cmd string 模式 shlex.split 失败 (引号/转义不匹配): "
+                            f"{e}。建议改用 list cmd 明确每个 argv 元素。"
+                        ),
+                    )
                 use_shell = False
 
             # 5. 执行

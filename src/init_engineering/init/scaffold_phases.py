@@ -78,6 +78,8 @@ class InitWorker:
     template_dir_override: Path | None = None
     # PE-P1-4: 全局钩子超时(秒),None 走 TaskRunner 默认 (300s)
     hook_timeout: int | None = None
+    # PR#4 P1-4: 显式 force-unsafe-template 标记 (CLI 已硬阻断, 此处仅记录)
+    force_unsafe_template: bool = False
 
     _current_phase: str = field(init=False, default="")
     _template: TemplateConfig = field(init=False, default=None)

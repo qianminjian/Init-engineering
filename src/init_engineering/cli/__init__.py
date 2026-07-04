@@ -100,6 +100,14 @@ def main():
     default=None,
     help="钩子命令默认超时秒数 (默认 300, 模板 Task.timeout 可逐任务覆盖)",
 )
+# PR#4 P1-4: --template-dir 安全绕过 — 显式 flag 才允许非白名单路径
+@click.option(
+    "--force-unsafe-template",
+    "force_unsafe_template",
+    is_flag=True,
+    default=False,
+    help="强制使用非白名单 --template-dir (PR#4 P1-4: 默认会被拒绝, 仅此 flag 可绕过)",
+)
 def init(
     project: str | None,
     project_type: str | None,
@@ -129,6 +137,7 @@ def init(
     preserve_symlinks: bool | None,
     template_dir_override: str | None,
     hook_timeout: int | None,
+    force_unsafe_template: bool,
 ):
     """项目环境初始化."""
     from init_engineering.init import InitWorker
@@ -164,9 +173,9 @@ def init(
     else:
         answers = None
 
-    # P2-10: template-dir 白名单软警告 — 不阻断, 仅在 verbose 模式显示
-    # 防止用户从 internet/不明来源拖入恶意模板 (可能含 [AE-P0-1] Jinja 沙箱穿透)
-    if template_dir_override and verbose:
+    # PR#4 P1-4: template-dir 白名单由软警告升级为硬阻断
+    # 防止用户从 internet/不明来源拖入恶意模板 (Jinja 沙箱穿透 + AE-P0-1 历史 CVEs)
+    if template_dir_override:
         from pathlib import Path as _P
         td = _P(template_dir_override).resolve()
         safe_roots = [_P.cwd(), _P.home() / ".ae-templates", _P("/tmp")]
@@ -174,11 +183,16 @@ def init(
             str(td).startswith(str(r.resolve()) + "/") or td == r.resolve()
             for r in safe_roots if r.exists()
         )
-        if not is_safe:
+        if not is_safe and not force_unsafe_template:
+            raise click.UsageError(
+                f"❌ --template-dir {td} 不在常用安全路径内 "
+                f"({[str(r) for r in safe_roots if r.exists()]})。"
+                f"使用不明来源模板可能含 RCE 风险 (Jinja 沙箱穿透攻击)。"
+                f"如确认模板来源可信, 加 --force-unsafe-template 显式绕过。"
+            )
+        if not is_safe and verbose:
             click.echo(
-                f"⚠ 警告: --template-dir {td} 不在常用安全路径内 "
-                f"({[str(r) for r in safe_roots]})。"
-                f"使用不明来源模板可能有 RCE 风险 (Jinja 沙箱穿透攻击).",
+                f"⚠ 已用 --force-unsafe-template 绕过白名单检查: {td}",
                 err=True,
             )
 
@@ -225,6 +239,8 @@ def init(
         incremental=incremental,
         strict=strict,
         template_dir_override=Path(template_dir_override) if template_dir_override else None,
+        # PR#4 P1-4: 透传 force_unsafe_template (CLI 已在上面硬阻断, 此处再传以供 InitWorker 记录日志)
+        force_unsafe_template=force_unsafe_template,
         # P1-1: templates_suffix + preserve_symlinks CLI 透传
         templates_suffix=templates_suffix,
         preserve_symlinks=preserve_symlinks,

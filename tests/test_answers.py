@@ -253,18 +253,22 @@ class TestLoadExternal:
         finally:
             Path(tmp_path).unlink(missing_ok=True)
 
-    def test_returns_none_for_missing_file(self):
-        am = AnswersMap(external={"key": "/nonexistent/file.yml"})
+    def test_returns_none_for_missing_file(self, tmp_path):
+        # PR#4 P1-5: 沙箱路径下不存在的文件 → 返回 None (缓存)
+        # 沙箱外路径 (如 /nonexistent) → 抛 ValueError (防路径穿越)
+        target = tmp_path / "does-not-exist.yml"
+        am = AnswersMap(external={"key": str(target)})
         am._external_cache = {}
         result = am._load_external("key")
         assert result is None
 
-    def test_caches_none_for_missing_file(self):
-        am = AnswersMap(external={"key": "/nonexistent/file.yml"})
+    def test_caches_none_for_missing_file(self, tmp_path):
+        # PR#4 P1-5: 沙箱路径下 None 也会被缓存 (第二次不再尝试 IO)
+        target = tmp_path / "does-not-exist.yml"
+        am = AnswersMap(external={"key": str(target)})
         am._external_cache = {}
         am._load_external("key")
         am._load_external("key")
-        # 确认只缓存了一次（None 也被缓存）
         assert "key" in am._external_cache
         assert am._external_cache["key"] is None
 

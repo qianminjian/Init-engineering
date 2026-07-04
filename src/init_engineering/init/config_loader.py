@@ -100,8 +100,17 @@ def _load_yaml_with_includes(config_path: Path, sandbox_roots: list[str] | None 
 
     v2.5 P1-3: 若 sandbox_roots 非空,进一步验证 path 在 sandbox_roots 内.
     sandbox_roots=None (默认) 跳过第二层检查,保持向后兼容.
+
+    PR#4 P1-5 安全加固: sandbox_roots=None 时 fallback 到 [config_path.parent]
+    作为最小安全边界. 防止外部模板 `!include` 越界读取同磁盘敏感文件.
+    调用方仍可通过传 sandbox_roots=[] (空列表) 显式走严格模式.
     """
     import os
+
+    # PR#4 P1-5: 默认 fallback 到模板目录自身 — 之前完全跳过二层检查是过度宽松
+    effective_sandbox_roots = (
+        sandbox_roots if sandbox_roots is not None else [config_path.parent]
+    )
 
     class _IncludeLoader(yaml.SafeLoader):
         pass
@@ -132,19 +141,19 @@ def _load_yaml_with_includes(config_path: Path, sandbox_roots: list[str] | None 
             # sandbox_roots=None → 不检查 (向后兼容)
             # sandbox_roots=[] → 严格模式,不允许任何 include
             # sandbox_roots=["/a", "/b"] → 只允许在这些目录内
-            if sandbox_roots is not None:
-                if not sandbox_roots:
-                    raise ConfigLoaderSecurityError(
-                        f"!include '{include_spec}' not allowed: "
-                        f"sandbox_roots is empty (strict mode). "
-                        f"Refusing to load (potential template injection)."
-                    )
-                if not is_path_under_any_root(path_obj, sandbox_roots):
-                    raise ConfigLoaderSecurityError(
-                        f"!include path '{path_obj}' (resolved: {path_real}) is not under "
-                        f"sandbox roots {sandbox_roots}. Refusing to load "
-                        f"(potential template injection)."
-                    )
+            # PR#4 P1-5: 默认 fallback 到 [config_path.parent] — 永不 None 跳过
+            if not effective_sandbox_roots:
+                raise ConfigLoaderSecurityError(
+                    f"!include '{include_spec}' not allowed: "
+                    f"sandbox_roots is empty (strict mode). "
+                    f"Refusing to load (potential template injection)."
+                )
+            if not is_path_under_any_root(path_obj, effective_sandbox_roots):
+                raise ConfigLoaderSecurityError(
+                    f"!include path '{path_obj}' (resolved: {path_real}) is not under "
+                    f"sandbox roots {effective_sandbox_roots}. Refusing to load "
+                    f"(potential template injection)."
+                )
             # P2-16: 显式 utf-8 — 防止 Windows GBK 默认编码破坏中文 yaml
             with open(path_obj, encoding="utf-8") as fh:
                 for doc in yaml.safe_load_all(fh):

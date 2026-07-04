@@ -5,6 +5,7 @@
 
 import os as _os
 import sys
+import tempfile
 from collections import ChainMap
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -171,16 +172,25 @@ class AnswersMap:
 
         v2.5 P1-S3: 若 external_sandbox_roots 非空, 验证路径必须在
         sandbox 根内 (realpath 双侧), 否则抛 ValueError 防路径穿越.
+
+        PR#4 P1-5 安全加固: external_sandbox_roots 为空时 fallback 到
+        [cwd, home, tempdir] 作为最小安全边界. 之前完全跳过检查会让攻击者
+        通过 external_data 读 ~/.ssh/ /etc/passwd 等敏感文件.
+        tempfile.gettempdir() 是必要的 — 测试与 install hook 常把临时文件
+        放这里, 不纳入会让所有 tmpfile-based fixture 报路径穿越.
         """
         if key not in self._external_cache:
             file_path = Path(self.external[key])
-            if self.external_sandbox_roots and not is_path_under_any_root(
-                file_path,
-                [Path(r) for r in self.external_sandbox_roots],
-            ):
+            # PR#4 P1-5: 默认 fallback, 永不跳过检查
+            effective_roots = (
+                [Path(r) for r in self.external_sandbox_roots]
+                if self.external_sandbox_roots
+                else [Path.cwd(), Path.home(), Path(tempfile.gettempdir())]
+            )
+            if not is_path_under_any_root(file_path, effective_roots):
                 raise ValueError(
                     f"external_data path '{file_path}' (key='{key}') "
-                    f"not under sandbox roots {self.external_sandbox_roots}. "
+                    f"not under sandbox roots {effective_roots}. "
                     f"Refusing to load (potential template injection)."
                 )
             if file_path.exists():
