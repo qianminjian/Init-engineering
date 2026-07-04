@@ -9,7 +9,6 @@ import logging
 import os as _os
 import shutil
 import subprocess
-import sys as _sys
 from datetime import datetime
 from pathlib import Path
 
@@ -45,9 +44,10 @@ def phase_finalize(
         from ..scaffold_hooks import merge_incremental
         created, skipped = merge_incremental(tmpdir, dst_path, created_files)
         if not quiet:
-            print(
-                f"\n✓ 增量模式：已补充 {len(created)} 个文件，"
-                f"跳过 {len(skipped)} 个已有文件"
+            # PE-AUDIT-P0-2: 进度消息走 logger
+            _logger.info(
+                "\n✓ 增量模式：已补充 %d 个文件，跳过 %d 个已有文件",
+                len(created), len(skipped),
             )
         return False
     else:
@@ -59,9 +59,10 @@ def phase_finalize(
         if not quiet:
             # P2-2: 真实文件数 — 之前写死 "文件数: 0" 是 bug, 用 generated 实际计数
             file_count = len(generated) if generated else sum(1 for _ in dst_path.rglob("*") if _.is_file())
-            print(f"✓ 项目已生成: {dst_path}")
-            print(f"  文件数: {file_count}")
-            print(f"  下一步: cd {dst_path.name} && git log")
+            # PE-AUDIT-P0-2: 进度消息走 logger
+            _logger.info("✓ 项目已生成: %s", dst_path)
+            _logger.info("  文件数: %d", file_count)
+            _logger.info("  下一步: cd %s && git log", dst_path.name)
         return did_create_dst
 
 
@@ -125,6 +126,7 @@ def phase_post_install(
     strict: bool = False,
     quiet: bool = False,
     no_install: bool = False,
+    timeout: int | None = None,
 ) -> None:
     """PE-P0-4: 在 dst_path (而非 tmpdir) 重新执行依赖安装。
 
@@ -133,12 +135,23 @@ def phase_post_install(
     此函数在 dst 重新安装依赖,生成正确 shebang 的 .venv。
 
     no_install=True 时跳过 (与 --no-install CLI flag 联动)。
+    timeout=None 走 _DEFAULT_SUBPROCESS_TIMEOUT (300s)。
+
+    PE-AUDIT-P0-2: 业务消息走 _logger 而非 print()
+    PE-AUDIT-P0-1: subprocess.run 加 timeout (网络挂死兜底)
     """
-    from ..scaffold_hooks import _PM_INSTALL_CMD, _has_package_file, _validate_package_manager
+    from ..scaffold_hooks import (
+        _DEFAULT_SUBPROCESS_TIMEOUT,
+        _PM_INSTALL_CMD,
+        _has_package_file,
+        _validate_package_manager,
+    )
+
+    effective_timeout = timeout if timeout is not None else _DEFAULT_SUBPROCESS_TIMEOUT
 
     if no_install:
         if not quiet:
-            print("  (skipping post-install: --no-install flag set)")
+            _logger.info("  (skipping post-install: --no-install flag set)")
         return
 
     pm = answers.get("package_manager")
@@ -148,7 +161,7 @@ def phase_post_install(
     install_cmd = _PM_INSTALL_CMD.get(pm)
     if install_cmd is None:
         if not quiet:
-            print(f"  (skipping {pm} install: no separate install phase)")
+            _logger.info("  (skipping %s install: no separate install phase)", pm)
         return
 
     _validate_package_manager(pm)
@@ -157,6 +170,7 @@ def phase_post_install(
         result = subprocess.run(
             install_cmd, cwd=dst_path, capture_output=True, text=True,
             encoding="utf-8", errors="replace",
+            timeout=effective_timeout,
         )
         if result.returncode != 0:
             cmd_str = " ".join(install_cmd)
@@ -164,14 +178,21 @@ def phase_post_install(
                 from ..errors import HookExecutionError
                 raise HookExecutionError(command=cmd_str, exit_code=result.returncode, stderr=result.stderr)
             if not quiet:
-                print(f"warning: {cmd_str} failed: exit={result.returncode}", file=_sys.stderr)
+                _logger.warning("warning: %s failed: exit=%d", cmd_str, result.returncode)
     except (FileNotFoundError, OSError) as e:
         cmd_str = " ".join(install_cmd)
         if strict:
             from ..errors import HookExecutionError
             raise HookExecutionError(command=cmd_str, exit_code=127, stderr=str(e))
         if not quiet:
-            print(f"warning: {cmd_str} not found: {e}", file=_sys.stderr)
+            _logger.warning("warning: %s not found: %s", cmd_str, e)
+    except subprocess.TimeoutExpired:
+        cmd_str = " ".join(install_cmd)
+        if strict:
+            from ..errors import HookExecutionError
+            raise HookExecutionError(command=cmd_str, exit_code=-1, stderr=f"timed out after {effective_timeout}s")
+        if not quiet:
+            _logger.warning("warning: %s timed out after %ds", cmd_str, effective_timeout)
 
 
 def _write_replay(answers: AnswersMap, raw_type: str) -> None:

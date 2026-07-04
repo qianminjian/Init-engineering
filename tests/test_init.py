@@ -65,7 +65,8 @@ class TestInitPretend:
             ]
         )
         assert result.returncode == 0
-        assert "DRY RUN" in result.stdout
+        # PE-AUDIT-P0-2: "[DRY RUN]" 走 logger (stderr), 不再走 print (stdout)
+        assert "DRY RUN" in result.stdout + result.stderr
         assert not target.exists()
 
     def test_pretend_with_skip_tasks(self):
@@ -84,7 +85,8 @@ class TestInitPretend:
             ]
         )
         assert result.returncode == 0
-        assert "DRY RUN" in result.stdout
+        # PE-AUDIT-P0-2: "[DRY RUN]" 走 logger (stderr), 不再走 print (stdout)
+        assert "DRY RUN" in result.stdout + result.stderr
 
 
 class TestInitMultiLayerTemplates:

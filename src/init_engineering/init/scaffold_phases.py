@@ -112,7 +112,8 @@ class InitWorker:
         if self.verbose:
             _logger.debug("InitWorker starting: dst=%s type=%s", self.dst_path, self.project_type)
         if self.pretend and not self.quiet:
-            print("[DRY RUN] 模拟执行，不产生文件")
+            # PE-AUDIT-P0-2: 业务消息改用 logger,让 --verbose 真正生效
+            _logger.info("[DRY RUN] 模拟执行，不产生文件")
 
         dst_existed_before = self.dst_path.exists()
 
@@ -141,7 +142,8 @@ class InitWorker:
             self._current_phase = "render"
             _logger.debug("Phase: render")
             if self._template.message_before and not self.quiet:
-                print(self._template.message_before)
+                # PE-AUDIT-P0-2: 模板 message_before 走 logger
+                _logger.info("%s", self._template.message_before)
             generated = self._phase_render(tmpdir)
 
             # Phase 4 — tasks
@@ -150,7 +152,8 @@ class InitWorker:
             if not self.skip_tasks:
                 self._phase_tasks(tmpdir)
                 if self._template.message_after and not self.quiet:
-                    print(self._template.message_after)
+                    # PE-AUDIT-P0-2: 模板 message_after 走 logger
+                    _logger.info("%s", self._template.message_after)
 
             # Phase 5 — finalize
             self._current_phase = "finalize"
@@ -159,8 +162,9 @@ class InitWorker:
         except InitInterruptedError:
             partial_path = self._answers.save_partial()
             if not self.quiet:
-                print(f"\n已中断。部分答案已保存到: {partial_path}")
-                print(f"恢复: ae init --from-answers {partial_path}")
+                # PE-AUDIT-P0-2: 中断消息走 logger (INFO 级别让默认输出可见)
+                _logger.info("\n已中断。部分答案已保存到: %s", partial_path)
+                _logger.info("恢复: ae init --from-answers %s", partial_path)
             raise
 
         except Exception:
@@ -275,5 +279,7 @@ class InitWorker:
             strict=self.strict,
             quiet=self.quiet,
             no_install=self.no_install,
+            # PE-AUDIT-P0-1: 透传 hook_timeout
+            timeout=self.hook_timeout,
         )
         return did_create

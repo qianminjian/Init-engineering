@@ -165,7 +165,8 @@ class TestScaffoldPipelineE2E:
             ]
         )
         assert result.returncode == 0
-        assert "DRY RUN" in result.stdout
+        # PE-AUDIT-P0-2: "[DRY RUN]" 走 logger (stderr)
+        assert "DRY RUN" in result.stdout + result.stderr
         assert not target.exists()
 
     def test_pipeline_force_overwrite_non_empty(self, tmp_path: Path):

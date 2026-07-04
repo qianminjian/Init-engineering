@@ -3,6 +3,7 @@
 覆盖 scaffold_hooks.py (77%) 和 scaffold_phases.py 缺失的清理/消息处理。
 """
 
+import subprocess
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
@@ -174,8 +175,11 @@ class TestBuiltinHooksGitFallback:
             # 不再抛异常，非阻塞
             run_builtin_hooks(answers, tmp_path)
 
-    def test_git_add_warning_on_failure(self, tmp_path: Path):
-        """git add 失败时打印 warning 不抛异常 (lines 77-79)."""
+    def test_git_add_warning_on_failure(self, tmp_path: Path, caplog):
+        """git add 失败时打印 warning 不抛异常。
+
+        PE-AUDIT-P0-2: warning 现在走 _logger.warning 而非 print,测试用 caplog 验证。
+        """
         from init_engineering.init.scaffold_hooks import run_builtin_hooks
 
         answers = AnswersMap(defaults={"package_manager": "", "use_lefthook": False})
@@ -201,14 +205,19 @@ class TestBuiltinHooksGitFallback:
             return result
 
         with patch("init_engineering.init.scaffold_hooks.subprocess.run", mock_run):
-            with patch("builtins.print") as mock_print:
+            with caplog.at_level("WARNING"):
                 run_builtin_hooks(answers, tmp_path)
 
-        # git add -A should have been called and printed a warning
+        # git add -A should have been called and logged a warning
         assert any("add" in c for c in git_calls)
+        # PE-AUDIT-P0-2: warning 通过 logger 而非 print
+        assert any("git add" in rec.message for rec in caplog.records)
 
-    def test_git_commit_warning_on_failure(self, tmp_path: Path):
-        """git commit 失败时打印 warning 不抛异常 (lines 89-92)."""
+    def test_git_commit_warning_on_failure(self, tmp_path: Path, caplog):
+        """git commit 失败时打印 warning 不抛异常。
+
+        PE-AUDIT-P0-2: warning 走 _logger.warning,caplog 验证。
+        """
         from init_engineering.init.scaffold_hooks import run_builtin_hooks
 
         answers = AnswersMap(defaults={"package_manager": "", "use_lefthook": False})
@@ -229,8 +238,11 @@ class TestBuiltinHooksGitFallback:
             return result
 
         with patch("init_engineering.init.scaffold_hooks.subprocess.run", mock_run):
-            with patch("builtins.print") as mock_print:
+            with caplog.at_level("WARNING"):
                 run_builtin_hooks(answers, tmp_path)
+
+        # Should not raise, just log warning
+        assert any("git commit" in rec.message for rec in caplog.records)
 
         # Should not raise, just print warning
 
@@ -609,3 +621,170 @@ class TestPyprojectHatchPackages:
         assert "pytest-timeout" in content, (
             "pyproject.toml 应声明 pytest-timeout 依赖 (否则 --timeout=60 addopts 会失败)"
         )
+
+
+class TestSubprocessTimeout:
+    """PE-AUDIT-P0-1: 所有 subprocess.run 调用必须有 timeout 参数 + TimeoutExpired 处理."""
+
+    def test_run_builtin_hooks_passes_timeout_to_subprocess(self, tmp_path: Path):
+        """run_builtin_hooks 透传 default_timeout 到所有 subprocess.run 调用."""
+        from init_engineering.init.scaffold_hooks import run_builtin_hooks
+
+        (tmp_path / "pyproject.toml").write_text("[project]\nname='demo'\n")
+        answers = AnswersMap(defaults={"package_manager": "uv", "use_lefthook": False})
+
+        called_timeouts = []
+
+        def mock_run(cmd, **kwargs):
+            result = MagicMock()
+            result.returncode = 0
+            result.stdout = ""
+            result.stderr = ""
+            if "timeout" in kwargs:
+                called_timeouts.append((tuple(cmd), kwargs["timeout"]))
+            return result
+
+        with patch("init_engineering.init.scaffold_hooks.subprocess.run", mock_run):
+            run_builtin_hooks(answers, tmp_path, default_timeout=42)
+
+        # 所有非 git config 调用应收到 timeout=42 (git config 用 10s)
+        assert len(called_timeouts) > 0
+        # pm install 应收到透传的 timeout=42
+        uv_calls = [t for t in called_timeouts if t[0][0] == "uv"]
+        assert any(t[1] == 42 for t in uv_calls), (
+            f"uv install 应收到 default_timeout=42,实际 {uv_calls}"
+        )
+
+    def test_run_builtin_hooks_timeout_expired_logs_warning(self, tmp_path: Path, caplog):
+        """subprocess.TimeoutExpired 应被捕获并转 _logger.warning."""
+        from init_engineering.init import scaffold_hooks
+
+        (tmp_path / "pyproject.toml").write_text("[project]\nname='demo'\n")
+        answers = AnswersMap(defaults={"package_manager": "uv", "use_lefthook": False})
+
+        def mock_run_raises_timeout(cmd, **kwargs):
+            raise subprocess.TimeoutExpired(cmd, kwargs.get("timeout", 60))
+
+        with patch("init_engineering.init.scaffold_hooks.subprocess.run", mock_run_raises_timeout):
+            with caplog.at_level("WARNING"):
+                # strict=False 不抛异常,quiet=False 让 _fail 输出 warning
+                scaffold_hooks.run_builtin_hooks(answers, tmp_path, quiet=False)
+
+        # 至少一条 timeout warning 应被记录
+        assert any("timed out" in rec.message.lower() for rec in caplog.records), (
+            f"期望 timeout warning,实际 {[r.message for r in caplog.records]}"
+        )
+
+    def test_run_builtin_hooks_timeout_expired_strict_raises(self, tmp_path: Path):
+        """strict=True + TimeoutExpired 应抛 HookExecutionError."""
+        from init_engineering.init import scaffold_hooks
+        from init_engineering.init.errors import HookExecutionError
+
+        (tmp_path / "pyproject.toml").write_text("[project]\nname='demo'\n")
+        answers = AnswersMap(defaults={"package_manager": "uv", "use_lefthook": False})
+
+        def mock_run_raises_timeout(cmd, **kwargs):
+            raise subprocess.TimeoutExpired(cmd, kwargs.get("timeout", 60))
+
+        with patch("init_engineering.init.scaffold_hooks.subprocess.run", mock_run_raises_timeout):
+            with pytest.raises(HookExecutionError) as exc_info:
+                scaffold_hooks.run_builtin_hooks(answers, tmp_path, strict=True)
+
+        assert "timed out" in str(exc_info.value).lower()
+
+    def test_phase_post_install_timeout(self, tmp_path: Path):
+        """phase_post_install 透传 timeout 参数."""
+        from init_engineering.init.answers import AnswersMap
+        from init_engineering.init.phases.finalize import phase_post_install
+
+        dst = tmp_path / "proj"
+        dst.mkdir()
+        (dst / "pyproject.toml").write_text("[project]\nname='demo'\n")
+        answers = AnswersMap(defaults={"package_manager": "uv"})
+
+        called_timeouts = []
+
+        def mock_run(cmd, **kwargs):
+            result = MagicMock()
+            result.returncode = 0
+            result.stdout = ""
+            result.stderr = ""
+            called_timeouts.append(kwargs.get("timeout"))
+            return result
+
+        with patch("init_engineering.init.phases.finalize.subprocess.run", mock_run):
+            phase_post_install(answers, dst, timeout=120)
+
+        # uv sync 应收到 timeout=120
+        assert 120 in called_timeouts
+
+    def test_git_status_has_timeout(self, tmp_path: Path):
+        """scaffold_tasks_runner._git_status_clean subprocess.run 有 timeout."""
+        from init_engineering.init.scaffold_tasks_runner import _build_jinja_env
+
+        env = _build_jinja_env(tmp_path)
+        # 调用全局函数应不挂死 (timeout=10)
+        import time
+        start = time.monotonic()
+        result = env.globals["git_status_clean"]()
+        elapsed = time.monotonic() - start
+        # git status 在空目录应立即返回,不应超时 (>10s 必有 bug)
+        assert elapsed < 10, f"git status took {elapsed}s, 应 < 10s"
+
+
+class TestLoggerMigration:
+    """PE-AUDIT-P0-2: 业务消息走 _logger 而非 print."""
+
+    def test_warning_uses_logger_not_print(self, tmp_path: Path, caplog):
+        """git add 失败时 warning 走 logger,可被 caplog 捕获.
+
+        让所有 git 步骤都成功,只让 git add 失败 → 只触发一次 warning.
+        """
+        from init_engineering.init.scaffold_hooks import run_builtin_hooks
+
+        answers = AnswersMap(defaults={"package_manager": "", "use_lefthook": False})
+
+        def mock_run(cmd, **kwargs):
+            result = MagicMock()
+            cmd_str = " ".join(cmd)
+            if "add" in cmd_str:
+                # git add 失败 → 应触发 _logger.warning
+                result.returncode = 1
+                result.stderr = "git add failed"
+            else:
+                result.returncode = 0
+                result.stdout = ""
+                result.stderr = ""
+            return result
+
+        with patch("init_engineering.init.scaffold_hooks.subprocess.run", mock_run):
+            with caplog.at_level("WARNING"):
+                # quiet=False 让 _fail 输出 warning
+                run_builtin_hooks(answers, tmp_path)
+
+        # warning 应通过 logger 而非 print 出现
+        warning_msgs = [r.message for r in caplog.records if r.levelname == "WARNING"]
+        assert any("git add" in m and "failed" in m for m in warning_msgs), (
+            f"期望 git add failed warning 通过 logger,实际 {warning_msgs}"
+        )
+
+    def test_quiet_suppresses_warnings(self, tmp_path: Path, caplog):
+        """quiet=True 时不输出 warning."""
+        from init_engineering.init.scaffold_hooks import run_builtin_hooks
+
+        answers = AnswersMap(defaults={"package_manager": "", "use_lefthook": False})
+
+        def mock_run(cmd, **kwargs):
+            result = MagicMock()
+            result.returncode = 1
+            result.stderr = "test failure"
+            result.stdout = ""
+            return result
+
+        with patch("init_engineering.init.scaffold_hooks.subprocess.run", mock_run):
+            with caplog.at_level("WARNING"):
+                run_builtin_hooks(answers, tmp_path, quiet=True)
+
+        # quiet=True 时 _fail 不应发出 warning
+        warning_msgs = [r for r in caplog.records if r.levelname == "WARNING"]
+        assert len(warning_msgs) == 0, f"quiet=True 应抑制 warning,实际 {warning_msgs}"

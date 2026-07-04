@@ -52,7 +52,12 @@ def run_tasks_phase(
         default_timeout=default_timeout,
     )
     runner.run(template.tasks_before, context, jinja_env)
-    run_builtin_hooks(answers, tmpdir, strict=strict, quiet=quiet, no_install=no_install)
+    # PE-AUDIT-P0-1: 透传 default_timeout 到 run_builtin_hooks, 闭合 CLI --hook-timeout 链路
+    run_builtin_hooks(
+        answers, tmpdir,
+        strict=strict, quiet=quiet, no_install=no_install,
+        default_timeout=default_timeout,
+    )
     runner.run(template.tasks_after, context, jinja_env)
 
 
@@ -60,12 +65,16 @@ def _build_jinja_env(dst_path: Path) -> SandboxedEnvironment:
     jinja_env = SandboxedEnvironment(undefined=StrictUndefined)
 
     def _git_status_clean() -> bool:
-        result = subprocess.run(
-            ["git", "status", "--porcelain"],
-            cwd=dst_path,
-            capture_output=True,
-            text=True,
-        )
+        try:
+            result = subprocess.run(
+                ["git", "status", "--porcelain"],
+                cwd=dst_path,
+                capture_output=True,
+                text=True,
+                timeout=10,  # PE-AUDIT-P0-1: local read, clamp to 10s
+            )
+        except subprocess.TimeoutExpired:
+            return False  # 安全选择: 超时视为非空,模板作者应排查仓库状态
         return result.stdout.strip() == ""
 
     def _project_exists(path: str) -> bool:
