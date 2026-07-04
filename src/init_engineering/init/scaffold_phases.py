@@ -264,13 +264,11 @@ class InitWorker:
         did_create = phase_finalize(
             answers=self._answers,
             project_type=self.project_type,
-            template=self._template,
             tmpdir=tmpdir,
             dst_path=self.dst_path,
             created_files=self._created_files,
             mode=self._mode,
             quiet=self.quiet,
-            # P2-2: 传 generated 给 phase_finalize 打印真实文件数 (之前写死 0)
             generated=generated,
         )
         # PE-P0-4: 在 dst_path (而非 tmpdir) 重新跑依赖安装,修复 .venv shebang 断裂

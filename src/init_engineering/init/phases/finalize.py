@@ -16,7 +16,6 @@ from datetime import datetime
 from pathlib import Path
 
 from ..answers import AnswersMap
-from ..config import TemplateConfig
 
 _logger = logging.getLogger(__name__)
 
@@ -24,7 +23,6 @@ _logger = logging.getLogger(__name__)
 def phase_finalize(
     answers: AnswersMap,
     project_type: str | None,
-    template: TemplateConfig,
     tmpdir: Path,
     dst_path: Path,
     created_files: set[str],
@@ -45,8 +43,7 @@ def phase_finalize(
     from .detect import _validate_project_type
 
     raw_type = project_type or "unknown"
-    if project_type:
-        _validate_project_type(project_type)
+    _validate_project_type(raw_type)
     _write_replay(answers, raw_type)
 
     if mode == "incremental":
@@ -264,7 +261,7 @@ def _write_replay(answers: AnswersMap, raw_type: str) -> None:
         try:
             replay_dir.mkdir(parents=True, exist_ok=True)
             _os.chmod(replay_dir, 0o700)
-            replay_file = replay_dir / f"{datetime.now().strftime('%Y%m%d-%H%M%S')}.yml"
+            replay_file = replay_dir / f"{datetime.now().astimezone().strftime('%Y%m%d-%H%M%S')}.yml"
             answers.write_to(replay_file)
             _os.chmod(replay_file, 0o600)
         finally:

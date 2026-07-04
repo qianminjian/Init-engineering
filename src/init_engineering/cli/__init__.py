@@ -177,12 +177,10 @@ def init(
     )
 
 
-# P2-A: update / status 命令 + init 子分支拆到 cli/commands.py — cli/__init__.py 拆分后 ≤ 300 行
-from init_engineering.cli.commands import (  # noqa: E402
-    _cmd_init,
-    status,
-    update,
-)
+# P2-A: update / status 命令拆到 cli/subcommands.py (code review follow-up)
+# _cmd_init 拆到 cli/commands.py — cli/__init__.py 拆分后 ≤ 300 行
+from init_engineering.cli.commands import _cmd_init  # noqa: E402
+from init_engineering.cli.subcommands import update, status  # noqa: E402
 
 main.add_command(update)
 main.add_command(status)
