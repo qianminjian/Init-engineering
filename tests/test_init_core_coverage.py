@@ -158,13 +158,11 @@ class TestAnswersMap:
     def test_builtins_fallback(self):
         m = AnswersMap()
         # P2-10: _ae_version 在 combined() 中动态注入,不在 builtins
-        # get() 会找遍所有层,找不到抛 KeyError (同 current_year)
-        with pytest.raises(KeyError):
-            m.get("_ae_version")
+        # get() 找不到 key 时返回 None (与 dict.get() 行为一致)
+        assert m.get("_ae_version") is None
         assert "_ae_version" in m.combined()
         # B3: current_year 在 combined() 中动态注入,不是 builtin
-        with pytest.raises(KeyError):
-            m.get("current_year")
+        assert m.get("current_year") is None
         # 但 combined() 必须含 current_year (供 Jinja2 渲染使用)
         assert "current_year" in m.combined()
 
@@ -186,10 +184,9 @@ class TestAnswersMap:
         m.get("k")  # second access uses cache
         assert "k" in m._external_cache
 
-    def test_missing_key_raises(self):
+    def test_missing_key_returns_none(self):
         m = AnswersMap()
-        with pytest.raises(KeyError):
-            m.get("nonexistent_xyz")
+        assert m.get("nonexistent_xyz") is None
 
     def test_combined_includes_all_layers(self):
         m = AnswersMap(

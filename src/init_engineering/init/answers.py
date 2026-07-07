@@ -108,7 +108,7 @@ class AnswersMap:
         except KeyError:
             if default is not self._MISSING:
                 return default
-            raise
+            return None
 
     def combined(self) -> dict[str, Any]:
         """全量合并。用于 Jinja2 渲染上下文。外挂 _external_data 键（懒加载）。
@@ -208,13 +208,13 @@ class AnswersMap:
         _write_answers_file(self.to_answers_file(), dst)
 
     def __getitem__(self, key: str) -> Any:
-        try:
-            return self.get(key)
-        except KeyError:
+        value = self.get(key)
+        if value is None and key not in self:
             raise KeyError(
                 f"'{key}' 不在 answers 中。请确认该变量已在 ae-template.yml 的 questions "
                 f"中定义，或在 CLI 中通过对应 flag 提供。"
             ) from None
+        return value
 
     def __contains__(self, key: str) -> bool:
         """检查 key 是否在任一优先级层中。

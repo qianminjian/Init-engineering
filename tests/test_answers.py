@@ -134,10 +134,9 @@ class TestGet:
         finally:
             Path(tmp_path).unlink(missing_ok=True)
 
-    def test_raises_keyerror_when_not_found(self):
+    def test_returns_none_when_not_found(self):
         am = AnswersMap()
-        with pytest.raises(KeyError):
-            am.get("nonexistent")
+        assert am.get("nonexistent") is None
 
     def test_external_takes_precedence_over_raises(self):
         """external 中的 key 如果在所有层都找不到，会尝试 external."""
