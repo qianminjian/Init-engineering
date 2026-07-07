@@ -1,4 +1,4 @@
-"""InteractivePrompt — 交互式问答.
+"""InteractivePrompt — 交互式问答 + 项目类型/嵌套模板选择.
 
 来源：
 - copier/_user_data.py:297-460 — Question.get_default_rendered() + render_value()
@@ -7,7 +7,7 @@
 
 接口：
   InteractivePrompt(questions, answers) -> .run() -> AnswersMap
-  prompt_for_project_type(available_types) -> str  (当 --type 未指定且无法自动检测时)
+  prompt_for_project_type / prompt_for_nested_template — 独立选择函数
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from jinja2 import StrictUndefined
 from .answers import AnswersMap
 
 _logger = logging.getLogger(__name__)
-from .config_types import Question
+from .config_types import Question  # noqa: E402
 
 # 问题类型 → click 方法映射
 # 来源：Copier CAST_STR_TO_NATIVE + Cookiecutter read_user_* 系列
@@ -115,12 +115,12 @@ class InteractivePrompt:
     def _ask_one(self, q: Question, context: dict, progress: str = "") -> None:
         """询问单个问题。
 
-        流程：
+        流程（6 步）：
         1. CLI flag 已提供 → 跳过
-        2. when 条件不满足 → 跳过
-        3. 类型推导 → 选择 Click 方法
+        2. when 条件检查 → 不满足则跳过
+        3. 类型推导 + multiselect 分发 → 选择 Click 方法
         4. 渲染默认值（Jinja2 模板）
-        5. 循环：prompt → cast → validate → 重试或通过
+        5. 循环 prompt → cast → validate（最多 5 次重试）
         6. 存入 answers.interactive
         """
         # CLI flag 已提供 → 跳过
@@ -136,8 +136,16 @@ class InteractivePrompt:
         # 使用逗号分隔输入 + 手动验证，转换为 YAML list 字符串给 cast_answer
         type_name = q.get_type_name()
         if q.multiselect:
-            choices_list = list(q.choices) if isinstance(q.choices, list) else list(q.choices.keys())
-            default_str = ",".join(q.default) if isinstance(q.default, list) else (q.default or "")
+            choices_list = (
+                list(q.choices)
+                if isinstance(q.choices, list)
+                else list(q.choices.keys())
+            )
+            default_str = (
+                ",".join(q.default)
+                if isinstance(q.default, list)
+                else q.default or ""
+            )
 
             def _multiselect_prompt(_q, _ctx, _choices=choices_list, _default=default_str):
                 while True:
@@ -182,13 +190,16 @@ class InteractivePrompt:
             try:
                 value = q.cast_answer(raw_value)
             except TypeError as e:
-                _logger.debug("cast_answer TypeError (var=%s, raw=%r): %s", q.var_name, raw_value, e)
+                _logger.debug(
+                    "cast_answer TypeError (var=%s, raw=%r): %s",
+                    q.var_name, raw_value, e,
+                )
                 if attempt == max_retries - 1:
                     from .errors import ValidationError
                     raise ValidationError(
                         f"类型转换失败 (已达最大重试 {max_retries}): {e}",
                         field_name=q.var_name,
-                    )
+                    ) from e
                 click.echo(f"  ✗ 类型转换失败: {e}", err=True)
                 continue
             except ValueError as e:
@@ -197,7 +208,7 @@ class InteractivePrompt:
                     raise ValidationError(
                         f"类型转换失败 (已达最大重试 {max_retries}): {e}",
                         field_name=q.var_name,
-                    )
+                    ) from e
                 click.echo(f"  ✗ 类型转换失败: {e}", err=True)
                 continue
 
@@ -212,13 +223,6 @@ class InteractivePrompt:
                 click.echo(f"  ✗ {error}", err=True)
                 continue
             break
-        else:
-            # 达到最大重试次数，使用默认值（防止无限循环）
-            click.echo(
-                f"  ⚠ 已达到最大重试次数 ({max_retries})，使用默认值: {rendered_default!r}",
-                err=True,
-            )
-            value = q.default if q.default is not None else ""
 
         q.default = orig_default
         self.answers.interactive[q.var_name] = value
@@ -266,15 +270,11 @@ class InteractivePrompt:
         return q.default
 
 
+# ─── 项目类型 + 嵌套模板选择 (从 _prompt_select.py 折叠) ──────────
+
+
 def prompt_for_project_type(available_types: list[str], *, _input_fn=None) -> str:
-    """当无法自动检测项目类型且非 --defaults 模式时调用。
-
-    来源：Cookiecutter main.py choose_nested_template() 的交互式选择。
-
-    Args:
-        available_types: 可用项目类型列表
-        _input_fn: 可选的输入函数，测试可注入 mock (默认 click.prompt)
-    """
+    """当无法自动检测项目类型且非 --defaults 模式时调用。"""
     if _input_fn is None:
         _input_fn = click.prompt
     return _input_fn(
@@ -294,24 +294,9 @@ def prompt_for_nested_template(
     """交互式选择嵌套模板变体。
 
     来源：Cookiecutter main.py:144-146 choose_nested_template()。
-    nested = {"typescript": {"path": "./ts", "title": "TypeScript 版本"}, ...}
-
-    Args:
-        nested: 模板变体字典 {key: {path, title}}
-        no_input: True 时跳过交互，按 preferred → first 顺序选择
-        preferred: 优先选中的 key（用于 CLI --language 透传场景）
-        _input_fn: 测试注入点 — 替换 click.prompt，签名需兼容。
-
-    Returns:
-        选中的模板路径（相对于当前配置文件的目录）。
-        兜底：nested 为空时返回 ""（让调用方使用 template.template_dir 根）。
-
-    Raises:
-        ValueError: nested 非空但首选/preferred 都不存在 (no_input=True 时)
     """
     if not nested:
         return ""
-
     choices = {label: cfg.get("title", label) for label, cfg in nested.items()}
     if no_input:
         if preferred and preferred in nested:
@@ -321,11 +306,9 @@ def prompt_for_nested_template(
                 f"非交互模式下 preferred template '{preferred}' 不在 nested 选项 "
                 f"({', '.join(nested.keys())}) 中，无法自动选择。"
             )
-        # 无 preferred 且 no_input: 第一个变体作为默认
         first_key = next(iter(nested.keys()))
         return nested[first_key].get("path", "")
     if preferred and preferred in nested:
-        # 已知 preferred → 直接返回，不询问
         return nested[preferred].get("path", "")
     prompt_fn = _input_fn if _input_fn is not None else click.prompt
     choice = prompt_fn(

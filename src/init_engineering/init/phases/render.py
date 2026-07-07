@@ -29,8 +29,6 @@ def phase_render(
         templates_suffix, preserve_symlinks
     )
 
-    context = answers.combined()
-
     generated = render_to(
         answers=answers,
         folder_name=dst_path.name,

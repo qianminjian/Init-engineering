@@ -68,3 +68,30 @@ def configure_logging(verbose: bool) -> None:
     })
 
 
+def reset_logging() -> None:
+    """恢复 logging 到默认配置 — configure_logging() 的反操作。
+
+    用于测试 teardown 或需要撤销 configure_logging() 全局副作用的场景。
+    """
+    logging.config.dictConfig({
+        "version": 1,
+        "disable_existing_loggers": False,
+        "formatters": {
+            "default": {
+                "format": "%(levelname)s: %(message)s",
+            },
+        },
+        "handlers": {
+            "stderr": {
+                "class": "logging.StreamHandler",
+                "formatter": "default",
+                "stream": "ext://sys.stderr",
+            },
+        },
+        "root": {
+            "level": "WARNING",
+            "handlers": ["stderr"],
+        },
+    })
+
+

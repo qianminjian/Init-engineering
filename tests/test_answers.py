@@ -537,7 +537,7 @@ class TestSensitiveFieldFilter:
     """_is_sensitive_field + to_answers_file 敏感字段过滤."""
 
     def test_exact_match_patterns(self):
-        from init_engineering.init.answers import _is_sensitive_field
+        from init_engineering.init._answers_io import _is_sensitive_field
 
         assert _is_sensitive_field("password") is True
         assert _is_sensitive_field("secret") is True
@@ -549,7 +549,7 @@ class TestSensitiveFieldFilter:
         assert _is_sensitive_field("credentials") is True
 
     def test_suffix_match_patterns(self):
-        from init_engineering.init.answers import _is_sensitive_field
+        from init_engineering.init._answers_io import _is_sensitive_field
 
         assert _is_sensitive_field("db_password") is True
         assert _is_sensitive_field("github_token") is True
@@ -558,7 +558,7 @@ class TestSensitiveFieldFilter:
         assert _is_sensitive_field("api_secret_key") is True
 
     def test_non_sensitive_fields_pass(self):
-        from init_engineering.init.answers import _is_sensitive_field
+        from init_engineering.init._answers_io import _is_sensitive_field
 
         assert _is_sensitive_field("project_name") is False
         assert _is_sensitive_field("language") is False
@@ -567,7 +567,7 @@ class TestSensitiveFieldFilter:
         assert _is_sensitive_field("test_runner") is False
 
     def test_case_insensitive(self):
-        from init_engineering.init.answers import _is_sensitive_field
+        from init_engineering.init._answers_io import _is_sensitive_field
 
         assert _is_sensitive_field("PASSWORD") is True
         assert _is_sensitive_field("Api_Key") is True

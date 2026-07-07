@@ -30,7 +30,7 @@ import logging
 import shutil
 import tempfile
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 
 import click
@@ -43,7 +43,7 @@ from .scaffold_render import render_to
 _logger = logging.getLogger(__name__)
 
 
-class ConflictStrategy(str, Enum):
+class ConflictStrategy(StrEnum):
     """文件冲突处理策略：skip=保留用户修改，overwrite=用模板覆盖，prompt=逐个询问。"""
 
     SKIP = "skip"
@@ -70,6 +70,27 @@ class UpdateResult:
             f"跳过 {len(self.files_skipped)}, "
             f"冲突 {len(self.files_conflicted)}"
         )
+
+
+def _resolve_update_project_type(
+    dst_path: Path, answers_file: Path, auto_detect: bool,
+) -> tuple[AnswersMap, str]:
+    """解析 project_type — 从 .ae-answers.yml 或自动检测。
+
+    Returns:
+        (previous_answers, project_type)
+    """
+    if not answers_file.exists():
+        if auto_detect:
+            detector = ProjectDetector(dst_path)
+            analysis = detector.analyze()
+            return AnswersMap(), analysis.project_type or "app-service"
+        raise FileNotFoundError(
+            f"{dst_path} 缺少 .ae-answers.yml。请先运行 ae init，"
+            f"或使用 --force 自动推断 project_type"
+        )
+    previous = AnswersMap.from_answers_file(answers_file)
+    return previous, previous.get("project_type")
 
 
 def run_update(
@@ -102,20 +123,9 @@ def run_update(
         raise FileNotFoundError(f"目标目录不存在: {dst_path}")
 
     answers_file = dst_path / ".ae-answers.yml"
-    if not answers_file.exists():
-        if auto_detect:
-            detector = ProjectDetector(dst_path)
-            analysis = detector.analyze()
-            project_type = analysis.project_type or "app-service"
-            previous = AnswersMap()
-        else:
-            raise FileNotFoundError(
-                f"{dst_path} 缺少 .ae-answers.yml。请先运行 ae init，"
-                f"或使用 --force 自动推断 project_type"
-            )
-    else:
-        previous = AnswersMap.from_answers_file(answers_file)
-        project_type = previous.get("project_type")
+    previous, project_type = _resolve_update_project_type(
+        dst_path, answers_file, auto_detect,
+    )
 
     if isinstance(conflict_strategy, str):
         try:
@@ -145,7 +155,6 @@ def run_update(
     try:
         # Build context from previous answers
         answers = previous
-        context = answers.combined()
 
         render_to(
             answers=answers,
@@ -175,7 +184,9 @@ def run_update(
             if rel.name == ".ae-init.lock":
                 continue
             dst_file = dst_path / rel
-            action = _classify_file(src_file, dst_file, conflict_strategy, auto_detect, dst_path, dry_run, result)
+            action = _classify_file(
+                src_file, dst_file, conflict_strategy, auto_detect, dst_path, dry_run, result
+            )
             if action:
                 actions.append((src_file, dst_file, action))
                 # dry_run + prompt 提前 return 时也要把 conflicted 计入 result
@@ -279,7 +290,9 @@ def _update_answers_meta(answers_file: Path, project_type: str) -> None:
 
     if not answers_file.exists():
         return
-    data = yaml.safe_load(answers_file.read_text()) or {}
+    from .._shared.io import read_yaml
+
+    data = read_yaml(answers_file)
     meta = data.get("_meta", {})
     meta["updated_at"] = datetime.now().astimezone().isoformat()  # PR#5 P2-10: 加 tz
     meta["ae_version"] = __version__

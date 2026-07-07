@@ -10,8 +10,6 @@ from pathlib import Path
 
 import yaml
 
-from init_engineering.init.errors import ConfigFileError
-
 
 @dataclass
 class ProjectEnvironment:
@@ -45,7 +43,9 @@ class ProjectEnvironment:
 
     @classmethod
     def _from_answers_file(cls, path: Path) -> ProjectEnvironment:
-        data = yaml.safe_load(path.read_text()) or {}
+        from init_engineering._shared.io import read_yaml
+
+        data = read_yaml(path)
         data.pop("_meta", {})
         field_names = {f.name for f in cls.__dataclass_fields__.values()}
         return cls(**{k: v for k, v in data.items() if k in field_names})
@@ -100,7 +100,7 @@ class ProjectEnvironment:
             "has_git": (root / ".git").exists(),
         }
         if set(detections.keys()) != set(self._DETECTABLE_FIELDS):
-            raise ConfigFileError(
+            raise ValueError(
                 f"_sync_detectable keys {set(detections.keys())} "
                 f"!= _DETECTABLE_FIELDS {set(self._DETECTABLE_FIELDS)}"
             )
@@ -142,7 +142,9 @@ class ProjectEnvironment:
             if not f.name.startswith("_")
         }
         if answers_file.exists():
-            existing = yaml.safe_load(answers_file.read_text()) or {}
+            from init_engineering._shared.io import read_yaml
+
+            existing = read_yaml(answers_file)
             meta = existing.get("_meta", {})
         else:
             meta = {}

@@ -5,19 +5,20 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import re
 from pathlib import Path
 
 _logger = logging.getLogger(__name__)
 
-from ..config_types import TEMPLATES_ROOT
-from ..detector import ProjectDetector
-from ..detector_constants import DetectionResult
-from ..errors import TargetDirectoryError, ValidationError
-from ..prompts import prompt_for_project_type
-from ..scaffold_lock import InitLock
-from ..scaffold_prereq import check_basic_tools, check_language_tools
+from ..config_types import TEMPLATES_ROOT  # noqa: E402
+from ..detector import ProjectDetector  # noqa: E402
+from ..detector_constants import DetectionResult  # noqa: E402
+from ..errors import TargetDirectoryError, ValidationError  # noqa: E402
+from ..prompts import prompt_for_project_type  # noqa: E402
+from ..scaffold_lock import InitLock  # noqa: E402
+from ..scaffold_prereq import check_basic_tools, check_language_tools  # noqa: E402
 
 
 def phase_detect(
@@ -42,7 +43,7 @@ def phase_detect(
 
     if dst_path.exists() and not force:
         if any(dst_path.iterdir()):
-            mode = "incremental" if incremental else _raise_nonempty(dst_path, incremental)
+            mode = "incremental" if incremental else _raise_nonempty(dst_path)
         else:
             mode = "fresh"
     else:
@@ -51,7 +52,6 @@ def phase_detect(
     # Acquire concurrent lock (after non-empty check, before project detection)
     # B1: 必须把锁对象返回给 worker,否则 fd 立刻 GC → 锁瞬间释放,两个 init 进程会
     # 同时进入渲染/合并阶段并破坏目标目录。
-    # PE-P1-1: 若 InitLock.acquire_for 失败,回滚刚 mkdir 的空目录,不留半成品
     lock: InitLock | None = None
     if not pretend:
         created_dst = False
@@ -60,16 +60,11 @@ def phase_detect(
             created_dst = True
         try:
             lock = InitLock.acquire_for(dst_path)
-        except (KeyboardInterrupt, SystemExit):
-            raise
-        except Exception:
+        except (OSError, TargetDirectoryError):
             _logger.exception("获取 InitLock 失败 (dst=%s)", dst_path)
-            # 锁获取失败 → 回滚空目录
             if created_dst and dst_path.exists() and not any(dst_path.iterdir()):
-                try:
+                with contextlib.suppress(OSError):
                     dst_path.rmdir()
-                except OSError:
-                    pass
             raise
 
     analysis: DetectionResult | None = None
@@ -92,9 +87,12 @@ def phase_detect(
     return project_type, mode, analysis, lock
 
 
-def _raise_nonempty(dst_path: Path, incremental: bool) -> str:
-    if incremental:
-        return "incremental"
+def _raise_nonempty(dst_path: Path) -> None:
+    """非空目录无 --force --incremental 时抛 TargetDirectoryError。
+
+    调用方已在三元表达式中检查 incremental=True 路径，
+    故本函数不需要 incremental 参数。
+    """
     raise TargetDirectoryError(
         f"目录 {dst_path.name} 非空。使用 --force 强制覆盖，"
         f"--incremental 增量补充缺失文件，"

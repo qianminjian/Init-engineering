@@ -60,7 +60,12 @@ def main():
 @click.option(
     "--no-cleanup", "cleanup_on_error", flag_value=False, default=True, help="出错时不清理目标目录"
 )
-@click.option("--template-dir", "template_dir_override", type=click.Path(exists=True, file_okay=False), help="外部模板目录路径")
+@click.option(
+    "--template-dir",
+    "template_dir_override",
+    type=click.Path(exists=True, file_okay=False),
+    help="外部模板目录路径",
+)
 @click.option("--strict", is_flag=True, help="严格模式：钩子失败时抛出异常而非警告")
 @click.option("--quiet", is_flag=True, help="静默模式")
 @click.option("--verbose", "-v", is_flag=True, help="详细输出（DEBUG 级别日志）")

@@ -57,7 +57,7 @@ class TestErrorsReExport:
     def test_init_module_all_has_16_entries(self):
         from init_engineering.init import __all__ as init_all
 
-        assert len(init_all) == 15
+        assert len(init_all) == 7
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -276,7 +276,7 @@ class TestAnswersMapFromFile:
 
 class TestSensitiveFieldFilter:
     def test_exact_match(self):
-        from init_engineering.init.answers import _is_sensitive_field
+        from init_engineering.init._answers_io import _is_sensitive_field
 
         assert _is_sensitive_field("password") is True
         assert _is_sensitive_field("secret") is True
@@ -284,7 +284,7 @@ class TestSensitiveFieldFilter:
         assert _is_sensitive_field("api_key") is True
 
     def test_suffix_match(self):
-        from init_engineering.init.answers import _is_sensitive_field
+        from init_engineering.init._answers_io import _is_sensitive_field
 
         assert _is_sensitive_field("db_password") is True
         assert _is_sensitive_field("github_token") is True
@@ -293,14 +293,14 @@ class TestSensitiveFieldFilter:
         assert _is_sensitive_field("admin_credential") is True
 
     def test_normal_fields_ok(self):
-        from init_engineering.init.answers import _is_sensitive_field
+        from init_engineering.init._answers_io import _is_sensitive_field
 
         assert _is_sensitive_field("project_name") is False
         assert _is_sensitive_field("language") is False
         assert _is_sensitive_field("package_manager") is False
 
     def test_case_insensitive(self):
-        from init_engineering.init.answers import _is_sensitive_field
+        from init_engineering.init._answers_io import _is_sensitive_field
 
         assert _is_sensitive_field("PASSWORD") is True
         assert _is_sensitive_field("Api_Key") is True

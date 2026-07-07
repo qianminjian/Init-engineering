@@ -16,7 +16,7 @@ from pathlib import Path
 
 _logger = logging.getLogger(__name__)
 
-from .detector_constants import (
+from .detector_constants import (  # noqa: E402
     _GO_FRAMEWORKS,
     _NODE_FRAMEWORKS,
     _PYTHON_FRAMEWORKS,
@@ -37,9 +37,10 @@ def analyze_node(pkg_path: Path, target_dir: Path, result: DetectionResult) -> D
 
     all_deps = {**data.get("dependencies", {}), **data.get("devDependencies", {})}
     for name, framework in _NODE_FRAMEWORKS:
-        if name in all_deps or any(k.startswith(name + "/") for k in all_deps):
-            if framework not in result.frameworks:
-                result.frameworks.append(framework)
+        if (
+            name in all_deps or any(k.startswith(name + "/") for k in all_deps)
+        ) and framework not in result.frameworks:
+            result.frameworks.append(framework)
 
     tsconfig = target_dir / "tsconfig.json"
     deps_str = str(all_deps)

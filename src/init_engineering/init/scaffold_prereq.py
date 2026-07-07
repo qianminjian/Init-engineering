@@ -62,8 +62,13 @@ def check_language_tools(language: str | None, skip_tasks: bool) -> None:
 
 def check_basic_tools() -> None:
     """基础工具链 — git + python3 必备（即使 --skip-tasks 也需要）。"""
+    import sys as _sys
+
     for cmd, name in [("git", "Git"), ("python3", "Python 3")]:
-        if shutil.which(cmd) is None:
+        found = shutil.which(cmd)
+        if cmd == "python3" and not found:
+            found = shutil.which("python") or _sys.executable
+        if found is None:
             raise UnsatisfiedPrerequisiteError(
                 f"未找到 {name}。请先安装（例如: brew install {cmd} 或检查 PATH）。"
             )

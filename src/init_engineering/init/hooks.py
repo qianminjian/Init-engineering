@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 import logging
-import os as subprocess_os
+import os
 import shlex
 import subprocess
 from pathlib import Path
@@ -17,7 +17,7 @@ import jinja2
 from jinja2.sandbox import SandboxedEnvironment
 
 from .config_types import Task
-from .errors import TaskExecutionError
+from .errors import PathTraversalError, TaskExecutionError
 
 _logger = logging.getLogger(__name__)
 
@@ -90,9 +90,9 @@ class TaskRunner:
             try:
                 wd.relative_to(self.project_dir.resolve())
             except ValueError as e:
-                raise ValueError(
+                raise PathTraversalError(
                     f"task working_directory '{wd}' escapes project_dir "
-                    f"'{self.project_dir}' (path traversal blocked)"
+                    f"'{self.project_dir}'"
                 ) from e
             wd.mkdir(parents=True, exist_ok=True)
 
@@ -134,11 +134,11 @@ class TaskRunner:
                             f"task.cmd string 模式 shlex.split 失败 (引号/转义不匹配): "
                             f"{e}。建议改用 list cmd 明确每个 argv 元素。"
                         ),
-                    )
+                    ) from e
                 use_shell = False
 
             # 5. 执行
-            env = {**subprocess_os.environ, **extra_env}
+            env = {**os.environ, **extra_env}
             # PE-P1-4: task 级 timeout 覆盖 default_timeout — 模板作者可对
             # cargo build / large npm install 等慢任务显式设大值
             effective_timeout = (

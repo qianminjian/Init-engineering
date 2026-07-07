@@ -14,15 +14,22 @@ from pathlib import Path
 
 from .._shared.detection import (
     detect_ci_platform as _detect_ci_platform,
+)
+from .._shared.detection import (
     detect_package_manager as _detect_package_manager,
+)
+from .._shared.detection import (
     detect_test_runner as _detect_test_runner,
 )
 from .detector_analyzers import analyze_go, analyze_node, analyze_python
 from .detector_constants import FRAMEWORK_SIGNATURES, DetectionResult
 from .detector_helpers import (
     check_pkg_dep,
+)
+from .detector_helpers import (
     signature_matches as _signature_matches,
 )
+
 
 class ProjectDetector:
     """扫描目标目录，推断项目类型与配置。"""

@@ -97,7 +97,9 @@ class TemplateRenderError(InitError):
         self.jinja_error = jinja_error
         self.line_number = line_number
         if line_number is not None:
-            super().__init__(f"Template render error in {src_path} line {line_number}: {jinja_error}")
+            super().__init__(
+                f"Template render error in {src_path} line {line_number}: {jinja_error}"
+            )
         else:
             super().__init__(f"Template render error in {src_path}: {jinja_error}")
 
@@ -123,10 +125,17 @@ class HookExecutionError(InitError):
     """钩子命令执行失败（strict 模式下抛出，非 strict 模式仅为 warning）。"""
 
     exit_code = 9
-    recovery_hint = "检查钩子命令是否正确，或使用 --strict 查看完整错误信息"
+    recovery_hint = "检查钩子命令是否正确，或使用 --strict 让钩子失败时立即终止"
 
     def __init__(self, command: str, process_exit_code: int = 1, stderr: str = ""):
         self.command = command
         self.process_exit_code = process_exit_code
         self.stderr = stderr
         super().__init__(f"Hook '{command}' failed (exit={process_exit_code}): {stderr}")
+
+
+class PathTraversalError(InitError):
+    """路径穿越检测 — working_directory / external_data / !include 越界。"""
+
+    exit_code = 10
+    recovery_hint = "确认路径在项目目录或沙箱根目录内，或使用 --force-unsafe-path 显式绕过"

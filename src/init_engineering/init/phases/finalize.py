@@ -8,6 +8,7 @@ phases/finalize 真正自包含,与 scaffold_hooks 解耦。
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os as _os
 import shutil
@@ -65,7 +66,11 @@ def phase_finalize(
         _atomic_copytree(tmpdir, dst_path)
         if not quiet:
             # P2-2: 真实文件数 — 之前写死 "文件数: 0" 是 bug, 用 generated 实际计数
-            file_count = len(generated) if generated else sum(1 for _ in dst_path.rglob("*") if _.is_file())
+            file_count = (
+                len(generated)
+                if generated
+                else sum(1 for _ in dst_path.rglob("*") if _.is_file())
+            )
             # PE-AUDIT-P0-2: 进度消息走 logger
             _logger.info("✓ 项目已生成: %s", dst_path)
             _logger.info("  文件数: %d", file_count)
@@ -176,7 +181,11 @@ def phase_post_install(
             cmd_str = " ".join(PM_INSTALL_CMD[pm])
             if strict:
                 from ..errors import HookExecutionError
-                raise HookExecutionError(command=cmd_str, process_exit_code=result.returncode, stderr=result.stderr)
+                raise HookExecutionError(
+                    command=cmd_str,
+                    process_exit_code=result.returncode,
+                    stderr=result.stderr,
+                )
             if not quiet:
                 _logger.warning("warning: %s failed: exit=%d", cmd_str, result.returncode)
     except ValueError:
@@ -186,14 +195,18 @@ def phase_post_install(
         cmd_str = " ".join(PM_INSTALL_CMD[pm])
         if strict:
             from ..errors import HookExecutionError
-            raise HookExecutionError(command=cmd_str, process_exit_code=127, stderr=str(e))
+            raise HookExecutionError(command=cmd_str, process_exit_code=127, stderr=str(e)) from e
         if not quiet:
             _logger.warning("warning: %s not found: %s", cmd_str, e)
-    except subprocess.TimeoutExpired:
+    except subprocess.TimeoutExpired as e:
         cmd_str = " ".join(PM_INSTALL_CMD[pm])
         if strict:
             from ..errors import HookExecutionError
-            raise HookExecutionError(command=cmd_str, process_exit_code=-1, stderr=f"timed out after {effective_timeout}s")
+            raise HookExecutionError(
+                command=cmd_str,
+                process_exit_code=-1,
+                stderr=f"timed out after {effective_timeout}s",
+            ) from e
         if not quiet:
             _logger.warning("warning: %s timed out after %ds", cmd_str, effective_timeout)
 
@@ -278,10 +291,8 @@ def _write_replays(
         existing = sorted(replay_dir.glob("*.yml"), key=lambda p: p.stat().st_mtime)
         excess = len(existing) - REPLAY_RETENTION
         for stale in existing[:max(0, excess)]:
-            try:
+            with contextlib.suppress(OSError):
                 stale.unlink()
-            except OSError:
-                pass
     except OSError:
         # best-effort: replay 失败不应阻断 init 主体
         _logger.warning(

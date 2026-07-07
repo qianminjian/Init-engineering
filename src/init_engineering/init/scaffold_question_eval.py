@@ -34,7 +34,7 @@ def evaluate_question_defaults(template: TemplateConfig, answers: AnswersMap) ->
 
     for q in template.questions:
         _apply_when(q, answers, env, context)
-        _render_default(q, answers, env, context)
+        _render_default_to_answers(q, answers, env, context)
 
 
 def _apply_when(q: Question, answers: AnswersMap, env: SandboxedEnvironment, context: dict) -> None:
@@ -50,7 +50,9 @@ def _apply_when(q: Question, answers: AnswersMap, env: SandboxedEnvironment, con
         answers.defaults.pop(q.var_name, None)
 
 
-def _render_default(q: Question, answers: AnswersMap, env: SandboxedEnvironment, context: dict) -> None:
+def _render_default_to_answers(
+    q: Question, answers: AnswersMap, env: SandboxedEnvironment, context: dict
+) -> None:
     if isinstance(q.default, str) and "{{" in q.default:
         try:
             rendered = env.from_string(q.default).render(**context)

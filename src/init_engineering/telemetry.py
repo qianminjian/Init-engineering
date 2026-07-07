@@ -28,10 +28,9 @@ from pathlib import Path
 
 _logger = logging.getLogger(__name__)
 
-# 占位端点: 未配置真实 telemetry 服务时, 遥测数据不会实际发送.
-# 配置真实 endpoint: 设置 AE_TELEMETRY_PATH 环境变量 (如 /v1/event 后缀),
-# 或修改此常量为生产 telemetry 服务地址.
-DEFAULT_TELEMETRY_ENDPOINT = "https://telemetry.ae.example.com/v1/event"
+# 默认端点 — 指向 localhost 确保默认不发送外部网络请求。
+# 配置真实 endpoint: 设置 AE_TELEMETRY_PATH 环境变量（完整 HTTPS URL）。
+DEFAULT_TELEMETRY_ENDPOINT = "https://localhost/v1/event"
 _TELEMETRY_CONSENT_FILE = ".ae-telemetry-consent"
 
 
@@ -64,13 +63,14 @@ def _resolve_endpoint() -> str | None:
     if raw:
         # SE-P1-3: 显式开关 — telemetry 未开启时, AE_TELEMETRY_PATH 静默忽略
         if not _is_enabled():
-            _logger.debug(
+            _logger.warning(
                 "AE_TELEMETRY_PATH 设置但 telemetry 未开启, 忽略 (SE-P1-3)"
             )
-            return DEFAULT_TELEMETRY_ENDPOINT
+            return None
         full = urllib.parse.urljoin(DEFAULT_TELEMETRY_ENDPOINT, raw)
     else:
         full = DEFAULT_TELEMETRY_ENDPOINT
+
     # B6 安全: 强制 HTTPS 防止 http://attacker 注入
     if not full.startswith("https://"):
         _logger.warning("telemetry endpoint 必须 HTTPS, 已忽略: %s", full)
@@ -148,10 +148,6 @@ def send(
     elif not _is_enabled():
         return
 
-    endpoint = _endpoint if _endpoint is not None else _resolve_endpoint()
-    if endpoint is None:
-        return
-
     event.python_version = platform.python_version()
     event.os_name = platform.system().lower()
 
@@ -165,6 +161,10 @@ def send(
             )
         except (OSError, ValueError, TypeError):
             _logger.debug("telemetry send failed", exc_info=True)
+        return
+
+    endpoint = _endpoint if _endpoint is not None else _resolve_endpoint()
+    if endpoint is None or endpoint == "":
         return
 
     try:

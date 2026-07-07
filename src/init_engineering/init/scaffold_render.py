@@ -199,7 +199,10 @@ def render_to(
     try:
         match_exclude = parse_exclude_callback(exclude_callback_spec)
     except ImportError:
-        _logger.debug("exclude callback module not found, falling back to default: %s", exclude_callback_spec)
+        _logger.debug(
+            "exclude callback module not found, falling back to default: %s",
+            exclude_callback_spec,
+        )
         match_exclude = default_match_exclude
     except (ValueError, AttributeError) as e:
         raise ValueError(f"exclude_callback_spec 配置错误: {e}") from e

@@ -32,7 +32,7 @@ class SkillResult:
     success: bool
     message: str
     action: str = ""  # "init", "analyze", "detect"
-    project_path: str | None = None
+    project_path: str | None = None  # 展示用字符串 (str(Path)), 非 Path 对象
     project_type: str | None = None
     candidates: list[str] = field(default_factory=list)
     details: dict = field(default_factory=dict)
@@ -41,9 +41,12 @@ class SkillResult:
 def skill(command_str: str, cwd: Path | None = None) -> SkillResult:
     """解析结构化指令并执行对应的 init 操作。
 
+    ⚠ 隐式副作用: 未传 cwd 时默认绑定进程当前工作目录 (Path.cwd())，
+    调用方应始终显式传入 cwd 以避免非确定性行为。
+
     Args:
         command_str: 结构化命令字符串，如 "init my-project --type app-service"
-        cwd: 当前工作目录，默认为 Path.cwd()
+        cwd: 当前工作目录。传入 None 时回退到 Path.cwd()
 
     Returns:
         SkillResult: 执行结果
@@ -75,6 +78,12 @@ def skill(command_str: str, cwd: Path | None = None) -> SkillResult:
 
 def _parse_prompt(prompt: str) -> tuple[str, str | None, dict]:
     """解析 prompt 为 action/project_path/options。
+
+    解析策略（按优先级）：
+    1. 匹配 "detect <path>" → detect action
+    2. 匹配 "analyze <path>" → analyze action
+    3. 匹配 "init <args>" → 先检查 --analyze 子模式（路由到 analyze），
+       再扫描 --key value 选项标记消费的 token，剩余第一个未消费 token 为 project_path
 
     支持的格式:
         "init my-project --type app-service"
@@ -141,9 +150,22 @@ def _parse_prompt(prompt: str) -> tuple[str, str | None, dict]:
     return ("unknown", None, {})
 
 
-def _run_analyze(project_path: str | None, cwd: Path) -> SkillResult:
-    """运行存量项目分析。"""
+def _run_analyze(
+    project_path: str | None,
+    cwd: Path,
+    *,
+    _detector_cls: type | None = None,
+) -> SkillResult:
+    """运行存量项目分析。
+
+    Args:
+        project_path: 目标路径
+        cwd: 当前工作目录
+        _detector_cls: 测试注入点 — 替换 ProjectDetector 类
+    """
     from init_engineering.init.detector import ProjectDetector
+
+    detector_cls = _detector_cls if _detector_cls is not None else ProjectDetector
 
     try:
         target = resolve_user_path(project_path, cwd)
@@ -153,11 +175,11 @@ def _run_analyze(project_path: str | None, cwd: Path) -> SkillResult:
     if not target.exists():
         return SkillResult(
             success=False,
-            message=f"目录不存在: {target}",
+            message=f"目录不存在: {target}。请确认路径拼写，或将项目文件放入该目录后重试。",
             action="analyze",
         )
 
-    detector = ProjectDetector(target)
+    detector = detector_cls(target)
     result = detector.analyze()
 
     if result.candidates:
@@ -190,9 +212,24 @@ def _run_analyze(project_path: str | None, cwd: Path) -> SkillResult:
         )
 
 
-def _run_init(project_path: str | None, options: dict, cwd: Path) -> SkillResult:
-    """运行项目初始化。"""
+def _run_init(
+    project_path: str | None,
+    options: dict,
+    cwd: Path,
+    *,
+    _worker_cls: type | None = None,
+) -> SkillResult:
+    """运行项目初始化。
+
+    Args:
+        project_path: 目标路径
+        options: CLI 选项字典
+        cwd: 当前工作目录
+        _worker_cls: 测试注入点 — 替换 InitWorker 类
+    """
     from init_engineering.init import InitWorker
+
+    worker_cls = _worker_cls if _worker_cls is not None else InitWorker
 
     try:
         dst_path = resolve_user_path(project_path, cwd)
@@ -231,7 +268,7 @@ def _run_init(project_path: str | None, options: dict, cwd: Path) -> SkillResult
                 kwargs[param] = val
 
     try:
-        worker = InitWorker(dst_path=dst_path, **kwargs)
+        worker = worker_cls(dst_path=dst_path, **kwargs)
         result = worker.execute()
         return SkillResult(
             success=True,
@@ -241,11 +278,15 @@ def _run_init(project_path: str | None, options: dict, cwd: Path) -> SkillResult
             project_type=result.project_type,
             details={"files_count": len(result.files)},
         )
+    except (KeyboardInterrupt, SystemExit):
+        raise
     except Exception as e:
         _logger.exception("InitWorker 执行失败: %s", e)
         hint = getattr(e, "recovery_hint", "")
         if hint:
             hint = f"。建议: {hint}"
+        else:
+            hint = "。内部错误，请用 --verbose 查看详细日志，或提交 issue 附带 traceback"
         return SkillResult(
             success=False,
             message=f"初始化失败: {e}{hint}",

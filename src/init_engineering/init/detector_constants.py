@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-__all__ = ["DetectionResult", "FRAMEWORK_SIGNATURES"]
+__all__ = ["FRAMEWORK_SIGNATURES", "DetectionResult"]
 
 from dataclasses import dataclass, field
 

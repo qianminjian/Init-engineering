@@ -8,8 +8,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..answers import AnswersMap
-from ..config_types import TEMPLATES_ROOT, TemplateConfig
 from ..config_loader import load_template_config
+from ..config_types import TEMPLATES_ROOT, TemplateConfig
 from ..detector import DetectionResult
 from ..errors import InitInterruptedError
 from ..prompts import InteractivePrompt, prompt_for_nested_template

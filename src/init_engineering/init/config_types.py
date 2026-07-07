@@ -105,7 +105,12 @@ class Question:
         result = tpl.render(**context).strip()
         return result.lower() not in ("false", "no", "0", "")
 
-    def render_validator(self, value: str | bool | int | float | list | dict | None, context: dict, jinja_env: jinja2.Environment) -> str:
+    def render_validator(
+        self,
+        value: str | bool | int | float | list | dict | None,
+        context: dict,
+        jinja_env: jinja2.Environment,
+    ) -> str:
         """渲染 validator 模板，返回错误信息或空字符串。
 
         来源：Copier _user_data.py Question._get_answer_validation_error()
@@ -209,7 +214,6 @@ class TemplateConfig:
     exclude_callback: str = _EXCLUDE_CALLBACK_SPEC
     envops: dict = field(
         default_factory=lambda: {
-            "autoescape": False,
             "keep_trailing_newline": True,
         }
     )

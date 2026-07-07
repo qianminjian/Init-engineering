@@ -17,17 +17,18 @@ from typing import TYPE_CHECKING
 import click
 
 from init_engineering import __version__
-
-_logger = logging.getLogger(__name__)
-
-if TYPE_CHECKING:
-    from init_engineering.init.detector import ProjectDetector
 from init_engineering.cli._helpers import (
     configure_logging as _configure_logging,
 )
 from init_engineering.cli._helpers import (
     sanitize_error as _sanitize_error,
 )
+
+_logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from init_engineering.init import InitResult
+    from init_engineering.init.detector import ProjectDetector
 
 # ============================================================
 # init 命令的轻量子分支 (纯函数, init() 内部调用)
@@ -60,7 +61,7 @@ def _cmd_list_templates(templates_root: Path) -> None:
                 click.echo(f"  {rel}")
 
 
-def _cmd_analyze(dst_path: Path, detector_cls: type["ProjectDetector"]) -> None:
+def _cmd_analyze(dst_path: Path, detector_cls: type[ProjectDetector]) -> None:
     """--analyze: 只运行代码分析, 不初始化.
 
     Args:
@@ -122,7 +123,7 @@ def cmd_init(
     template_dir_override: str | None,
     hook_timeout: int | None,
     force_unsafe_template: bool,
-) -> None:
+) -> InitResult | None:
     """P2-12: init 命令实现 — 从 cli/__init__.py 拆分以满足 ≤ 300 行约束.
 
     纯函数,接收已 click-解析的所有参数,执行 init 主体逻辑.
@@ -171,8 +172,8 @@ def cmd_init(
         if not is_safe and not force_unsafe_template:
             raise click.UsageError(
                 f"❌ --template-dir {td} 不在常用安全路径内 "
-                f"({[str(r) for r in safe_roots if r.exists()]})。"
-                f"使用不明来源模板可能含 RCE 风险 (Jinja 沙箱穿透攻击)。"
+                f"({[str(r) for r in safe_roots if r.exists()]})。\n"
+                f"使用不明来源的外部模板可能在您的机器上执行恶意代码。\n"
                 f"如确认模板来源可信, 加 --force-unsafe-template 显式绕过。"
             )
         if not is_safe and verbose:
@@ -184,37 +185,24 @@ def cmd_init(
     # --telemetry: 首次开启强制引导用户同意 (避免静默收集)
     if telemetry:
         from init_engineering.telemetry import has_consent, request_and_persist_consent
-        if not has_consent():
-            if not request_and_persist_consent():
-                click.echo("已禁用 telemetry (本次 init 不发送数据)", err=False)
-                telemetry = False
+        if not has_consent() and not request_and_persist_consent():
+            click.echo("已禁用 telemetry (本次 init 不发送数据)", err=False)
+            telemetry = False
 
     _configure_logging(verbose=verbose)
 
-    _worker_kwargs = dict(
-        dst_path=dst_path,
-        project_type=project_type,
-        language=language,
-        package_manager=package_manager,
-        ci_platform=ci_platform,
-        test_runner=test_runner,
-        use_typescript=use_typescript,
-        use_lefthook=use_lefthook,
-        use_docker=use_docker,
-        defaults=defaults,
-        force=force,
-        pretend=pretend,
-        skip_tasks=skip_tasks,
-        no_install=no_install,
-        cleanup_on_error=cleanup_on_error,
-        quiet=quiet,
-        verbose=verbose,
-        incremental=incremental,
-        strict=strict,
-        template_dir_override=Path(template_dir_override) if template_dir_override else None,
+    _worker_kwargs = _build_init_worker_kwargs(
+        dst_path=dst_path, project_type=project_type, language=language,
+        package_manager=package_manager, ci_platform=ci_platform,
+        test_runner=test_runner, use_typescript=use_typescript,
+        use_lefthook=use_lefthook, use_docker=use_docker,
+        defaults=defaults, force=force, pretend=pretend,
+        skip_tasks=skip_tasks, no_install=no_install,
+        cleanup_on_error=cleanup_on_error, quiet=quiet,
+        verbose=verbose, incremental=incremental, strict=strict,
+        template_dir_override=template_dir_override,
         templates_suffix=templates_suffix,
-        preserve_symlinks=preserve_symlinks,
-        hook_timeout=hook_timeout,
+        preserve_symlinks=preserve_symlinks, hook_timeout=hook_timeout,
     )
 
     # B1: 必须用 with 块 — __exit__ → _cleanup() 释放 InitLock,
@@ -250,6 +238,60 @@ def cmd_init(
                 success=_telemetry_error is None, elapsed_ms=elapsed_ms,
                 error_type=_telemetry_error,
             )
+
+
+def _build_init_worker_kwargs(
+    *,
+    dst_path: Path,
+    project_type: str | None,
+    language: str | None,
+    package_manager: str | None,
+    ci_platform: str | None,
+    test_runner: str | None,
+    use_typescript: bool | None,
+    use_lefthook: bool | None,
+    use_docker: bool | None,
+    defaults: bool,
+    force: bool,
+    pretend: bool,
+    skip_tasks: bool,
+    no_install: bool,
+    cleanup_on_error: bool,
+    quiet: bool,
+    verbose: bool,
+    incremental: bool,
+    strict: bool,
+    template_dir_override: str | None,
+    templates_suffix: str | None,
+    preserve_symlinks: bool | None,
+    hook_timeout: int | None,
+) -> dict:
+    """构建 InitWorker 构造参数 — 从 cmd_init 提取以减小函数体."""
+    return {
+        "dst_path": dst_path,
+        "project_type": project_type,
+        "language": language,
+        "package_manager": package_manager,
+        "ci_platform": ci_platform,
+        "test_runner": test_runner,
+        "use_typescript": use_typescript,
+        "use_lefthook": use_lefthook,
+        "use_docker": use_docker,
+        "defaults": defaults,
+        "force": force,
+        "pretend": pretend,
+        "skip_tasks": skip_tasks,
+        "no_install": no_install,
+        "cleanup_on_error": cleanup_on_error,
+        "quiet": quiet,
+        "verbose": verbose,
+        "incremental": incremental,
+        "strict": strict,
+        "template_dir_override": Path(template_dir_override) if template_dir_override else None,
+        "templates_suffix": templates_suffix,
+        "preserve_symlinks": preserve_symlinks,
+        "hook_timeout": hook_timeout,
+    }
 
 
 def _emit_telemetry(

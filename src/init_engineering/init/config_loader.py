@@ -6,20 +6,22 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 import logging
+from pathlib import Path
 from typing import Any
 
 import yaml
-
-_logger = logging.getLogger(__name__)
 
 from ._shared.path_utils import is_path_under_any_root
 from .config_types import DEFAULT_EXCLUDE, TEMPLATES_ROOT, Question, Task
 from .errors import ConfigFileError, ConfigLoaderSecurityError
 
+_logger = logging.getLogger(__name__)
 
-def load_template_config(project_type: str, sandbox_roots: list[str] | None = None) -> "TemplateConfig":  # noqa: F821
+
+def load_template_config(
+    project_type: str, sandbox_roots: list[str] | None = None
+) -> TemplateConfig:  # noqa: F821
     """加载并解析 ae-template.yml，返回 TemplateConfig 实例。
 
     完整流程：

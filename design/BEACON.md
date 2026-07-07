@@ -5,7 +5,7 @@
 1. **Agent Skill 模式运行**：`ae init` 作为 Claude Code Skill 在 agent 里调用，为 agent 工作流提供项目环境初始化能力
 2. **存量项目自动初始化**：通过代码分析自动识别项目类型、依赖、配置，生成正确的初始化配置
 3. **新项目向导初始化**：交互式询问确认项目方向、技术栈、目录结构，生成定制化项目骨架
-4. **模板组合引擎**：10 类型 × 4 语言（含 plugin 多 Skill 插件模板）
+4. **模板组合引擎**：9 类型 × 4 语言（含 plugin 多 Skill 插件模板）
 5. **路径穿越防护**：!include + external_data 路径必须在 sandbox 内（realpath 双侧校验）
 6. **项目升级支持**：`ae update` 重新渲染已有项目模板，支持 skip/overwrite/prompt 三种冲突策略
 7. **CI / Docker / Lefthook 条件渲染**：use_docker / use_lefthook / ci_platform 字段控制可选模板
@@ -17,7 +17,7 @@
 - 存量项目初始化：代码分析 → 自动识别 → 自动化配置
 - 新项目向导：交互式询问 → 确认方向 → 生成骨架
 - 升级模式：`ae update` 重新渲染已有项目，保留用户修改
-- 10 类型 × 4 语言模板：app-service / cli-tool / library / monorepo / mcp-server / spec-doc / skill / hook / plugin
+- 9 类型 × 4 语言模板：app-service / cli-tool / library / monorepo / mcp-server / spec-doc / skill / hook / plugin
 - 语言特性：TypeScript / Python / Go / Rust
 - 条件化 feature：lefthook / docker / github-actions / gitlab-ci
 - init 模板体系：50+ 模板文件 + `ae-template.yml` 完整字段集
@@ -40,11 +40,11 @@
 | 4 | **新项目：向导式询问确认方向** | 新项目方向不明确，需要交互式确认 | 2026-06-30 | ✅ |
 | 5 | **统一版本号：__version__ = _ae_version = "1.0.0"** | 消除 v0.1.0/1.0.0/5.0.0 三元不一致；设计文档 v5.0.0 笔误已修正 | 2026-07-02 | ✅ |
 | 6 | **monorepo 支持 4 语言（typescript/python/go/rust）** | 通过 _nested_templates 切换子目录，每个语言对应独立 workspace 模板 | 2026-07-02 | ✅ |
-| 7 | **InitWorker 拆分为 5 阶段函数（scaffold_phase_funcs.py）** | scaffold_phases.py 501→235 行，满足 300 行硬约束 | 2026-07-02 | ✅ |
-| 8 | **detector 拆分为 constants/analyzers/helpers** | detector.py 382→179 行；解除 detector ↔ analyzer 循环依赖 | 2026-07-02 | ✅ |
+| 7 | **InitWorker 拆分为 5 阶段函数（scaffold_phase_funcs.py）** | scaffold_phases.py 501→285 行，满足 300 行硬约束 | 2026-07-02 | ✅ |
+| 8 | **detector 拆分为 constants/analyzers/helpers** | detector.py 382→82 行；解除 detector ↔ analyzer 循环依赖 | 2026-07-02 | ✅ |
 | 9 | **run_update() 实现** | 类比 Copier `copier update`；支持 skip/overwrite/prompt 冲突策略 | 2026-07-02 | ✅ |
 | 10 | **AnswerMap 6 层 ChainMap 简化** | 来源 Copier 8 层；优先级 cli > interactive > previous > defaults > builtins > external | 2026-07-01 | ✅ |
-| 11 | **5 类渲染生命周期钩子** | before_renderer / on_exists / after_renderer / tasks_before / tasks_after | 2026-07-01 | ✅ |
+| 11 | **2 类渲染生命周期钩子** | tasks_before / tasks_after（before_renderer/after_renderer/on_exists 已移除，YAGNI） | 2026-07-01 | ✅ |
 | 12 | **CLI 单版本透传 templates_suffix / preserve_symlinks** | TemplateConfig 默认值可被 CLI 覆盖 | 2026-07-01 | ✅ |
 
 ## 当前状态
@@ -61,6 +61,7 @@
 
 | 日期 | 变更 | 原因 |
 |------|------|------|
+| 2026-07-08 | 深度审计 9 轮 (R1-R8) | 错误处理/测试质量/类型安全/架构/性能/并发/模板/文档 8 维度扫描 |
 | 2026-07-02 | v1.0 投产就绪 7 项 | 统一版本号 / monorepo 4 语言 / InitWorker 拆分 / detector 拆分 / run_update / BEACON 同步 |
 | 2026-07-01 | 第三轮深度修复 3 项 | lefthook 条件门控 + ProjectDetector 深度分析(依赖解析/框架识别/包管理器推断) + hook多语言/spec-doc 7段BEACON+ADR |
 | 2026-07-01 | 第二轮优化 5 项 | CI 条件渲染 + 清理 Copier 遗留文件 + --language CLI + 共享模板泛化 + project_name 默认值 |

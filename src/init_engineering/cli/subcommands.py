@@ -9,11 +9,11 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-_logger = logging.getLogger(__name__)
-
 import click
 
 from init_engineering.init.scaffold_update import ConflictStrategy
+
+_logger = logging.getLogger(__name__)
 
 
 @click.command()
@@ -26,7 +26,11 @@ from init_engineering.init.scaffold_update import ConflictStrategy
     help="文件冲突处理策略 (默认 skip — 保护用户修改)",
 )
 @click.option("--dry-run", is_flag=True, help="只计算 diff 不写入")
-@click.option("--force", is_flag=True, help="无 .ae-answers.yml 时强制升级（自动推断 project_type）")
+@click.option(
+    "--force",
+    is_flag=True,
+    help="无 .ae-answers.yml 时强制升级（自动推断 project_type）",
+)
 @click.option("--quiet", is_flag=True, help="静默模式")
 def update(
     project: str | None,
@@ -39,15 +43,25 @@ def update(
 
     默认策略: skip (保护用户手动修改).  可选: overwrite / prompt.
     """
+    from init_engineering.init.errors import InitError
     from init_engineering.init.scaffold_update import run_update
 
     dst_path = Path(project) if project else Path.cwd()
-    result = run_update(
-        dst_path=dst_path,
-        auto_detect=force,
-        dry_run=dry_run,
-        conflict_strategy=conflict_strategy,
-    )
+    try:
+        result = run_update(
+            dst_path=dst_path,
+            auto_detect=force,
+            dry_run=dry_run,
+            conflict_strategy=conflict_strategy,
+        )
+    except InitError as e:
+        click.echo(f"✗ 升级失败: {e}", err=True)
+        if e.recovery_hint:
+            click.echo(f"  恢复建议: {e.recovery_hint}", err=True)
+        raise SystemExit(e.exit_code) from e
+    except (FileNotFoundError, ValueError) as e:
+        click.echo(f"✗ 升级失败: {e}", err=True)
+        raise SystemExit(1) from e
     if not quiet:
         click.echo(result.summary())
         for f in result.files_added:

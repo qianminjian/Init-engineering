@@ -12,6 +12,7 @@ from __future__ import annotations
 
 __all__ = ["run_tasks_phase"]
 
+import logging
 import subprocess
 from pathlib import Path
 
@@ -21,6 +22,8 @@ from jinja2.sandbox import SandboxedEnvironment
 from .answers import AnswersMap
 from .hooks import TaskRunner
 from .scaffold_hooks import run_builtin_hooks
+
+_logger = logging.getLogger(__name__)
 
 
 def run_tasks_phase(
@@ -76,6 +79,7 @@ def _build_jinja_env(dst_path: Path) -> SandboxedEnvironment:
                 timeout=10,  # PE-AUDIT-P0-1: local read, clamp to 10s
             )
         except subprocess.TimeoutExpired:
+            _logger.warning("git status --porcelain timed out after 10s, assuming dirty repo")
             return False  # 安全选择: 超时视为非空,模板作者应排查仓库状态
         return result.stdout.strip() == ""
 

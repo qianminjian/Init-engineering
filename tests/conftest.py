@@ -10,6 +10,7 @@ import asyncio
 import contextlib
 import json
 import os
+import sys
 from pathlib import Path
 
 import pytest
@@ -119,6 +120,3 @@ def run_async(coro):
     """同步上下文跑 async 协程. Phase 1 不引入 pytest-asyncio 依赖."""
     return asyncio.run(coro)
 
-
-# Fix: import sys(用于 stderr 输出)
-import sys  # noqa: E402
