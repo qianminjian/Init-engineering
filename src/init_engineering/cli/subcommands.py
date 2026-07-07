@@ -6,9 +6,14 @@ commands.py 330 行超 300 行约束, 拆出 update/status Click 命令.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
+_logger = logging.getLogger(__name__)
+
 import click
+
+from init_engineering.init.scaffold_update import ConflictStrategy
 
 
 @click.command()
@@ -16,8 +21,8 @@ import click
 @click.option(
     "--conflict",
     "conflict_strategy",
-    type=click.Choice(["skip", "overwrite", "prompt"]),
-    default="skip",
+    type=click.Choice([s.value for s in ConflictStrategy]),
+    default=ConflictStrategy.SKIP.value,
     help="文件冲突处理策略 (默认 skip — 保护用户修改)",
 )
 @click.option("--dry-run", is_flag=True, help="只计算 diff 不写入")
@@ -39,7 +44,7 @@ def update(
     dst_path = Path(project) if project else Path.cwd()
     result = run_update(
         dst_path=dst_path,
-        force=force,
+        auto_detect=force,
         dry_run=dry_run,
         conflict_strategy=conflict_strategy,
     )
@@ -57,6 +62,7 @@ def update(
 def status():
     """查看当前项目环境配置."""
     from init_engineering.config.environment import ProjectEnvironment
+    from init_engineering.init.errors import InitError
 
     cwd = Path.cwd()
     click.echo(f"当前目录: {cwd}")
@@ -71,8 +77,16 @@ def status():
         click.echo(f"  Lefthook: {'是' if env.use_lefthook else '否'}")
         click.echo(f"  CI: {env.ci_platform or '无'}")
         click.echo(f"  Git: {'是' if env.has_git else '否'}")
-        undetectable = env._warn_undetectable(cwd)
+        undetectable = env.warn_undetectable(cwd)
         if undetectable:
             click.echo(f"  ⚠ 不可自动判定: {', '.join(undetectable)}", err=True)
+    except FileNotFoundError:
+        click.echo("  (未初始化 — 运行 ae init 创建项目)")
+    except InitError as e:
+        _logger.warning("status command failed: %s", e, exc_info=True)
+        click.echo(f"  读取项目环境失败: {e}")
+        if e.recovery_hint:
+            click.echo(f"  恢复建议: {e.recovery_hint}")
     except Exception as e:
+        _logger.warning("status command failed unexpectedly", exc_info=True)
         click.echo(f"  读取项目环境失败: {e}")

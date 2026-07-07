@@ -1,6 +1,6 @@
 """Phase 2: prompt — 加载 TemplateConfig + 应用 CLI overrides + 交互问答.
 
-来源: scaffold_phase_funcs.py phase_prompt (2026-07-03 拆分).
+来源: init/scaffold_phases.py → phases/prompt.py (2026-07-03 拆分).
 """
 
 from __future__ import annotations
@@ -8,8 +8,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..answers import AnswersMap
-from ..config import TEMPLATES_ROOT, TemplateConfig
-from ..detector import ProjectDetector
+from ..config_types import TEMPLATES_ROOT, TemplateConfig
+from ..config_loader import load_template_config
+from ..detector import DetectionResult
 from ..errors import InitInterruptedError
 from ..prompts import InteractivePrompt, prompt_for_nested_template
 from ..scaffold_question_eval import evaluate_question_defaults
@@ -27,10 +28,10 @@ def phase_prompt(
     use_typescript: bool | None,
     use_lefthook: bool | None,
     use_docker: bool | None,
-    detection: ProjectDetector | None,
+    detection: DetectionResult | None,
 ) -> tuple[TemplateConfig, AnswersMap]:
     """加载 TemplateConfig + 应用 CLI overrides + 评估 question + 交互 prompt."""
-    template = TemplateConfig.load(project_type or "")
+    template = load_template_config(project_type or "")
     if template.nested_templates:
         # 选择 nested template 策略:
         # 1. 若 language 在 nested_templates 键中 → 直接选它（CLI 透传 language）
@@ -69,14 +70,8 @@ def phase_prompt(
     )
     answers.builtins["project_type"] = project_type or ""
     if detection is not None:
-        if detection.language:
-            answers.builtins.setdefault("language", detection.language)
-        if detection.package_manager:
-            answers.builtins.setdefault("package_manager", detection.package_manager)
-        if detection.test_runner:
-            answers.builtins.setdefault("test_runner", detection.test_runner)
-        if detection.ci_platform:
-            answers.builtins.setdefault("ci_platform", detection.ci_platform)
+        for k, v in detection.as_answers().items():
+            answers.builtins.setdefault(k, v)
 
     # 检查 var 单个字符串,不是 list in AnswersMap (会触发 __contains__ 内部迭代 ChainMap)
     for var in ["project_description", "language", "package_manager",

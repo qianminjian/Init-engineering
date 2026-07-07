@@ -5,10 +5,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
+
+from init_engineering.init.errors import ConfigFileError
 
 
 @dataclass
@@ -24,8 +26,6 @@ class ProjectEnvironment:
     use_lefthook: bool = False
     ci_platform: str | None = None
     has_git: bool = True
-    # v2.5 P1-3: sandbox_roots — !include 路径必须在 sandbox 内
-    sandbox_roots: list[str] = field(default_factory=list)
 
     @classmethod
     def resolve(cls, project_root: Path) -> ProjectEnvironment:
@@ -35,7 +35,6 @@ class ProjectEnvironment:
         if answers_file.exists():
             env = cls._from_answers_file(answers_file)
             changed = env._sync_detectable(project_root)
-            env._warn_type_inconsistency(project_root)
             if changed:
                 env.save(project_root)
             return env
@@ -100,33 +99,18 @@ class ProjectEnvironment:
             "use_lefthook": (root / "lefthook.yml").exists(),
             "has_git": (root / ".git").exists(),
         }
+        if set(detections.keys()) != set(self._DETECTABLE_FIELDS):
+            raise ConfigFileError(
+                f"_sync_detectable keys {set(detections.keys())} "
+                f"!= _DETECTABLE_FIELDS {set(self._DETECTABLE_FIELDS)}"
+            )
         for field_name, detected in detections.items():
             if detected is not None and getattr(self, field_name) != detected:
                 setattr(self, field_name, detected)
                 changed = True
         return changed
 
-    def _warn_type_inconsistency(self, root: Path) -> None:
-        """project_type 与检测结果不一致时打印警告（不改值）。
-
-        设计: Section 10.3 — project_type 不可客观判定，有冲突时提示用户，不改。
-        """
-        if not self.project_type:
-            return
-        from init_engineering.init.detector import ProjectDetector
-
-        detector = ProjectDetector(root)
-        candidates = detector.list_candidates()
-        detected = detector.detect()
-        if detected and detected != self.project_type:
-            import sys
-            print(
-                f"warning: 记录的 project_type={self.project_type!r}, "
-                f"当前代码检测为 {detected!r}。保持记录值。",
-                file=sys.stderr,
-            )
-
-    def _warn_undetectable(self, root: Path) -> list[str]:
+    def warn_undetectable(self, root: Path) -> list[str]:
         """A5: 列出当前无法自动判定的字段 (供 CLI 层 warning 提示).
 
         Returns:

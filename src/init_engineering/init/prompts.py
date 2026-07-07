@@ -10,14 +10,20 @@
   prompt_for_project_type(available_types) -> str  (当 --type 未指定且无法自动检测时)
 """
 
+from __future__ import annotations
+
+import logging
+from collections.abc import Callable
 from typing import Any
 
 import click
-import jinja2
+import jinja2.sandbox
 from jinja2 import StrictUndefined
 
 from .answers import AnswersMap
-from .config import Question
+
+_logger = logging.getLogger(__name__)
+from .config_types import Question
 
 # 问题类型 → click 方法映射
 # 来源：Copier CAST_STR_TO_NATIVE + Cookiecutter read_user_* 系列
@@ -80,10 +86,13 @@ class InteractivePrompt:
     def __init__(self, questions: list[Question], answers: AnswersMap):
         self.questions = questions
         self.answers = answers
-        self._jinja_env = jinja2.Environment(undefined=StrictUndefined)
+        self._jinja_env = jinja2.sandbox.SandboxedEnvironment(undefined=StrictUndefined)
 
     def run(self) -> AnswersMap:
         """执行交互式问答。返回更新后的 AnswersMap。
+
+        ⚠ 副作用: 返回的是构造时传入的 self.answers 对象 (原地修改),
+        非新拷贝。调用者应据此处理引用语义。
 
         两遍循环：
         1. 第一遍：简单类型 → 收集基础变量
@@ -165,19 +174,41 @@ class InteractivePrompt:
         click.echo(f"{prefix}{q.help}", err=False)
 
         max_retries = 5
-        for _ in range(max_retries):
+        for attempt in range(max_retries):
             raw_value = prompt_fn(q, context)
             # multiselect 返回 tuple → 转为 YAML 列表字符串给 cast_answer
             if isinstance(raw_value, tuple):
                 raw_value = "\n".join(f"- {v}" for v in raw_value)
             try:
                 value = q.cast_answer(raw_value)
-            except (ValueError, TypeError) as e:
+            except TypeError as e:
+                _logger.debug("cast_answer TypeError (var=%s, raw=%r): %s", q.var_name, raw_value, e)
+                if attempt == max_retries - 1:
+                    from .errors import ValidationError
+                    raise ValidationError(
+                        f"类型转换失败 (已达最大重试 {max_retries}): {e}",
+                        field_name=q.var_name,
+                    )
+                click.echo(f"  ✗ 类型转换失败: {e}", err=True)
+                continue
+            except ValueError as e:
+                if attempt == max_retries - 1:
+                    from .errors import ValidationError
+                    raise ValidationError(
+                        f"类型转换失败 (已达最大重试 {max_retries}): {e}",
+                        field_name=q.var_name,
+                    )
                 click.echo(f"  ✗ 类型转换失败: {e}", err=True)
                 continue
 
             error = q.render_validator(value, context, self._jinja_env)
             if error:
+                if attempt == max_retries - 1:
+                    from .errors import ValidationError
+                    raise ValidationError(
+                        f"校验失败 (已达最大重试 {max_retries}): {error}",
+                        field_name=q.var_name,
+                    )
                 click.echo(f"  ✗ {error}", err=True)
                 continue
             break
@@ -235,12 +266,18 @@ class InteractivePrompt:
         return q.default
 
 
-def prompt_for_project_type(available_types: list[str]) -> str:
+def prompt_for_project_type(available_types: list[str], *, _input_fn=None) -> str:
     """当无法自动检测项目类型且非 --defaults 模式时调用。
 
     来源：Cookiecutter main.py choose_nested_template() 的交互式选择。
+
+    Args:
+        available_types: 可用项目类型列表
+        _input_fn: 可选的输入函数，测试可注入 mock (默认 click.prompt)
     """
-    return click.prompt(
+    if _input_fn is None:
+        _input_fn = click.prompt
+    return _input_fn(
         "请选择项目类型",
         type=click.Choice(available_types),
         show_choices=True,
@@ -251,6 +288,8 @@ def prompt_for_nested_template(
     nested: dict[str, dict[str, str]],
     no_input: bool = False,
     preferred: str | None = None,
+    *,
+    _input_fn: Callable[[str, type, str, bool], str] | None = None,
 ) -> str | None:
     """交互式选择嵌套模板变体。
 
@@ -261,6 +300,7 @@ def prompt_for_nested_template(
         nested: 模板变体字典 {key: {path, title}}
         no_input: True 时跳过交互，按 preferred → first 顺序选择
         preferred: 优先选中的 key（用于 CLI --language 透传场景）
+        _input_fn: 测试注入点 — 替换 click.prompt，签名需兼容。
 
     Returns:
         选中的模板路径（相对于当前配置文件的目录）。
@@ -276,13 +316,19 @@ def prompt_for_nested_template(
     if no_input:
         if preferred and preferred in nested:
             return nested[preferred].get("path", "")
-        # A3 兜底: 第一个变体, 而不是返回 None 让后续用 template.template_dir 渲染空目录
+        if preferred:
+            raise ValueError(
+                f"非交互模式下 preferred template '{preferred}' 不在 nested 选项 "
+                f"({', '.join(nested.keys())}) 中，无法自动选择。"
+            )
+        # 无 preferred 且 no_input: 第一个变体作为默认
         first_key = next(iter(nested.keys()))
         return nested[first_key].get("path", "")
     if preferred and preferred in nested:
         # 已知 preferred → 直接返回，不询问
         return nested[preferred].get("path", "")
-    choice = click.prompt(
+    prompt_fn = _input_fn if _input_fn is not None else click.prompt
+    choice = prompt_fn(
         "请选择模板变体",
         type=click.Choice(list(choices.keys())),
         default=next(iter(choices.keys())),

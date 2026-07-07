@@ -10,15 +10,11 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Callable
 from pathlib import Path
 
-from .._shared.detection import (
-    detect_ci_platform,
-    detect_package_manager,
-    detect_test_runner,
-)
-
+_logger = logging.getLogger(__name__)
 
 def check_pkg_dep(target_dir: Path, check_fn: Callable[[dict], bool]) -> bool:
     """Check package.json dependencies.
@@ -34,6 +30,7 @@ def check_pkg_dep(target_dir: Path, check_fn: Callable[[dict], bool]) -> bool:
         data = json.loads(pkg.read_text())
         return check_fn(data.get("dependencies", {}))
     except (json.JSONDecodeError, OSError):
+        _logger.debug("无法解析 package.json: %s", pkg, exc_info=True)
         return False
 
 

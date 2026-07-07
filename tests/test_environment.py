@@ -58,8 +58,8 @@ class TestProjectEnvironment:
         assert changed is True
         assert env.test_runner == "pytest"
 
-    def test_warn_undetectable_returns_fields(self, tmp_path: Path):
-        """_warn_undetectable 返回不可判定字段列表."""
+    def testwarn_undetectable_returns_fields(self, tmp_path: Path):
+        """warn_undetectable 返回不可判定字段列表."""
         env = ProjectEnvironment(project_name="test", package_manager=None)
-        result = env._warn_undetectable(tmp_path)
+        result = env.warn_undetectable(tmp_path)
         assert "package_manager" in result

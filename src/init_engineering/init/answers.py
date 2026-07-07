@@ -3,6 +3,8 @@
 来源：Copier _user_data.py:70-133 AnswersMap + _external_data + LazyDict
 """
 
+from __future__ import annotations
+
 import os as _os
 import sys
 import tempfile
@@ -21,11 +23,9 @@ import yaml
 from ._lazy_external import _LazyExternalDict, _load_external_file
 
 BUILTIN_VARS: MappingProxyType = MappingProxyType({
-    # v1.0: 与 __version__ 同步 — 单版本号策略 (BEACON.md 决策 #5)。
-    # 模板中可用 {{ _ae_version }} 判断引擎能力，向后兼容字段名 `_ae_version`。
-    "_ae_version": "1.0.0",
     "_folder_name": "",
-    # P2-2: _ae_python 不再 import 时冻结 — 在 combined() 动态计算 (与 current_year 同模式)
+    # P2-2: _ae_python/_ae_version 在 combined() 动态计算 (与 current_year 同模式),
+    # 避免 import 时硬编码导致跨升级版本号不同步。
     "sep": _os.sep,
     "os": {"linux": "linux", "darwin": "macos", "win32": "windows"}.get(sys.platform, "linux"),
 })
@@ -71,20 +71,36 @@ class AnswersMap:
     external_sandbox_roots: list[str] = field(default_factory=list)
     _external_cache: dict[str, Any] = field(default_factory=dict, init=False)
 
-    def get(self, key: str) -> Any:
-        for layer in [
-            self.cli_overrides,
-            self.interactive,
-            self.previous,
-            self.defaults,
-            self.builtins,
-        ]:
-            val = layer.get(key)
-            if val is not None:
-                return val
-        if key in self.external:
-            return self._load_external(key)
-        raise KeyError(key)
+    _MISSING = object()
+
+    def get(self, key: str, default: Any = _MISSING) -> Any:
+        """按优先级链查找变量：cli → interactive → previous → defaults → builtins → external。
+
+        Args:
+            key: 变量名
+            default: 未找到时返回此值 (与 dict.get 契约一致)。未提供时对缺失 key 抛 KeyError。
+        """
+        try:
+            for layer in [
+                self.cli_overrides,
+                self.interactive,
+                self.previous,
+                self.defaults,
+                self.builtins,
+            ]:
+                if key in layer:
+                    val = layer[key]
+                    if val is not None:
+                        return val
+                    # key 存在但值为 None: 返回 None, 不继续查低优先级层
+                    return None
+            if key in self.external:
+                return self._load_external(key)
+            raise KeyError(key)
+        except KeyError:
+            if default is not self._MISSING:
+                return default
+            raise
 
     def combined(self) -> dict[str, Any]:
         """全量合并。用于 Jinja2 渲染上下文。外挂 _external_data 键（懒加载）。
@@ -105,6 +121,9 @@ class AnswersMap:
         result["current_year"] = _current_year_builtin()
         # P2-2: 动态注入 _ae_python — 同 current_year 模式, 防止跨升级失效
         result["_ae_python"] = _python_executable_builtin()
+        # P2-10: 动态注入 _ae_version — 与 __version__ 同步, 避免硬编码
+        from .. import __version__
+        result["_ae_version"] = __version__
         if self.external:
             result["_external_data"] = _LazyExternalDict(
                 self.external,
@@ -141,10 +160,6 @@ class AnswersMap:
                 var_key=key,
             )
         return self._external_cache[key]
-
-    def hide(self, key: str) -> None:
-        """标记字段不写入 .ae-answers.yml。来源：Copier AnswersMap.hide()"""
-        self.hidden.add(key)
 
     def save_partial(self, path: Path | None = None) -> Path:
         """保存已收集的部分答案。Ctrl-C 时调用。
@@ -191,6 +206,7 @@ class AnswersMap:
             raise ValueError(
                 f"answers 文件 {path} 顶层必须是 mapping, 实际是 {type(data).__name__}"
             )
+        data = dict(data)  # 浅拷贝避免 mutate 调用方
         _meta = data.pop("_meta", {}) or {}
         if not isinstance(_meta, dict):
             _meta = {}
@@ -235,9 +251,11 @@ class AnswersMap:
         P2-11: 敏感字段过滤 — 含 password/secret/token/api_key/private_key
         的字段自动跳过, 防止 .ae-answers.yml 不慎 commit 到 git 后泄露凭据。
         """
+        from .. import __version__ as _ver
+
         result = {}
         result["_meta"] = {
-            "ae_version": self.builtins.get("_ae_version", "1.0.0"),
+            "ae_version": _ver,
             "schema_version": 1,  # DI-P1-2: .ae-answers.yml 格式 schema 版本
             # PR#5 P2-10: 加 UTC tz — datetime.now() 无时区信息, 跨时区复用易混淆
             "created_at": datetime.now().astimezone().isoformat(),
@@ -265,14 +283,27 @@ class AnswersMap:
         try:
             return self.get(key)
         except KeyError:
-            raise KeyError(key) from None
+            raise KeyError(
+                f"'{key}' 不在 answers 中。请确认该变量已在 ae-template.yml 的 questions "
+                f"中定义，或在 CLI 中通过对应 flag 提供。"
+            ) from None
 
     def __contains__(self, key: str) -> bool:
-        try:
-            self.get(key)
-            return True
-        except KeyError:
-            return False
+        """检查 key 是否在任一优先级层中。
+
+        ⚠ 隐式 IO: external 层 key 会触发 _load_external() 磁盘读取。
+        对性能敏感的热路径应优先检查内层 (in cli_overrides/interactive/previous/defaults/builtins)。
+        """
+        for layer in [
+            self.cli_overrides,
+            self.interactive,
+            self.previous,
+            self.defaults,
+            self.builtins,
+        ]:
+            if key in layer:
+                return True
+        return key in self.external
 
 
 # P2-11: 敏感字段名白名单 (含常见 secret 命名约定, 跨语言通用)

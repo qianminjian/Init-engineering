@@ -6,7 +6,6 @@ config_loader.py 的关键路径:
 
 - load_template_config 主流程 (项目类型 → TemplateConfig)
 - _load_yaml_with_includes (!include 单文件 / glob / 嵌套)
-- _resolve_nested_template (subdirectory 选择)
 - _parse_questions / _parse_tasks (字段类型转换)
 - 错误路径: 缺失文件 / 坏 YAML / 缺 min_ae_version
 """
@@ -18,10 +17,9 @@ from pathlib import Path
 
 import pytest
 
-from init_engineering.init.config import TemplateConfig
+from init_engineering.init.config_types import TemplateConfig
 from init_engineering.init.config_loader import (
     _load_yaml_with_includes,
-    _resolve_nested_template,
     load_template_config,
 )
 from init_engineering.init.errors import ConfigFileError, ConfigLoaderSecurityError
@@ -137,39 +135,6 @@ class TestLoadYamlWithIncludes:
         assert result.get("a") == 1
         assert result.get("b") == 2
 
-
-# ============================================================
-# III. _resolve_nested_template (Cookiecutter subdirectory 选择)
-# ============================================================
-
-
-class TestResolveNestedTemplate:
-    """_resolve_nested_template 选择 subdirectory.
-
-    v2.5 实测: _resolve_nested_template 当前实现是 stub — 总是返回 None
-    (实际 nested 选择由 InteractivePrompt / InitWorker 处理). 测试文档化
-    现有契约: stub 返回 None, 调用方有责任处理.
-    """
-
-    def test_no_nested_returns_none(self, tmp_path: Path) -> None:
-        """空 nested dict → None."""
-        assert _resolve_nested_template(tmp_path, {}) is None
-
-    def test_nested_dict_returns_none_stub(self, tmp_path: Path) -> None:
-        """nested 非空 (含 subdirectory) → 仍返回 None (stub 行为).
-
-        这是 v2.5 当前实现, 不是 bug — 实际 nested 选择由
-        InteractivePrompt 负责, 这里只是 YAML pre-parse 阶段的占位.
-        """
-        sub = tmp_path / "sub"
-        sub.mkdir()
-        result = _resolve_nested_template(tmp_path, {"subdirectory": "sub"})
-        assert result is None  # stub 行为
-
-    def test_nested_with_nonexistent_subdir_returns_none(self, tmp_path: Path) -> None:
-        """stub 不检查子目录是否存在 — 永远 None."""
-        result = _resolve_nested_template(tmp_path, {"subdirectory": "nonexistent"})
-        assert result is None
 
 
 # ============================================================

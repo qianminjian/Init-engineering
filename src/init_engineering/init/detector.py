@@ -10,33 +10,19 @@ constants → detector_constants.py。
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from pathlib import Path
 
+from .._shared.detection import (
+    detect_ci_platform as _detect_ci_platform,
+    detect_package_manager as _detect_package_manager,
+    detect_test_runner as _detect_test_runner,
+)
 from .detector_analyzers import analyze_go, analyze_node, analyze_python
 from .detector_constants import FRAMEWORK_SIGNATURES, DetectionResult
 from .detector_helpers import (
     check_pkg_dep,
-)
-from .detector_helpers import (
-    detect_ci_platform as _detect_ci_platform,
-)
-from .detector_helpers import (
-    detect_package_manager as _detect_package_manager,
-)
-from .detector_helpers import (
-    detect_test_runner as _detect_test_runner,
-)
-from .detector_helpers import (
     signature_matches as _signature_matches,
 )
-
-ADVANCED_CHECKS: dict[str, Callable[[Path], bool]] = {
-    "mcp-server": lambda d: check_pkg_dep(
-        d, lambda deps: "@modelcontextprotocol/sdk" in str(deps)
-    ),
-}
-
 
 class ProjectDetector:
     """扫描目标目录，推断项目类型与配置。"""
@@ -56,8 +42,11 @@ class ProjectDetector:
         matches = []
         for ptype, signatures in FRAMEWORK_SIGNATURES:
             if any(_signature_matches(self.target_dir, sig) for sig in signatures):
-                advanced = ADVANCED_CHECKS.get(ptype)
-                if advanced and not advanced(self.target_dir):
+                # mcp-server 与 app-service 共享 package.json 签名，需额外消歧义
+                if ptype == "mcp-server" and not check_pkg_dep(
+                    self.target_dir,
+                    lambda deps: "@modelcontextprotocol/sdk" in str(deps),
+                ):
                     continue
                 matches.append(ptype)
         return matches

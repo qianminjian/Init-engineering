@@ -597,7 +597,7 @@ class TestPyprojectHatchPackages:
     def test_pyproject_template_has_hatch_packages(self):
         """pyproject.toml.jinja 应包含 [tool.hatch.build.targets.wheel] packages 配置."""
         from pathlib import Path
-        from init_engineering.init.config import TEMPLATES_ROOT
+        from init_engineering.init.config_types import TEMPLATES_ROOT
 
         tmpl_path = (
             TEMPLATES_ROOT / "_features" / "python" / "pyproject.toml.jinja"
@@ -615,7 +615,7 @@ class TestPyprojectHatchPackages:
     def test_pyproject_template_has_pytest_timeout(self):
         """pyproject.toml.jinja 应声明 pytest-timeout 依赖 (Bug 3)."""
         from pathlib import Path
-        from init_engineering.init.config import TEMPLATES_ROOT
+        from init_engineering.init.config_types import TEMPLATES_ROOT
 
         tmpl_path = (
             TEMPLATES_ROOT / "_features" / "python" / "pyproject.toml.jinja"

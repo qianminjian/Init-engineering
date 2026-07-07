@@ -9,9 +9,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
-import tomllib
+import tomllib  # Python ≥3.11 stdlib (project requires-python >=3.11,<3.14)
 from pathlib import Path
+
+_logger = logging.getLogger(__name__)
 
 from .detector_constants import (
     _GO_FRAMEWORKS,
@@ -21,13 +24,14 @@ from .detector_constants import (
 )
 
 
-def analyze_node(pkg_path: Path, target_dir: Path, result: DetectionResult) -> None:
-    """分析 Node.js 项目 — package.json + tsconfig。"""
+def analyze_node(pkg_path: Path, target_dir: Path, result: DetectionResult) -> DetectionResult:
+    """分析 Node.js 项目 — package.json + tsconfig。Modifies and returns result."""
     result.language = "typescript"
     try:
         data = json.loads(pkg_path.read_text())
     except (json.JSONDecodeError, OSError):
-        return
+        _logger.debug("无法解析 package.json: %s", pkg_path, exc_info=True)
+        return result
 
     result.project_description = data.get("description", "")
 
@@ -45,14 +49,17 @@ def analyze_node(pkg_path: Path, target_dir: Path, result: DetectionResult) -> N
     if "pnpm" in str(data.get("scripts", {})):
         result.package_manager = "pnpm"
 
+    return result
 
-def analyze_python(py_path: Path, result: DetectionResult) -> None:
-    """分析 Python 项目 — pyproject.toml (PEP 621)。"""
+
+def analyze_python(py_path: Path, result: DetectionResult) -> DetectionResult:
+    """分析 Python 项目 — pyproject.toml (PEP 621)。Modifies and returns result."""
     result.language = "python"
     try:
         data = tomllib.loads(py_path.read_text())
-    except Exception:
-        return
+    except (OSError, ValueError, tomllib.TOMLDecodeError):
+        _logger.debug("无法解析 pyproject.toml: %s", py_path, exc_info=True)
+        return result
 
     project = data.get("project", {})
     result.project_description = project.get("description", "")
@@ -76,14 +83,17 @@ def analyze_python(py_path: Path, result: DetectionResult) -> None:
     elif "uv" in build_backend or "uv" in str(data.get("tool", {})):
         result.package_manager = "uv"
 
+    return result
 
-def analyze_go(go_path: Path, result: DetectionResult) -> None:
-    """分析 Go 项目 — go.mod。"""
+
+def analyze_go(go_path: Path, result: DetectionResult) -> DetectionResult:
+    """分析 Go 项目 — go.mod。Modifies and returns result."""
     result.language = "go"
     try:
         content = go_path.read_text()
     except OSError:
-        return
+        _logger.debug("无法读取 go.mod: %s", go_path, exc_info=True)
+        return result
 
     m = re.search(r"^module\s+(.+)$", content, re.MULTILINE)
     if m:
@@ -93,3 +103,5 @@ def analyze_go(go_path: Path, result: DetectionResult) -> None:
     for name, framework in _GO_FRAMEWORKS:
         if re.search(rf"github\.com/.*/{name}\b", content):
             result.frameworks.append(framework)
+
+    return result

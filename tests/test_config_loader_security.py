@@ -32,11 +32,10 @@ class TestConfigLoaderSecurityErrorClass:
         """ConfigLoaderSecurityError 有 exit_code=8."""
         assert ConfigLoaderSecurityError.exit_code == 8
 
-    def test_security_error_accepts_message(self):
-        """ConfigLoaderSecurityError 接受字符串消息."""
+    def test_security_error_accepts_detail(self):
+        """ConfigLoaderSecurityError 接受 detail 参数 (detail 通过 str(e) 访问)."""
         err = ConfigLoaderSecurityError("test message")
         assert str(err) == "test message"
-        assert err.message == "test message"
 
 
 class TestSecurityErrorInheritance:

@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
+
+_logger = logging.getLogger(__name__)
 
 _LOCK_FILE_MAP: dict[str, str] = {
     "package-lock.json": "npm",
@@ -48,7 +51,7 @@ def detect_package_manager(target_dir: Path) -> str | None:
             if isinstance(pm, str) and pm:
                 return pm.split("@")[0]
         except (json.JSONDecodeError, OSError):
-            pass
+            _logger.debug("无法解析 package.json: %s", pkg_json, exc_info=True)
     return None
 
 
@@ -70,8 +73,8 @@ def detect_test_runner(target_dir: Path, language: str | None = None) -> str | N
                 if "jest" in deps:
                     return "jest"
             except (json.JSONDecodeError, OSError):
-                pass
-        return "vitest"
+                _logger.debug("无法解析 package.json: %s", pkg, exc_info=True)
+        return None
     if language == "go":
         return "go test"
     if language == "rust":

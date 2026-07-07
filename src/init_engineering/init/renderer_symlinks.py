@@ -5,11 +5,14 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import shutil
 from pathlib import Path
 
-from ._shared.io import _atomic_write_binary, _atomic_write_text, detect_newline, is_binary
+_logger = logging.getLogger(__name__)
+
+from ._shared.io import atomic_write_binary, atomic_write_text, detect_newline, is_binary
 from .errors import TemplateRenderError
 
 
@@ -58,12 +61,12 @@ def resolve_symlink(
     if not target.exists():
         return True, "dangling"  # dangling → 跳过
     if is_binary(str(target)):
-        _atomic_write_binary(dst_file, target)
+        atomic_write_binary(dst_file, target)
     else:
         newline = detect_newline(target)
-        _atomic_write_text(dst_file, target.read_text(), newline=newline)
+        atomic_write_text(dst_file, target.read_text(), newline=newline)
     try:
         shutil.copymode(src_file, dst_file)
     except OSError:
-        pass
+        _logger.debug("copymode failed for %s", dst_file, exc_info=True)
     return True, None

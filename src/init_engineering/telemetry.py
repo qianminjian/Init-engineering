@@ -22,18 +22,23 @@ import os
 import platform
 import urllib.parse
 import urllib.request
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
 _logger = logging.getLogger(__name__)
 
-# B6: 强制 HTTPS — 拒绝任意 URL 覆盖, 环境变量仅控制 endpoint path
+# 占位端点: 未配置真实 telemetry 服务时, 遥测数据不会实际发送.
+# 配置真实 endpoint: 设置 AE_TELEMETRY_PATH 环境变量 (如 /v1/event 后缀),
+# 或修改此常量为生产 telemetry 服务地址.
 DEFAULT_TELEMETRY_ENDPOINT = "https://telemetry.ae.example.com/v1/event"
 _TELEMETRY_CONSENT_FILE = ".ae-telemetry-consent"
 
 
 @dataclass
 class TelemetryEvent:
+    """遥测事件 — 匿名使用数据，仅含版本/命令/类型/语言/OS 等元信息。"""
+
     ae_version: str = ""
     command: str = ""  # "init" | "status"
     project_type: str = ""
@@ -87,8 +92,8 @@ def has_consent() -> bool:
     return (Path.home() / _TELEMETRY_CONSENT_FILE).exists()
 
 
-def request_consent() -> bool:
-    """首次开启 telemetry 时打印数据收集声明, 强制用户 y/n 确认.
+def request_and_persist_consent() -> bool:
+    """首次开启 telemetry 时打印数据收集声明, 强制用户 y/n 确认, 持久化到文件.
 
     Returns: 用户最终选择 (True=同意, False=拒绝)
     Side effect: 写 consent 文件记录已询问 (避免每次都询问)
@@ -107,29 +112,60 @@ def request_consent() -> bool:
     consent_path = Path.home() / _TELEMETRY_CONSENT_FILE
     try:
         consent_path.write_text("yes" if choice else "no")
+    except OSError:
+        _logger.debug("consent file write failed: %s", consent_path, exc_info=True)
+        return choice
+    try:
         os.chmod(consent_path, 0o600)
     except OSError:
-        pass
+        _logger.debug("chmod on consent file failed: %s", consent_path, exc_info=True)
     return choice
 
 
-def send(event: TelemetryEvent) -> None:
+def send(
+    event: TelemetryEvent,
+    *,
+    _transport: Callable[[bytes], None] | None = None,
+    _enabled: bool | None = None,
+    _endpoint: str | None = None,
+) -> None:
     """发送遥测事件（非阻塞，失败静默）。
 
     B6 安全:
     - 强制 HTTPS endpoint
     - 短超时 (1s) — 失败静默不阻塞主流程
     - 失败仅 DEBUG 级别日志
+
+    Args:
+        event: 遥测事件
+        _transport: 可选的传输函数，测试可注入 mock 验证发送数据
+        _enabled: 覆盖 os.environ 检查, 测试用
+        _endpoint: 覆盖 endpoint 解析, 测试用
     """
-    if not _is_enabled():
+    if _enabled is not None:
+        if not _enabled:
+            return
+    elif not _is_enabled():
         return
 
-    endpoint = _resolve_endpoint()
+    endpoint = _endpoint if _endpoint is not None else _resolve_endpoint()
     if endpoint is None:
         return
 
     event.python_version = platform.python_version()
     event.os_name = platform.system().lower()
+
+    if _transport is not None:
+        try:
+            data = json.dumps(asdict(event)).encode()
+            _transport(data)
+            _logger.debug(
+                "telemetry sent: cmd=%s type=%s success=%s",
+                event.command, event.project_type, event.success,
+            )
+        except (OSError, ValueError, TypeError):
+            _logger.debug("telemetry send failed", exc_info=True)
+        return
 
     try:
         data = json.dumps(asdict(event)).encode()
@@ -139,17 +175,12 @@ def send(event: TelemetryEvent) -> None:
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        # P2-8: 禁用 proxy — telemetry 数据可能含用户 IP / 公司出口标识
-        # HTTP_PROXY/HTTPS_PROXY 环境变量被恶意设置时可被劫持到攻击者 endpoint
-        # ProxyHandler({}) 显式无 proxy, 防止环境变量污染
         proxy_handler = urllib.request.ProxyHandler({})
         opener = urllib.request.build_opener(proxy_handler)
-        # P2-6: 记录发送成功 — DEBUG 级别, 默认不显示 (-v 才看)
-        # 之前没有任何"成功"日志, 调试时无法确认事件是否发出
         opener.open(req, timeout=1)
         _logger.debug(
             "telemetry sent: cmd=%s type=%s success=%s",
             event.command, event.project_type, event.success,
         )
-    except Exception:
+    except (OSError, ValueError, TypeError, urllib.error.URLError):
         _logger.debug("telemetry send failed", exc_info=True)

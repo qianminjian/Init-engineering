@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+__all__ = ["DetectionResult", "FRAMEWORK_SIGNATURES"]
+
 from dataclasses import dataclass, field
 
 
@@ -27,6 +29,7 @@ class DetectionResult:
     project_description: str = ""
 
     def as_answers(self) -> dict[str, object]:
+        """转为 AnswersMap 兼容的键值对，跳过 None/空值。"""
         result: dict[str, object] = {}
         if self.project_type:
             result["project_type"] = self.project_type
@@ -89,12 +92,16 @@ _GO_FRAMEWORKS: list[tuple[str, str]] = [
 
 # ─── 签名检测 ────────────────────────────────────────────────────────
 
+# 签名按 specificity 降序排列 — 同名签名文件（如 package.json 被 mcp-server 和
+# app-service 共享）靠排在前面 + ADVANCED_CHECKS 消歧义。颠倒顺序会导致误判。
 FRAMEWORK_SIGNATURES: list[tuple[str, list[str]]] = [
+    ("plugin", [".claude-plugin/"]),
     ("monorepo", ["pnpm-workspace.yaml", "lerna.json", "turbo.json", "nx.json"]),
     ("skill", [".claude/skills/"]),
     ("hook", [".claude/hooks/"]),
     ("spec-doc", ["design/BEACON.md", "design/*.md"]),
     ("mcp-server", ["package.json"]),
+    ("cli-tool", ["src/cli.py", "src/cli/__init__.py", "src/cli.ts", "cmd/"]),
     ("library", ["pyproject.toml", "setup.py", "Cargo.toml", "go.mod"]),
     ("app-service", ["package.json"]),
 ]

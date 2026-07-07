@@ -10,6 +10,8 @@
 
 from __future__ import annotations
 
+__all__ = ["run_tasks_phase"]
+
 import subprocess
 from pathlib import Path
 
@@ -32,7 +34,7 @@ def run_tasks_phase(
     default_timeout: int | None = None,
     no_install: bool = False,
 ) -> None:
-    """执行 template.tasks_before + run_builtin_hooks + template.tasks_after。
+    """执行 template.tasks_before → run_builtin_hooks → template.tasks_after.
 
     SandboxedEnvironment 含项目级全局函数：
     - git_status_clean() : git 工作区是否干净
@@ -50,9 +52,9 @@ def run_tasks_phase(
         tmpdir,
         current_phase=current_phase,
         default_timeout=default_timeout,
+        strict=strict,
     )
     runner.run(template.tasks_before, context, jinja_env)
-    # PE-AUDIT-P0-1: 透传 default_timeout 到 run_builtin_hooks, 闭合 CLI --hook-timeout 链路
     run_builtin_hooks(
         answers, tmpdir,
         strict=strict, quiet=quiet, no_install=no_install,

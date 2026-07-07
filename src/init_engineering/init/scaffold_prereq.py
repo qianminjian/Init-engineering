@@ -64,4 +64,6 @@ def check_basic_tools() -> None:
     """基础工具链 — git + python3 必备（即使 --skip-tasks 也需要）。"""
     for cmd, name in [("git", "Git"), ("python3", "Python 3")]:
         if shutil.which(cmd) is None:
-            raise UnsatisfiedPrerequisiteError(f"未找到 {name}。请先安装。")
+            raise UnsatisfiedPrerequisiteError(
+                f"未找到 {name}。请先安装（例如: brew install {cmd} 或检查 PATH）。"
+            )

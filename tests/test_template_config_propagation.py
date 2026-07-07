@@ -15,7 +15,7 @@ from unittest.mock import patch
 
 import pytest
 
-from init_engineering.init.config import TemplateConfig
+from init_engineering.init.config_types import TemplateConfig
 from init_engineering.init.config_loader import load_template_config
 from init_engineering.init.scaffold_phases import InitWorker
 from init_engineering.init.scaffold_render import render_to
@@ -149,7 +149,7 @@ class TestRenderToReceivesFields:
             "_check_template_version",
             return_value=None,
         ), patch(
-            "init_engineering.init.scaffold_phase_funcs._render_to"
+            "init_engineering.init.phases.render.render_to"
         ) as mock_render:
             mock_render.return_value = []
             worker = InitWorker(
@@ -195,7 +195,7 @@ class TestRenderToReceivesFields:
             "_check_template_version",
             return_value=None,
         ), patch(
-            "init_engineering.init.scaffold_phase_funcs._render_to"
+            "init_engineering.init.phases.render.render_to"
         ) as mock_render:
             mock_render.return_value = []
             worker = InitWorker(
@@ -241,7 +241,7 @@ class TestRenderToReceivesFields:
             "_check_template_version",
             return_value=None,
         ), patch(
-            "init_engineering.init.scaffold_phase_funcs._render_to"
+            "init_engineering.init.phases.render.render_to"
         ) as mock_render:
             mock_render.return_value = []
             # CLI 传入 preserve_symlinks=True, 应覆盖模板的 false
@@ -289,7 +289,7 @@ class TestRenderToReceivesFields:
             "_check_template_version",
             return_value=None,
         ), patch(
-            "init_engineering.init.scaffold_phase_funcs._render_to"
+            "init_engineering.init.phases.render.render_to"
         ) as mock_render:
             mock_render.return_value = []
             # CLI 传入 templates_suffix=".custom", 应覆盖模板的 .tmpl

@@ -21,6 +21,9 @@ PR#3 P1-2: 拆分 — atomic_write + is_binary 迁至 _shared/io.py,
 symlink 处理迁至 renderer_symlinks.py。本文件瘦身到 <300 行。
 """
 
+from __future__ import annotations
+
+import logging
 import shutil
 from collections.abc import Callable
 from pathlib import Path
@@ -30,7 +33,11 @@ import pathspec
 from jinja2 import StrictUndefined
 from jinja2.sandbox import SandboxedEnvironment
 
-from ._shared.io import _atomic_write_binary, _atomic_write_text, detect_newline, is_binary
+_logger = logging.getLogger(__name__)
+
+from ._shared.io import atomic_write_binary, atomic_write_text, detect_newline, is_binary
+from ._shared.path_utils import is_path_under_any_root
+from .config_types import DEFAULT_TEMPLATES_SUFFIX
 from .errors import TemplateRenderError
 from .renderer_symlinks import resolve_symlink
 
@@ -41,7 +48,7 @@ class TemplateRenderer:
     template_dirs 按优先级排列：后面的目录覆盖前面的同名文件。
     """
 
-    TEMPLATE_SUFFIX = ".jinja"
+    TEMPLATE_SUFFIX = DEFAULT_TEMPLATES_SUFFIX
 
     def __init__(
         self,
@@ -54,7 +61,7 @@ class TemplateRenderer:
         overwrite: bool = False,
         conflict_handler: Callable[[str], bool] | None = None,
         match_exclude: Callable[[Path], bool] | None = None,
-        templates_suffix: str = ".jinja",
+        templates_suffix: str | None = None,
         preserve_symlinks: bool = True,
         on_exists: Callable[[str], None] | None = None,
     ):
@@ -68,8 +75,9 @@ class TemplateRenderer:
         # P1.2: Copier match_exclude 回调 — 动态排除路径 (Callable[[Path], bool])
         # 来源: copier/_main.py:753 match_exclude(self) -> Callable[[Path], bool]
         self.match_exclude = match_exclude
-        # T2-1: templates_suffix 参数化 — 支持自定义模板后缀,替代类属性 TEMPLATE_SUFFIX
-        self.templates_suffix = templates_suffix
+        self.templates_suffix = (
+            templates_suffix if templates_suffix is not None else self.TEMPLATE_SUFFIX
+        )
         # T2-2: preserve_symlinks 可配置 — True 保留 symlink, False 跳过 dangling 或解析内容
         self.preserve_symlinks = preserve_symlinks
         # P0-2: on_exists 回调 — 目标文件已存在时调用 HookRunner.on_exists_hook
@@ -110,9 +118,6 @@ class TemplateRenderer:
 
                 dst_file = dst_dir / rendered_rel
 
-                # P2-12: 路径穿越 guard — 改用 _shared.path_utils.is_path_under_any_root
-                # (与 answers.py / config_loader.py 同一 util, 避免散落实现)
-                from ._shared.path_utils import is_path_under_any_root
                 if not is_path_under_any_root(dst_file, [dst_dir]):
                     raise TemplateRenderError(str(rel_path), ValueError("路径穿越"))
 
@@ -144,12 +149,12 @@ class TemplateRenderer:
                         generated[rendered_rel] = dst_file
                     continue
 
-                self._write_rendered(src_file, dst_file, is_template=is_template)
+                self._write_rendered(src_file, dst_file, src_dir, is_template=is_template)
 
                 try:
                     shutil.copymode(src_file, dst_file)
                 except OSError:
-                    pass  # Windows 不支持 chmod, symlink 权限保留可能失败
+                    _logger.info("copymode failed for %s — file permissions may be incorrect", dst_file)
                 generated[rendered_rel] = dst_file
 
         return list(generated.values())
@@ -157,25 +162,25 @@ class TemplateRenderer:
     def _write_copy(self, src_file: Path, dst_file: Path) -> None:
         """F1: no_render 文件原子复制 — 二进制/文本都走流式原子写。"""
         if is_binary(str(src_file)):
-            _atomic_write_binary(dst_file, src_file)
+            atomic_write_binary(dst_file, src_file)
         else:
             newline = detect_newline(src_file)
-            _atomic_write_text(dst_file, src_file.read_text(), newline=newline)
+            atomic_write_text(dst_file, src_file.read_text(), newline=newline)
 
-    def _write_rendered(self, src_file: Path, dst_file: Path, *, is_template: bool) -> None:
+    def _write_rendered(self, src_file: Path, dst_file: Path, src_dir: Path, *, is_template: bool) -> None:
         """核心渲染分支:template 走 jinja,其他按二进制/文本复制。"""
         if is_template:
             try:
                 content = self._render(src_file.read_text())
             except jinja2.TemplateError as e:
-                raise TemplateRenderError(str(src_file.relative_to(src_file.parents[-2])), e) from e
+                raise TemplateRenderError(str(src_file.relative_to(src_dir)), e) from e
             newline = detect_newline(src_file)
-            _atomic_write_text(dst_file, content, newline=newline)
+            atomic_write_text(dst_file, content, newline=newline)
         elif is_binary(str(src_file)):
-            _atomic_write_binary(dst_file, src_file)
+            atomic_write_binary(dst_file, src_file)
         else:
             newline = detect_newline(src_file)
-            _atomic_write_text(dst_file, src_file.read_text(), newline=newline)
+            atomic_write_text(dst_file, src_file.read_text(), newline=newline)
 
     def _render_path(self, path_str: str) -> str:
         """渲染路径模板。"""
@@ -235,9 +240,4 @@ class TemplateRenderer:
             return self.conflict_handler(rel_path)
         return False
 
-    # PR#3 P1-2: _detect_newline 已迁至 _shared.io.detect_newline
-    # 保留 staticmethod 薄壳供旧调用方 (例如子类的扩展) 兼容
-    @staticmethod
-    def _detect_newline(file_path: Path) -> str | None:
-        """检测文件的换行符风格 — PR#3 P1-2 后薄壳,实际调用 _shared.io.detect_newline."""
-        return detect_newline(file_path)
+    # _detect_newline 已迁至 _shared.io.detect_newline (PR#3 P1-2), 薄壳已移除.

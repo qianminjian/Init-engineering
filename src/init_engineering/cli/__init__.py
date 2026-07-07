@@ -8,14 +8,9 @@
 
 from __future__ import annotations
 
-import contextlib
-from pathlib import Path
-
 import click
 
 from init_engineering import __version__
-from init_engineering.cli._helpers import configure_logging as _configure_logging
-from init_engineering.cli._helpers import sanitize_error as _sanitize_error
 
 
 @click.group()
@@ -30,7 +25,7 @@ def main():
 @click.option(
     "--type",
     "project_type",
-    help="项目类型 (app-service/library/cli-tool/skill/hook/mcp-server/spec-doc/monorepo)",
+    help="项目类型 (app-service/cli-tool/library/skill/hook/mcp-server/spec-doc/monorepo/plugin)",
 )
 @click.option("--defaults", is_flag=True, help="非交互模式，全部使用默认值")
 @click.option("--force", is_flag=True, help="允许覆盖非空目录")
@@ -106,7 +101,7 @@ def main():
     "force_unsafe_template",
     is_flag=True,
     default=False,
-    help="强制使用非白名单 --template-dir (PR#4 P1-4: 默认会被拒绝, 仅此 flag 可绕过)",
+    help="强制使用非白名单 --template-dir (默认会被拒绝, 仅此 flag 可绕过)",
 )
 def init(
     project: str | None,
@@ -140,11 +135,11 @@ def init(
     force_unsafe_template: bool,
 ):
     """项目环境初始化."""
-    # P2-12: 函数体拆到 cli/commands.py::_cmd_init —
+    # P2-12: 函数体拆到 cli/commands.py::cmd_init —
     # cli/__init__.py 只保留 click 选项装饰器 + 调度, 控制在 300 行内.
-    from init_engineering.cli.commands import _cmd_init
+    from init_engineering.cli.commands import cmd_init
 
-    _cmd_init(
+    cmd_init(
         project=project,
         project_type=project_type,
         defaults=defaults,
@@ -178,9 +173,7 @@ def init(
 
 
 # P2-A: update / status 命令拆到 cli/subcommands.py (code review follow-up)
-# _cmd_init 拆到 cli/commands.py — cli/__init__.py 拆分后 ≤ 300 行
-from init_engineering.cli.commands import _cmd_init  # noqa: E402
-from init_engineering.cli.subcommands import update, status  # noqa: E402
+from init_engineering.cli.subcommands import status, update  # noqa: E402
 
 main.add_command(update)
 main.add_command(status)

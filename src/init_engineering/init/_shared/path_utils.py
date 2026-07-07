@@ -12,6 +12,34 @@ import os
 from pathlib import Path
 
 
+def resolve_user_path(path: str | None, cwd: Path) -> Path:
+    """安全解析用户提供的路径。
+
+    - None / "." → cwd
+    - 其他 → expanduser → resolve（存在时）/ absolute（非存在时）
+    - 非存在路径中含 .. 穿越家目录时，抛出 ValueError
+    """
+    import os
+
+    if path in (None, "."):
+        return cwd
+    raw = Path(path)
+    expanded = raw.expanduser()
+    try:
+        return expanded.resolve()
+    except (FileNotFoundError, OSError):
+        resolved = Path(os.path.abspath(str(expanded)))
+        home = Path.home().resolve()
+        try:
+            resolved.resolve().relative_to(home)
+        except ValueError as e:
+            if not str(resolved).startswith(str(home)):
+                raise ValueError(
+                    f"路径指向家目录以外: {path!r} → {resolved}"
+                ) from e
+        return resolved
+
+
 def is_path_under_any_root(file_path: Path, roots: list[Path] | list[str]) -> bool:
     """检查 file_path 是否在任一 root 下 (realpath 双侧 + lexical fallback).
 
@@ -22,14 +50,14 @@ def is_path_under_any_root(file_path: Path, roots: list[Path] | list[str]) -> bo
             target = os.path.realpath(file_path)
         else:
             target = str(file_path.resolve())
-    except Exception:
+    except (OSError, RuntimeError):
         return False
 
     for root in roots:
         root_path = Path(root) if isinstance(root, str) else root
         try:
             root_real = os.path.realpath(root_path)
-        except Exception:
+        except OSError:
             continue
         root_prefix = root_real if root_real.endswith(os.sep) else root_real + os.sep
         if target == root_real or target.startswith(root_prefix):

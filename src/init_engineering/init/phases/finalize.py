@@ -1,6 +1,6 @@
 """Phase 4: finalize — 写入 .ae-answers.yml + 增量/全量 copytree.
 
-来源: scaffold_phase_funcs.py phase_finalize + _atomic_copytree + _write_replay (2026-07-03 拆分).
+来源: init/scaffold_phases.py → phases/finalize.py (2026-07-03 拆分).
 
 PR#3 P1-1: merge_incremental 从 scaffold_hooks.py 迁入 — 消除跨模块延迟 import,
 phases/finalize 真正自包含,与 scaffold_hooks 解耦。
@@ -41,11 +41,11 @@ def phase_finalize(
     # P2-15: defense-in-depth 二次校验 — phase_detect 已校验,但 phase_finalize
     # 也可能从测试 / 内部 API 直接调用,绕过 phase_detect 校验链。
     # _write_replay 把 raw_type 拼到 ~/.ae-replays/<type>/ 路径,无校验即被路径穿越。
-    from .detect import _validate_project_type
+    from .detect import validate_project_type
 
     raw_type = project_type or "unknown"
-    _validate_project_type(raw_type)
-    _write_replay(answers, raw_type)
+    validate_project_type(raw_type)
+    _write_replays(answers, raw_type)
 
     if mode == "incremental":
         # PR#3 P1-1: merge_incremental 已在同模块,无需延迟 import
@@ -110,6 +110,8 @@ def _atomic_copytree(src: Path, dst: Path) -> None:
         return {n for n in names if n in _EXCLUDED_FROM_COPY}
 
     try:
+        # 注意: copytree 内部逐文件复制,不原子 — rename 在同一 FS 上是原子的,
+        # 但 copytree 中途崩溃会留下不完整的 partial 树。crash 恢复需手动删 partial/ 和 .new/。
         shutil.copytree(src, partial, ignore=_ignore_build_artifacts)
         # 第 1 步:将 partial 重命名为 .new (单次 rename 原子)
         partial.replace(new_marker)
@@ -118,7 +120,7 @@ def _atomic_copytree(src: Path, dst: Path) -> None:
             shutil.rmtree(dst)
         # 第 3 步:.new 原子替换为 dst
         new_marker.replace(dst)
-    except Exception:
+    except (OSError, shutil.Error):
         # 失败清理:partial 和 .new 都尝试回收
         shutil.rmtree(partial, ignore_errors=True)
         shutil.rmtree(new_marker, ignore_errors=True)
@@ -126,7 +128,7 @@ def _atomic_copytree(src: Path, dst: Path) -> None:
 
 
 def phase_post_install(
-    answers,
+    answers: AnswersMap,
     dst_path: Path,
     strict: bool = False,
     quiet: bool = False,
@@ -140,19 +142,19 @@ def phase_post_install(
     此函数在 dst 重新安装依赖,生成正确 shebang 的 .venv。
 
     no_install=True 时跳过 (与 --no-install CLI flag 联动)。
-    timeout=None 走 _DEFAULT_SUBPROCESS_TIMEOUT (300s)。
+    timeout=None 走 DEFAULT_SUBPROCESS_TIMEOUT (300s)。
 
     PE-AUDIT-P0-2: 业务消息走 _logger 而非 print()
     PE-AUDIT-P0-1: subprocess.run 加 timeout (网络挂死兜底)
     """
     from ..scaffold_hooks import (
-        _DEFAULT_SUBPROCESS_TIMEOUT,
-        _PM_INSTALL_CMD,
-        _has_package_file,
-        _validate_package_manager,
+        DEFAULT_SUBPROCESS_TIMEOUT,
+        PM_INSTALL_CMD,
+        has_package_file,
+        run_pm_install_cmd,
     )
 
-    effective_timeout = timeout if timeout is not None else _DEFAULT_SUBPROCESS_TIMEOUT
+    effective_timeout = timeout if timeout is not None else DEFAULT_SUBPROCESS_TIMEOUT
 
     if no_install:
         if not quiet:
@@ -160,42 +162,38 @@ def phase_post_install(
         return
 
     pm = answers.get("package_manager")
-    if not pm or not _has_package_file(dst_path, pm):
+    if not pm or not has_package_file(dst_path, pm):
         return
 
-    install_cmd = _PM_INSTALL_CMD.get(pm)
-    if install_cmd is None:
+    if PM_INSTALL_CMD.get(pm) is None:
         if not quiet:
             _logger.info("  (skipping %s install: no separate install phase)", pm)
         return
 
-    _validate_package_manager(pm)
-
     try:
-        result = subprocess.run(
-            install_cmd, cwd=dst_path, capture_output=True, text=True,
-            encoding="utf-8", errors="replace",
-            timeout=effective_timeout,
-        )
+        result = run_pm_install_cmd(pm, dst_path, timeout=effective_timeout)
         if result.returncode != 0:
-            cmd_str = " ".join(install_cmd)
+            cmd_str = " ".join(PM_INSTALL_CMD[pm])
             if strict:
                 from ..errors import HookExecutionError
-                raise HookExecutionError(command=cmd_str, exit_code=result.returncode, stderr=result.stderr)
+                raise HookExecutionError(command=cmd_str, process_exit_code=result.returncode, stderr=result.stderr)
             if not quiet:
                 _logger.warning("warning: %s failed: exit=%d", cmd_str, result.returncode)
+    except ValueError:
+        # PM has no install phase (cargo/go) — already checked above, but defensive
+        return
     except (FileNotFoundError, OSError) as e:
-        cmd_str = " ".join(install_cmd)
+        cmd_str = " ".join(PM_INSTALL_CMD[pm])
         if strict:
             from ..errors import HookExecutionError
-            raise HookExecutionError(command=cmd_str, exit_code=127, stderr=str(e))
+            raise HookExecutionError(command=cmd_str, process_exit_code=127, stderr=str(e))
         if not quiet:
             _logger.warning("warning: %s not found: %s", cmd_str, e)
     except subprocess.TimeoutExpired:
-        cmd_str = " ".join(install_cmd)
+        cmd_str = " ".join(PM_INSTALL_CMD[pm])
         if strict:
             from ..errors import HookExecutionError
-            raise HookExecutionError(command=cmd_str, exit_code=-1, stderr=f"timed out after {effective_timeout}s")
+            raise HookExecutionError(command=cmd_str, process_exit_code=-1, stderr=f"timed out after {effective_timeout}s")
         if not quiet:
             _logger.warning("warning: %s timed out after %ds", cmd_str, effective_timeout)
 
@@ -208,8 +206,7 @@ def merge_incremental(
     """A1: 增量模式合并 — 逐文件复制,跳过已存在 + .git/。
 
     PR#3 P1-1: 从 scaffold_hooks.py 迁入 — 让 phases/finalize.py 自包含,
-    消除 scaffold.py → scaffold_hooks.merge_incremental 与 phases/finalize.py
-    的跨模块延迟 import 循环隐患。
+    消除跨模块延迟 import 循环隐患。
 
     Args:
         tmpdir: 临时生成目录
@@ -221,15 +218,15 @@ def merge_incremental(
     """
     created: list[Path] = []
     skipped: list[Path] = []
-    # PR#5 P2-5: 早跳过 _shared.exclude._EXCLUDED_DIRS (与 renderer 一致)
+    # PR#5 P2-5: 早跳过 _shared.exclude.EXCLUDED_DIRS (与 renderer 一致)
     # 之前只在循环内后置过滤 .git, 嵌套深时仍需遍历 pack/idx
-    from .._shared.exclude import _EXCLUDED_DIRS
+    from .._shared.exclude import EXCLUDED_DIRS
     for src_file in tmpdir.rglob("*"):
         if src_file.is_dir():
             continue
         rel = src_file.relative_to(tmpdir)
         # A1: 早跳过 .git/ / node_modules/ / __pycache__/ / .venv/
-        if any(part in _EXCLUDED_DIRS for part in rel.parts):
+        if any(part in EXCLUDED_DIRS for part in rel.parts):
             continue
         dst_file = dst_path / rel
         if dst_file.exists():
@@ -243,18 +240,26 @@ def merge_incremental(
     return created, skipped
 
 
-def _write_replay(answers: AnswersMap, raw_type: str) -> None:
-    """写入 replay 文件 (best-effort, 失败不阻断主流程)。
+def _write_replays(
+    answers: AnswersMap,
+    raw_type: str,
+    *,
+    _replay_root: Path | None = None,
+) -> None:
+    """写入 replay 文件 (best-effort, 失败不阻断主流程).
 
     大规模投产要点:
     1. 目录权限 0o700 (仅当前用户可读写), 文件权限 0o600
     2. 每类型最多保留 REPLAY_RETENTION 个最新文件, 超出按 mtime 删除
     3. umask 0o077 兜底 (避免新建文件因 umask 022 默认值泄露)
     4. 写失败仅 log warning, 不影响 init 主体
+
+    Args:
+        _replay_root: 覆盖默认 ~/.ae-replays/ 根, 测试注入用
     """
     REPLAY_RETENTION = 100
     try:
-        replay_root = Path.home() / ".ae-replays"
+        replay_root = _replay_root if _replay_root is not None else Path.home() / ".ae-replays"
         replay_dir = replay_root / raw_type
         old_umask = _os.umask(0o077)
         try:

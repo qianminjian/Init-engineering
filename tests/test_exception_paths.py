@@ -21,7 +21,7 @@ def test_sigint_during_interactive_prompt_raises_init_interrupted(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
     """SIGINT (KeyboardInterrupt) 在 InteractivePrompt 中应抛 InitInterruptedError."""
-    from init_engineering.init.config import Question
+    from init_engineering.init.config_types import Question
     from init_engineering.init.errors import InitInterruptedError
     from init_engineering.init.answers import AnswersMap
     from init_engineering.init.prompts import InteractivePrompt
@@ -59,7 +59,7 @@ def test_sigint_during_interactive_prompt_raises_init_interrupted(
 
 def test_sigint_saves_partial_answers(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """SIGINT 后应调用 answers.save_partial() 保留已收集的答案."""
-    from init_engineering.init.config import Question
+    from init_engineering.init.config_types import Question
     from init_engineering.init.answers import AnswersMap
     from init_engineering.init.prompts import InteractivePrompt
 
@@ -104,19 +104,20 @@ def test_write_to_readonly_path_raises_permission_error(tmp_path: Path):
         test_file.write_text("hello")
 
 
-def test_project_type_invalid_chars_raises_value_error():
-    """project_type 含非法字符 → ValueError（防路径穿越）."""
-    from init_engineering.init.scaffold_phase_funcs import _validate_project_type
+def test_project_type_invalid_chars_raises_validation_error():
+    """project_type 含非法字符 → ValidationError（防路径穿越）."""
+    from init_engineering.init.errors import ValidationError
+    from init_engineering.init.phases.detect import validate_project_type
 
-    with pytest.raises(ValueError, match="非法字符"):
-        _validate_project_type("../etc")
+    with pytest.raises(ValidationError, match="非法字符"):
+        validate_project_type("../etc")
 
-    with pytest.raises(ValueError, match="非法字符"):
-        _validate_project_type("app/service")
+    with pytest.raises(ValidationError, match="非法字符"):
+        validate_project_type("app/service")
 
     # 合法值应通过
-    _validate_project_type("app-service")
-    _validate_project_type("cli_tool")
+    validate_project_type("app-service")
+    validate_project_type("cli_tool")
 
 
 def test_init_lock_release_handles_missing_file(tmp_path: Path):

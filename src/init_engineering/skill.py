@@ -5,7 +5,7 @@
     result = skill("init my-project --type app-service")
     result = skill("analyze /path/to/existing/project")
 
-作为 Claude Code Skill 调用时, skill() 接收自然语言指令,
+作为 Claude Code Skill 调用时, skill() 接收结构化命令字符串,
 解析后调用 InitWorker 或 ProjectDetector, 返回结构化结果.
 
 Skill 描述 (用于 Claude Code skill 注册):
@@ -15,41 +15,14 @@ Skill 描述 (用于 Claude Code skill 注册):
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .init._shared.path_utils import resolve_user_path
 
-def _resolve_path(path: str | None, cwd: Path) -> Path:
-    """安全解析用户提供的路径。
-
-    - None / "." → cwd
-    - 其他 → expanduser → resolve（存在时）/ absolute（非存在时）
-    - 非存在路径中含 .. 穿越家目录时，抛出 ValueError
-    """
-    import os
-
-    if path in (None, "."):
-        return cwd
-    raw = Path(path)
-    expanded = raw.expanduser()
-    try:
-        # 存在时 resolve() 解析符号链接 + 规范化 ..
-        return expanded.resolve()
-    except (FileNotFoundError, OSError):
-        # 非存在时：abspath 规范化 ..（但不过滤合法路径）
-        # 安全检查：若规范化后路径不在家目录下，报错（防 ~user/../../etc）
-        resolved = Path(os.path.abspath(str(expanded)))
-        home = Path.home().resolve()
-        # 只有当路径尝试穿越家目录时才报错（正常 ~/xxx 不受影响）
-        try:
-            resolved.resolve().relative_to(home)
-        except ValueError as e:
-            if not str(resolved).startswith(str(home)):
-                raise ValueError(
-                    f"路径指向家目录以外: {path!r} → {resolved}"
-                ) from e
-        return resolved
+_logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -65,11 +38,11 @@ class SkillResult:
     details: dict = field(default_factory=dict)
 
 
-def skill(prompt: str, cwd: Path | None = None) -> SkillResult:
-    """解析 agent prompt 并执行对应的 init 操作。
+def skill(command_str: str, cwd: Path | None = None) -> SkillResult:
+    """解析结构化指令并执行对应的 init 操作。
 
     Args:
-        prompt: agent 的自然语言指令，如 "init my-project --type app-service"
+        command_str: 结构化命令字符串，如 "init my-project --type app-service"
         cwd: 当前工作目录，默认为 Path.cwd()
 
     Returns:
@@ -78,8 +51,8 @@ def skill(prompt: str, cwd: Path | None = None) -> SkillResult:
     if cwd is None:
         cwd = Path.cwd()
 
-    # 解析 prompt
-    action, project_path, options = _parse_prompt(prompt)
+    # 解析指令
+    action, project_path, options = _parse_prompt(command_str)
 
     if action == "analyze":
         return _run_analyze(project_path, cwd)
@@ -90,7 +63,12 @@ def skill(prompt: str, cwd: Path | None = None) -> SkillResult:
     else:
         return SkillResult(
             success=False,
-            message=f"无法解析指令: {prompt}",
+            message=(
+                f"无法解析指令: {command_str!r}。"
+                f"支持格式: init <project> [--type <type>], "
+                f"analyze <path>, detect <path>。"
+                f"示例: skill('init my-project --type app-service')"
+            ),
             action="parse",
         )
 
@@ -118,22 +96,43 @@ def _parse_prompt(prompt: str) -> tuple[str, str | None, dict]:
     if analyze_match:
         return ("analyze", analyze_match.group(1).strip(), {})
 
-    # init
+    # init (支持 --analyze 子模式)
     init_match = re.match(r"^init\s+(.+)$", prompt)
     if init_match:
         args_str = init_match.group(1).strip()
         options = {}
         project_path = None
 
-        # 解析选项（支持 --no-typescript、--package-manager 等含连字符的选项名）
+        # 解析选项 — 先收集所有 --key 及其值, 剩余 token 为 project_path
+        consumed_indices: set[int] = set()
+        parts = args_str.split()
+
+        # --analyze 特殊处理: 将 init --analyze <path> 路由到分析模式
+        if "--analyze" in parts:
+            idx = parts.index("--analyze")
+            project_path = parts[idx + 1] if idx + 1 < len(parts) else "."
+            return ("analyze", project_path, options)
+
         for opt_match in re.finditer(r"--([\w-]+)(?:\s+(.+?))?(?=\s+--|\s+|$)", args_str):
             key, val = opt_match.group(1), opt_match.group(2) or "true"
             options[key] = val
+            # 标记已消费的 token
+            consumed_indices.add(opt_match.group(0).split()[0])  # 这里不精确, 改用下面方法
 
-        # 剩余的 non-option 是 project path
-        parts = args_str.split()
-        for part in parts:
-            if not part.startswith("--") and part != "true":
+        # 重新解析: 标记所有 --key 和其后的 value token 为已消费
+        i = 0
+        while i < len(parts):
+            if parts[i].startswith("--"):
+                consumed_indices.add(i)
+                # 如果下一个 token 不是 -- 开头, 且不是最后一个, 则它是 option value
+                if i + 1 < len(parts) and not parts[i + 1].startswith("--"):
+                    consumed_indices.add(i + 1)
+                    i += 1
+            i += 1
+
+        # 取第一个未消费的非 -- token 为 project_path
+        for i, part in enumerate(parts):
+            if i not in consumed_indices:
                 project_path = part
                 break
 
@@ -147,7 +146,7 @@ def _run_analyze(project_path: str | None, cwd: Path) -> SkillResult:
     from init_engineering.init.detector import ProjectDetector
 
     try:
-        target = _resolve_path(project_path, cwd)
+        target = resolve_user_path(project_path, cwd)
     except ValueError as e:
         return SkillResult(success=False, message=str(e), action="analyze")
 
@@ -196,14 +195,14 @@ def _run_init(project_path: str | None, options: dict, cwd: Path) -> SkillResult
     from init_engineering.init import InitWorker
 
     try:
-        dst_path = _resolve_path(project_path, cwd)
+        dst_path = resolve_user_path(project_path, cwd)
     except ValueError as e:
         return SkillResult(success=False, message=str(e), action="init")
 
     # 构建 CLI 参数
     kwargs = {}
     # --no-* 标志：存在表示否定（val == "true" 表示标志被传递）
-    _negated_flags = frozenset({"no-typescript", "no-lefthook"})
+    _negated_flags = frozenset({"no-typescript", "no-lefthook", "no-docker"})
     for key, val in options.items():
         # 转换 CLI 选项名到 InitWorker 参数名
         param_map = {
@@ -214,6 +213,7 @@ def _run_init(project_path: str | None, options: dict, cwd: Path) -> SkillResult
             "test-runner": "test_runner",
             "no-typescript": "use_typescript",
             "no-lefthook": "use_lefthook",
+            "no-docker": "use_docker",
             "defaults": "defaults",
             "force": "force",
             "quiet": "quiet",
@@ -242,9 +242,13 @@ def _run_init(project_path: str | None, options: dict, cwd: Path) -> SkillResult
             details={"files_count": len(result.files)},
         )
     except Exception as e:
+        _logger.exception("InitWorker 执行失败: %s", e)
+        hint = getattr(e, "recovery_hint", "")
+        if hint:
+            hint = f"。建议: {hint}"
         return SkillResult(
             success=False,
-            message=f"初始化失败: {e}",
+            message=f"初始化失败: {e}{hint}",
             action="init",
             project_path=str(dst_path),
         )
@@ -252,17 +256,9 @@ def _run_init(project_path: str | None, options: dict, cwd: Path) -> SkillResult
 
 def _run_detect(project_path: str | None, cwd: Path) -> SkillResult:
     """运行项目类型检测（不初始化）。"""
-    return _run_analyze(project_path, cwd)
-
-
-def detect_project(path: str | Path | None = None) -> SkillResult:
-    """检测项目类型（无需 NLP prompt 解析的直接 API）。
-
-    供 Agent 编程调用，绕过 _parse_prompt 的字符串解析。
-    """
-    cwd = Path.cwd()
-    target = _resolve_path(str(path) if path else None, cwd)
-    return _run_analyze(str(target), cwd)
+    result = _run_analyze(project_path, cwd)
+    result.action = "detect"
+    return result
 
 
 # Claude Code Skill 入口点

@@ -13,12 +13,13 @@ from init_engineering.init.answers import (
     AnswersMap,
     _LazyExternalDict,
 )
-from init_engineering.init.config import (
+from init_engineering.init.config_types import (
     DEFAULT_EXCLUDE,
     Question,
     Task,
     TemplateConfig,
 )
+from init_engineering.init.config_loader import load_template_config
 from init_engineering.init.detector import (
     FRAMEWORK_SIGNATURES,
     ProjectDetector,
@@ -42,12 +43,13 @@ from init_engineering.init.renderer import TemplateRenderer
 
 class TestBUILTINVARS:
     def test_contains_required_keys(self):
-        assert "_ae_version" in BUILTIN_VARS
+        # P2-10: _ae_version 改为 dynamic — 不在 BUILTIN_VARS,在 combined() 中动态注入
+        assert "_ae_version" not in BUILTIN_VARS
         # B3: current_year 改为 dynamic — 不在 BUILTIN_VARS,在 combined() 中动态注入
-        # 验证 combined() 含 current_year 但 BUILTIN_VARS 不含 (避免 import 时跨年 frozen)
         assert "current_year" not in BUILTIN_VARS
         am = AnswersMap()
         assert "current_year" in am.combined()
+        assert "_ae_version" in am.combined()
         assert "_folder_name" in BUILTIN_VARS
         # P2-2: _ae_python 改为 dynamic — 同 current_year 模式
         assert "_ae_python" not in BUILTIN_VARS
@@ -155,10 +157,12 @@ class TestAnswersMap:
 
     def test_builtins_fallback(self):
         m = AnswersMap()
-        assert m.get("_ae_version") == "1.0.0"
+        # P2-10: _ae_version 在 combined() 中动态注入,不在 builtins
+        # get() 会找遍所有层,找不到抛 KeyError (同 current_year)
+        with pytest.raises(KeyError):
+            m.get("_ae_version")
+        assert "_ae_version" in m.combined()
         # B3: current_year 在 combined() 中动态注入,不是 builtin
-        # get() 会找遍所有层 (cli/interactive/previous/defaults/builtins),
-        # 找不到再找 external;current_year 不在任一层,直接抛 KeyError
         with pytest.raises(KeyError):
             m.get("current_year")
         # 但 combined() 必须含 current_year (供 Jinja2 渲染使用)
@@ -210,9 +214,9 @@ class TestAnswersMap:
         # lazy — accessing it triggers load
         assert c["_external_data"]["k"] == {"v": 1}
 
-    def test_hide(self):
+    def test_hidden_set_manual(self):
         m = AnswersMap()
-        m.hide("secret_field")
+        m.hidden.add("secret_field")
         assert "secret_field" in m.hidden
 
     def test_save_partial(self, tmp_path: Path):
@@ -249,7 +253,7 @@ class TestAnswersMap:
         m = AnswersMap(
             cli_overrides={"a": 1, "_internal": "x"},
         )
-        m.hide("hidden_field")
+        m.hidden.add("hidden_field")
         m.interactive["hidden_field"] = "x"
         result = m.to_answers_file()
         assert "_internal" not in result
@@ -466,13 +470,13 @@ class TestQuestionRendering:
 
 class TestLoadAeTemplate:
     def test_load_existing_template(self):
-        cfg = TemplateConfig.load("app-service")
+        cfg = load_template_config("app-service")
         assert isinstance(cfg, TemplateConfig)
         assert cfg.template_dir.exists()
 
     def test_load_nonexistent_raises(self):
         with pytest.raises(ConfigFileError):
-            TemplateConfig.load("nonexistent_type_xyz")
+            load_template_config("nonexistent_type_xyz")
 
     def test_default_exclude_list(self):
         assert "ae-template.yml" in DEFAULT_EXCLUDE
@@ -481,14 +485,14 @@ class TestLoadAeTemplate:
 
     def test_load_with_subdirectory(self):
         """测试 _subdirectory 配置."""
-        from init_engineering.init.config import TEMPLATES_ROOT
+        from init_engineering.init.config_types import TEMPLATES_ROOT
 
         proj_dir = TEMPLATES_ROOT / "test_proj_sub"
         proj_dir.mkdir(exist_ok=True)
         (proj_dir / "ae-template.yml").write_text("_subdirectory: v1\n")
 
         try:
-            cfg = TemplateConfig.load("test_proj_sub")
+            cfg = load_template_config("test_proj_sub")
             assert cfg.subdirectory == "v1"
         finally:
             import shutil
@@ -497,7 +501,7 @@ class TestLoadAeTemplate:
 
     def test_load_with_envops(self, tmp_path, monkeypatch):
         """测试 envops 配置."""
-        from init_engineering.init.config import TEMPLATES_ROOT
+        from init_engineering.init.config_types import TEMPLATES_ROOT
 
         proj_dir = TEMPLATES_ROOT / "test_envops"
         proj_dir.mkdir(exist_ok=True)
@@ -506,7 +510,7 @@ class TestLoadAeTemplate:
         )
 
         try:
-            cfg = TemplateConfig.load("test_envops")
+            cfg = load_template_config("test_envops")
             assert cfg.envops.get("autoescape") is False
         finally:
             import shutil
@@ -515,14 +519,14 @@ class TestLoadAeTemplate:
 
     def test_load_with_no_render(self):
         """测试 _no_render 配置."""
-        from init_engineering.init.config import TEMPLATES_ROOT
+        from init_engineering.init.config_types import TEMPLATES_ROOT
 
         proj_dir = TEMPLATES_ROOT / "test_norender"
         proj_dir.mkdir(exist_ok=True)
         (proj_dir / "ae-template.yml").write_text("_no_render:\n  - '*.bin'\n")
 
         try:
-            cfg = TemplateConfig.load("test_norender")
+            cfg = load_template_config("test_norender")
             assert "*.bin" in cfg.no_render
         finally:
             import shutil
@@ -531,14 +535,14 @@ class TestLoadAeTemplate:
 
     def test_load_with_min_version(self):
         """测试 _min_ae_version 配置."""
-        from init_engineering.init.config import TEMPLATES_ROOT
+        from init_engineering.init.config_types import TEMPLATES_ROOT
 
         proj_dir = TEMPLATES_ROOT / "test_minver"
         proj_dir.mkdir(exist_ok=True)
         (proj_dir / "ae-template.yml").write_text("_min_ae_version: 1.0.0\n")
 
         try:
-            cfg = TemplateConfig.load("test_minver")
+            cfg = load_template_config("test_minver")
             assert cfg.min_ae_version == "1.0.0"
         finally:
             import shutil
@@ -547,14 +551,14 @@ class TestLoadAeTemplate:
 
     def test_load_with_templates_suffix(self):
         """测试 _templates_suffix 配置."""
-        from init_engineering.init.config import TEMPLATES_ROOT
+        from init_engineering.init.config_types import TEMPLATES_ROOT
 
         proj_dir = TEMPLATES_ROOT / "test_suffix"
         proj_dir.mkdir(exist_ok=True)
         (proj_dir / "ae-template.yml").write_text("_templates_suffix: .tmpl\n")
 
         try:
-            cfg = TemplateConfig.load("test_suffix")
+            cfg = load_template_config("test_suffix")
             assert cfg.templates_suffix == ".tmpl"
         finally:
             import shutil
@@ -563,7 +567,7 @@ class TestLoadAeTemplate:
 
     def test_load_with_message_before_after(self):
         """测试 _message_before/_message_after."""
-        from init_engineering.init.config import TEMPLATES_ROOT
+        from init_engineering.init.config_types import TEMPLATES_ROOT
 
         proj_dir = TEMPLATES_ROOT / "test_msg"
         proj_dir.mkdir(exist_ok=True)
@@ -572,7 +576,7 @@ class TestLoadAeTemplate:
         )
 
         try:
-            cfg = TemplateConfig.load("test_msg")
+            cfg = load_template_config("test_msg")
             assert cfg.message_before == "starting"
             assert cfg.message_after == "done"
         finally:
@@ -580,25 +584,9 @@ class TestLoadAeTemplate:
 
             shutil.rmtree(proj_dir)
 
-    def test_load_with_secret_questions(self):
-        """测试 _secret_questions 配置."""
-        from init_engineering.init.config import TEMPLATES_ROOT
-
-        proj_dir = TEMPLATES_ROOT / "test_secret"
-        proj_dir.mkdir(exist_ok=True)
-        (proj_dir / "ae-template.yml").write_text("_secret_questions:\n  - api_key\n")
-
-        try:
-            cfg = TemplateConfig.load("test_secret")
-            assert "api_key" in cfg.secret_questions
-        finally:
-            import shutil
-
-            shutil.rmtree(proj_dir)
-
     def test_load_with_external_data(self):
         """测试 _external_data 配置."""
-        from init_engineering.init.config import TEMPLATES_ROOT
+        from init_engineering.init.config_types import TEMPLATES_ROOT
 
         proj_dir = TEMPLATES_ROOT / "test_extdata"
         proj_dir.mkdir(exist_ok=True)
@@ -607,7 +595,7 @@ class TestLoadAeTemplate:
         )
 
         try:
-            cfg = TemplateConfig.load("test_extdata")
+            cfg = load_template_config("test_extdata")
             assert cfg.external_data.get("key") == "./ext.yml"
         finally:
             import shutil
@@ -616,7 +604,7 @@ class TestLoadAeTemplate:
 
     def test_load_with_nested_templates(self):
         """测试 _nested_templates 配置."""
-        from init_engineering.init.config import TEMPLATES_ROOT
+        from init_engineering.init.config_types import TEMPLATES_ROOT
 
         proj_dir = TEMPLATES_ROOT / "test_nested"
         proj_dir.mkdir(exist_ok=True)
@@ -625,7 +613,7 @@ class TestLoadAeTemplate:
         )
 
         try:
-            cfg = TemplateConfig.load("test_nested")
+            cfg = load_template_config("test_nested")
             assert "ts" in cfg.nested_templates
         finally:
             import shutil
@@ -634,7 +622,7 @@ class TestLoadAeTemplate:
 
     def test_load_with_tasks(self):
         """测试 _tasks 配置."""
-        from init_engineering.init.config import TEMPLATES_ROOT
+        from init_engineering.init.config_types import TEMPLATES_ROOT
 
         proj_dir = TEMPLATES_ROOT / "test_tasks"
         proj_dir.mkdir(exist_ok=True)
@@ -643,7 +631,7 @@ class TestLoadAeTemplate:
         )
 
         try:
-            cfg = TemplateConfig.load("test_tasks")
+            cfg = load_template_config("test_tasks")
             assert len(cfg.tasks_before) == 1
             assert len(cfg.tasks_after) == 1
         finally:
@@ -653,7 +641,7 @@ class TestLoadAeTemplate:
 
     def test_load_with_skip_if_exists(self):
         """测试 _skip_if_exists 配置."""
-        from init_engineering.init.config import TEMPLATES_ROOT
+        from init_engineering.init.config_types import TEMPLATES_ROOT
 
         proj_dir = TEMPLATES_ROOT / "test_skip"
         proj_dir.mkdir(exist_ok=True)
@@ -662,7 +650,7 @@ class TestLoadAeTemplate:
         )
 
         try:
-            cfg = TemplateConfig.load("test_skip")
+            cfg = load_template_config("test_skip")
             assert "*.md" in cfg.skip_if_exists
         finally:
             import shutil
@@ -778,7 +766,7 @@ class TestInitErrorHierarchy:
         err = TaskExecutionError(command="ls", returncode=1, stderr="oops")
         assert err.exit_code == 6
         assert err.command == "ls"
-        assert err.returncode == 1
+        assert err.process_exit_code == 1
         assert err.stderr == "oops"
         assert "ls" in str(err)
 
@@ -829,7 +817,7 @@ class TestTaskRunnerExtended:
         r = TaskRunner(tmp_path)
         with pytest.raises(TaskExecutionError) as exc_info:
             r.run([t], {})
-        assert exc_info.value.returncode != 0
+        assert exc_info.value.process_exit_code != 0
 
     def test_working_directory(self, tmp_path: Path):
         sub = tmp_path / "sub"
@@ -1062,8 +1050,9 @@ class TestTemplateRendererEdgeCases:
             r.render_to(dst)
 
     def test_detect_newline_crlf(self, tmp_path: Path):
+        from init_engineering.init._shared.io import detect_newline
+
         f = tmp_path / "f.txt"
         f.write_bytes(b"line1\r\nline2\r\n")
-        nl = TemplateRenderer._detect_newline(f)
-        # may detect \r\n or \r depending on Python version
+        nl = detect_newline(f)
         assert nl in ("\r\n", "\r") or nl is None

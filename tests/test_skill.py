@@ -24,35 +24,35 @@ class TestResolvePath:
 
     def test_resolve_existing_path(self, tmp_path: Path):
         """存在的路径直接 resolve."""
-        from init_engineering.skill import _resolve_path
+        from init_engineering.init._shared.path_utils import resolve_user_path
 
         existing = tmp_path / "real"
         existing.mkdir()
-        result = _resolve_path(str(existing), tmp_path)
+        result = resolve_user_path(str(existing), tmp_path)
         assert result == existing.resolve()
 
     def test_resolve_dot_returns_cwd(self, tmp_path: Path):
         """path='.' 返回 cwd."""
-        from init_engineering.skill import _resolve_path
+        from init_engineering.init._shared.path_utils import resolve_user_path
 
-        result = _resolve_path(".", tmp_path)
+        result = resolve_user_path(".", tmp_path)
         assert result == tmp_path
 
     def test_resolve_none_returns_cwd(self, tmp_path: Path):
         """path=None 返回 cwd."""
-        from init_engineering.skill import _resolve_path
+        from init_engineering.init._shared.path_utils import resolve_user_path
 
-        result = _resolve_path(None, tmp_path)
+        result = resolve_user_path(None, tmp_path)
         assert result == tmp_path
 
     def test_resolve_expands_tilde(self, tmp_path: Path, monkeypatch):
         """~ 展开为家目录路径."""
         import os
-        from init_engineering.skill import _resolve_path
+        from init_engineering.init._shared.path_utils import resolve_user_path
 
         # Patch os.path.expanduser to return tmp_path as home
         monkeypatch.setattr(os.path, "expanduser", lambda _: str(tmp_path))
-        result = _resolve_path("~/project", tmp_path)
+        result = resolve_user_path("~/project", tmp_path)
         assert str(result).startswith(str(tmp_path))
 
 
@@ -170,11 +170,11 @@ class TestRunAnalyze:
 class TestRunDetect:
     """_run_detect — 项目类型检测 (调用 _run_analyze)."""
 
-    def test_detect_calls_analyze(self, tmp_path: Path):
+    def test_detect_sets_detect_action(self, tmp_path: Path):
         (tmp_path / "pyproject.toml").write_text("[project]\nname = 'test'")
         result = _run_detect(str(tmp_path), tmp_path)
         assert result.success is True
-        assert result.action == "analyze"
+        assert result.action == "detect"
 
 
 # ─── skill ───────────────────────────────────────────────────────────────────
@@ -213,7 +213,7 @@ class TestSkill:
         (tmp_path / "pyproject.toml").write_text("[project]\nname = 'test'")
         result = skill(f"detect {tmp_path}", cwd=tmp_path)
         assert result.success is True
-        assert result.action == "analyze"
+        assert result.action == "detect"
 
     def test_skill_init_branch(self, tmp_path: Path):
         """skill("init ...") 确认走到 init 分支."""

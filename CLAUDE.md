@@ -75,12 +75,10 @@ Init-Engineering
 │   ├── scaffold.py               # 脚手架生成器
 │   └── templates/                 # 模板文件（43 个）
 ├── config/                        # 共享配置
-│   ├── environment.py            # ProjectEnvironment（.ae-answers.yml 解析）
-│   └── settings.py               # Settings（环境变量）
+│   └── environment.py            # ProjectEnvironment（.ae-answers.yml 解析）
 ├── cli/                          # CLI 入口
 │   └── __init__.py              # Click 命令（init/status）
 ├── skill.py                     # Agent Skill 入口
-├── errors.py                     # 共享错误定义（AEError/ErrorCode）
 └── __init__.py                   # 包入口
 ```
 
@@ -111,12 +109,13 @@ ae init                              # 新项目：向导式初始化
 ae init --analyze <path>            # 存量项目：代码分析 + 自动初始化
 
 # CLI 模式
-ae init <project> --type <type>     # 项目类型：app-service/cli/library/package
+ae init <project> --type <type>     # 项目类型：app-service/cli-tool/library/skill/hook/mcp-server/spec-doc/monorepo/plugin
 ae init --list-types                # 列出支持的项目类型
 ae init --list-templates            # 列出可用模板
 
-# 配置
-ae init-config                      # 查看/编辑初始化配置
+# 其他 CLI 命令
+ae update [project]                 # 增量更新已有项目
+ae status                           # 查看项目环境状态
 ```
 
 ## 管理约束

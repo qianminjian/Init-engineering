@@ -1,6 +1,6 @@
 """InitWorker — 5 阶段流水线编排器（参考 Copier Worker）。
 
-v2.5 拆分（501→≤300 行）：阶段方法全部抽到 scaffold_phase_funcs.py，
+v2.5 拆分（501→≤300 行）：阶段方法全部抽到 phases/ 子模块，
 本模块只保留 InitWorker dataclass + execute() 编排器。
 
 设计：
@@ -11,39 +11,37 @@ v2.5 拆分（501→≤300 行）：阶段方法全部抽到 scaffold_phase_func
 
 from __future__ import annotations
 
+__all__ = ["InitWorker"]
+
 import logging
 import shutil
 import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    from .detector_constants import DetectionResult
 
 from .answers import AnswersMap
-from .config import TemplateConfig
+from .config_types import TemplateConfig
 from .errors import InitInterruptedError
+from .phases.detect import phase_detect
+from .phases.finalize import phase_finalize, phase_post_install
+from .phases.prompt import phase_prompt
+from .phases.render import phase_render
 from .scaffold_lock import InitLock
-from .scaffold_phase_funcs import (
-    phase_detect,
-    phase_finalize,
-    phase_prompt,
-    phase_render,
-)
 from .scaffold_prereq import check_template_version
-from .scaffold_render import render_to as _render_to
-from .scaffold_tasks_runner import TaskRunner, run_builtin_hooks, run_tasks_phase
-
-# Backward-compat re-export: 测试 patch("init_engineering.init.scaffold_phases.<name>")
-# 必须仍能找到该符号 — 实际实现迁移，但语义未变。
-TaskRunner = TaskRunner
-run_builtin_hooks = run_builtin_hooks
-# 同理：测试 patch("init_engineering.init.scaffold_phases._render_to")
-_render_to = _render_to
+from .scaffold_tasks_runner import run_tasks_phase
 
 _logger = logging.getLogger(__name__)
 
 
 @dataclass
 class InitResult:
+    """InitWorker.execute() 返回值 — 目标路径、生成文件列表、answers 和项目类型。"""
+
     dst_path: Path
     files: list[Path] = field(default_factory=list)
     answers: dict = field(default_factory=dict)
@@ -52,6 +50,8 @@ class InitResult:
 
 @dataclass
 class InitWorker:
+    """5 阶段项目初始化编排器：detect → prompt → render → tasks → finalize。"""
+
     dst_path: Path
     project_type: str | None = None
     language: str | None = None
@@ -78,8 +78,6 @@ class InitWorker:
     template_dir_override: Path | None = None
     # PE-P1-4: 全局钩子超时(秒),None 走 TaskRunner 默认 (300s)
     hook_timeout: int | None = None
-    # PR#4 P1-4: 显式 force-unsafe-template 标记 (CLI 已硬阻断, 此处仅记录)
-    force_unsafe_template: bool = False
 
     _current_phase: str = field(init=False, default="")
     _template: TemplateConfig = field(init=False, default=None)
@@ -87,9 +85,9 @@ class InitWorker:
     _cleanup_hooks: list[Callable] = field(default_factory=list, init=False)
     _previous_answers: AnswersMap | None = field(init=False, default=None)
     _created_files: set[str] = field(default_factory=set, init=False)
-    _mode: str = field(init=False, default="fresh")
+    _mode: Literal["fresh", "incremental"] = field(init=False, default="fresh")
     _lock: InitLock | None = field(init=False, default=None)
-    _detection: object = field(init=False, default=None)
+    _detection: DetectionResult | None = field(init=False, default=None)
 
     def __enter__(self):
         return self
@@ -105,12 +103,13 @@ class InitWorker:
             try:
                 hook()
             except Exception as e:
-                _logger.warning("cleanup hook failed: %s", e)
+                _logger.warning("cleanup hook failed: %s", e, exc_info=True)
         if self._lock is not None:
             self._lock.release()
             self._lock = None
 
     def execute(self) -> InitResult:
+        """执行 5 阶段流水线，返回 InitResult。中途异常触发 cleanup hooks 并释放锁。"""
         if self.verbose:
             _logger.debug("InitWorker starting: dst=%s type=%s", self.dst_path, self.project_type)
         if self.pretend and not self.quiet:
@@ -164,14 +163,22 @@ class InitWorker:
         except InitInterruptedError:
             partial_path = self._answers.save_partial()
             if not self.quiet:
-                # PE-AUDIT-P0-2: 中断消息走 logger (INFO 级别让默认输出可见)
                 _logger.info("\n已中断。部分答案已保存到: %s", partial_path)
                 _logger.info("恢复: ae init --from-answers %s", partial_path)
             raise
 
+        except (KeyboardInterrupt, SystemExit):
+            raise
+
         except Exception:
-            if self.cleanup_on_error and not dst_existed_before and self.dst_path.exists():
-                shutil.rmtree(self.dst_path)
+            _logger.exception("InitWorker 执行失败 (phase=%s)", self._current_phase)
+            # cleanup 通过 finally 块执行,防止 rmtree 二次异常掩盖原始错误
+            _cleanup_dst = self.cleanup_on_error and not dst_existed_before and self.dst_path.exists()
+            if _cleanup_dst:
+                try:
+                    shutil.rmtree(self.dst_path)
+                except OSError:
+                    pass
             raise
 
         return InitResult(
@@ -181,7 +188,7 @@ class InitWorker:
             project_type=self.project_type or "",
         )
 
-    # ─── 兼容层：原内部方法（v2.5 拆到 scaffold_prereq/scaffold_phase_funcs 后保留 thin wrapper）──
+    # ─── 兼容层：原内部方法（v2.5 拆到 phases/ 子模块后保留 thin wrapper）──
 
     def _check_template_version(self) -> None:
         """模板 _min_ae_version vs 已安装 __version__."""
@@ -189,14 +196,8 @@ class InitWorker:
             return
         check_template_version(self._template.min_ae_version)
 
-    def _check_prerequisites(self) -> None:
-        """基础工具链 + 语言工具链检查."""
-        from .scaffold_prereq import check_basic_tools, check_language_tools
-        check_basic_tools()
-        check_language_tools(self.language, self.skip_tasks)
-
     # ─── 阶段方法（薄包装，monkey-patch 友好）────────────────────────
-    # 历史：原 InitWorker 拥有 _phase_* 方法。v2.5 拆到 scaffold_phase_funcs.py
+    # 历史：原 InitWorker 拥有 _phase_* 方法。v2.5 拆到 phases/ 子模块
     # 后保留为 thin wrapper — 一行委托，让 monkeypatch.setattr(worker, ...)
     # 仍能替换阶段逻辑（向后兼容测试）。
 
@@ -214,9 +215,7 @@ class InitWorker:
         )
 
     def _phase_prompt(self) -> None:
-        detection_for_prompt = (
-            self._detection if hasattr(self._detection, "language") else None
-        )
+        detection_for_prompt = self._detection
         self._template, self._answers = phase_prompt(
             project_type=self.project_type,
             defaults=self.defaults,
@@ -272,7 +271,6 @@ class InitWorker:
             generated=generated,
         )
         # PE-P0-4: 在 dst_path (而非 tmpdir) 重新跑依赖安装,修复 .venv shebang 断裂
-        from .phases.finalize import phase_post_install
         phase_post_install(
             answers=self._answers,
             dst_path=self.dst_path,
@@ -283,3 +281,5 @@ class InitWorker:
             timeout=self.hook_timeout,
         )
         return did_create
+
+

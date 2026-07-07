@@ -14,7 +14,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .config import TEMPLATES_ROOT
+from .config_types import TEMPLATES_ROOT, TemplateConfig, coerce_bool
 
 _logger = logging.getLogger(__name__)
 
@@ -93,7 +93,7 @@ def build_template_dirs(
 
     # 3. feature 映射：lefthook / ci_platform / docker — 条件化选择
     feature_map: list[tuple[str, str]] = []
-    if context.get("use_lefthook"):
+    if coerce_bool(context.get("use_lefthook")):
         feature_map.append(("use_lefthook", "lefthook"))
 
     ci_platform = context.get("ci_platform")
@@ -102,7 +102,7 @@ def build_template_dirs(
         if feat_name:
             feature_map.append(("ci_platform", feat_name))
 
-    if context.get("use_docker"):
+    if coerce_bool(context.get("use_docker")):
         feature_map.append(("use_docker", "docker"))
 
     for answer_key, feature_name in feature_map:
@@ -146,7 +146,7 @@ def render_to(
     envops: dict,
     overwrite: bool,
     tmpdir: Path,
-    exclude_callback: str = "init_engineering.init._shared.exclude:default_match_exclude",
+    exclude_callback_spec: str | None = None,
     templates_suffix: str = ".jinja",
     preserve_symlinks: bool = True,
     on_exists: Callable[[str], None] | None = None,
@@ -161,29 +161,25 @@ def render_to(
         folder_name: 目标目录名 (dst_path.name)
         template_dir: 模板根目录
         subdirectory: 可选子目录
-        exclude_callback: P1.2 — "module:function" 格式 spec, 渲染阶段动态排除
+        exclude_callback_spec: P1.2 — "module:function" 格式字符串, 渲染阶段动态排除
             来源: Copier _main.py:753 match_exclude
         其他: TemplateRenderer 参数
 
     Returns:
         生成的文件相对路径列表
     """
-    # 回填 builtin 变量（保持向后兼容原 _phase_render 行为）
-    answers.builtins["_folder_name"] = folder_name
+    # 准备 context 默认值（不修改传入的 AnswersMap，避免隐式副作用）
+    builtin_overrides: dict = {"_folder_name": folder_name}
     for var in _RENDER_STR_VARS:
         if var not in answers:
-            answers.builtins[var] = ""
-    # project_name 未显式设置时默认使用目录名
+            builtin_overrides[var] = ""
     if "project_name" not in answers:
-        answers.builtins["project_name"] = folder_name
-    if "use_typescript" not in answers:
-        answers.builtins["use_typescript"] = False
-    if "use_lefthook" not in answers:
-        answers.builtins["use_lefthook"] = False
-    if "use_docker" not in answers:
-        answers.builtins["use_docker"] = False
+        builtin_overrides["project_name"] = folder_name
+    for k in ("use_typescript", "use_lefthook", "use_docker"):
+        if k not in answers:
+            builtin_overrides[k] = False
 
-    context = answers.combined()
+    context = {**answers.combined(), **builtin_overrides}
     template_dirs = build_template_dirs(
         context=context,
         type_dir=template_dir,
@@ -191,18 +187,22 @@ def render_to(
         external_template_dir=external_template_dir,
     )
 
-    # P1.2: 解析 exclude_callback spec 为可调用对象
+    # P1.2: 解析 exclude_callback_spec → 可调用对象
     # ImportError: 模板模块不存在 → 回退(非阻断)
     # ValueError: spec 格式错误 → 抛错(阻断)
     # AttributeError: 函数不存在 → 抛错(阻断)
     from ._shared.exclude import default_match_exclude, parse_exclude_callback
 
+    if exclude_callback_spec is None:
+        exclude_callback_spec = TemplateConfig._EXCLUDE_CALLBACK_SPEC
+
     try:
-        match_exclude = parse_exclude_callback(exclude_callback)
+        match_exclude = parse_exclude_callback(exclude_callback_spec)
     except ImportError:
+        _logger.debug("exclude callback module not found, falling back to default: %s", exclude_callback_spec)
         match_exclude = default_match_exclude
     except (ValueError, AttributeError) as e:
-        raise ValueError(f"exclude_callback 配置错误: {e}") from e
+        raise ValueError(f"exclude_callback_spec 配置错误: {e}") from e
 
     from .renderer import TemplateRenderer
 

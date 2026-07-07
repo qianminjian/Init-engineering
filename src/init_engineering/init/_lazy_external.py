@@ -88,9 +88,11 @@ class _LazyExternalDict:
         return len(self._external_map)
 
     def keys(self):
+        """返回所有外部数据变量名（不触发加载）。"""
         return self._external_map.keys()
 
     def items(self):
+        """迭代 (key, value)，首次访问时懒加载对应文件。"""
         for k in self._external_map:
             yield (k, self[k])
 

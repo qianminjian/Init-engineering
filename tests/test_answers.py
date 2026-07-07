@@ -14,14 +14,13 @@ from init_engineering.init.answers import BUILTIN_VARS, AnswersMap, _LazyExterna
 class TestBuiltinVars:
     """BUILTIN_VARS 常量."""
 
-    def test_has_ae_version(self):
-        assert BUILTIN_VARS["_ae_version"] == "1.0.0"
+    def test_ae_version_not_in_builtins(self):
+        """_ae_version 不再硬编码在 BUILTIN_VARS 中，由 combined() 动态注入."""
+        assert "_ae_version" not in BUILTIN_VARS
 
     def test_is_dict_like(self):
-        # B3: BUILTIN_VARS 是 MappingProxyType(只读视图) — 支持 dict-like 访问但非 dict 子类
         from collections.abc import Mapping
         assert isinstance(BUILTIN_VARS, Mapping)
-        assert BUILTIN_VARS["_ae_version"] == "1.0.0"
         assert "_folder_name" in BUILTIN_VARS
 
     def test_is_immutable(self):
@@ -109,16 +108,16 @@ class TestGet:
         assert am.get("name") == "defaults"
 
     def test_builtins_as_last_resort(self):
-        am = AnswersMap(builtins={"_ae_version": "1.0.0"})
-        assert am.get("_ae_version") == "1.0.0"
+        am = AnswersMap(builtins={"_folder_name": "test"})
+        assert am.get("_folder_name") == "test"
 
     def test_skips_none_values_in_layer(self):
-        """None 值的键视为"未设置"，继续查找下一层."""
+        """key 存在但值为 None 时返回 None，不继续查低优先级层（显式 None = 故意清空）."""
         am = AnswersMap(
             cli_overrides={"name": None},
             interactive={"name": "interactive"},
         )
-        assert am.get("name") == "interactive"
+        assert am.get("name") is None
 
     def test_external_fallback_when_not_in_layers(self):
         """external 中的 key 在所有层都找不到时，通过 _load_external 懒加载 YAML 文件内容."""
@@ -271,21 +270,6 @@ class TestLoadExternal:
         am._load_external("key")
         assert "key" in am._external_cache
         assert am._external_cache["key"] is None
-
-
-class TestHide:
-    """hide() 标记敏感字段."""
-
-    def test_adds_key_to_hidden_set(self):
-        am = AnswersMap()
-        am.hide("secret_key")
-        assert "secret_key" in am.hidden
-
-    def test_multiple_hides(self):
-        am = AnswersMap()
-        am.hide("a")
-        am.hide("b")
-        assert am.hidden == {"a", "b"}
 
 
 class TestSavePartial:

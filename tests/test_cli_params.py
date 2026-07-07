@@ -85,7 +85,7 @@ class TestTemplatesSuffixPassthrough:
     def test_phase_render_uses_worker_templates_suffix(self, tmp_path: Path):
         """_phase_render 使用 worker.templates_suffix 而非仅用 TemplateConfig 值."""
         from init_engineering.init.scaffold_phases import InitWorker
-        from init_engineering.init.config import TemplateConfig
+        from init_engineering.init.config_types import TemplateConfig
 
         # 创建测试模板配置
         template_config = TemplateConfig(
@@ -108,7 +108,7 @@ class TestTemplatesSuffixPassthrough:
     def test_phase_render_uses_worker_preserve_symlinks(self, tmp_path: Path):
         """_phase_render 使用 worker.preserve_symlinks 而非仅用 TemplateConfig 值."""
         from init_engineering.init.scaffold_phases import InitWorker
-        from init_engineering.init.config import TemplateConfig
+        from init_engineering.init.config_types import TemplateConfig
 
         template_config = TemplateConfig(
             template_dir=tmp_path / "templates",

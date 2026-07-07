@@ -22,6 +22,8 @@
 
 from __future__ import annotations
 
+__all__ = ["ConflictStrategy", "UpdateResult", "run_update"]
+
 import difflib
 import hashlib
 import logging
@@ -34,15 +36,16 @@ from pathlib import Path
 import click
 
 from .answers import AnswersMap
-from .config import TemplateConfig
+from .config_loader import load_template_config
 from .detector import ProjectDetector
-from .hooks import HookRunner
-from .scaffold_render import render_to as _render_to
+from .scaffold_render import render_to
 
 _logger = logging.getLogger(__name__)
 
 
 class ConflictStrategy(str, Enum):
+    """文件冲突处理策略：skip=保留用户修改，overwrite=用模板覆盖，prompt=逐个询问。"""
+
     SKIP = "skip"
     OVERWRITE = "overwrite"
     PROMPT = "prompt"
@@ -58,9 +61,9 @@ class UpdateResult:
     files_updated: list[Path] = field(default_factory=list)
     files_skipped: list[Path] = field(default_factory=list)
     files_conflicted: list[Path] = field(default_factory=list)
-    diffs: dict[str, str] = field(default_factory=dict)  # rel_path → unified diff
 
     def summary(self) -> str:
+        """返回升级操作的单行摘要（新增/更新/跳过/冲突数）。"""
         return (
             f"✓ 升级完成: 新增 {len(self.files_added)}, "
             f"更新 {len(self.files_updated)}, "
@@ -72,7 +75,7 @@ class UpdateResult:
 def run_update(
     dst_path: Path,
     *,
-    force: bool = False,
+    auto_detect: bool = False,
     dry_run: bool = False,
     conflict_strategy: ConflictStrategy | str = ConflictStrategy.SKIP,
     templates_suffix: str | None = None,
@@ -82,7 +85,7 @@ def run_update(
 
     Args:
         dst_path: 已初始化的项目根
-        force: 覆盖 .ae-answers.yml 缺失的项目（默认 False → 抛错）
+        auto_detect: 无 .ae-answers.yml 时自动推断 project_type（默认 False → 抛错）
         dry_run: 只计算 diff，不实际写入
         conflict_strategy: 文件冲突时如何处理
         templates_suffix: 模板后缀（覆盖 TemplateConfig）
@@ -92,7 +95,7 @@ def run_update(
         UpdateResult 包含新增/更新/跳过/冲突的文件路径
 
     Raises:
-        FileNotFoundError: dst_path 不存在或无 .ae-answers.yml (除非 force)
+        FileNotFoundError: dst_path 不存在或无 .ae-answers.yml (除非 auto_detect)
         ValueError: conflict_strategy 非法
     """
     if not dst_path.exists():
@@ -100,8 +103,7 @@ def run_update(
 
     answers_file = dst_path / ".ae-answers.yml"
     if not answers_file.exists():
-        if force:
-            # 无 answers → 退化为 fresh init，使用 detector 推断
+        if auto_detect:
             detector = ProjectDetector(dst_path)
             analysis = detector.analyze()
             project_type = analysis.project_type or "app-service"
@@ -109,7 +111,7 @@ def run_update(
         else:
             raise FileNotFoundError(
                 f"{dst_path} 缺少 .ae-answers.yml。请先运行 ae init，"
-                f"或使用 --force 强制升级（将自动推断 project_type）"
+                f"或使用 --force 自动推断 project_type"
             )
     else:
         previous = AnswersMap.from_answers_file(answers_file)
@@ -124,7 +126,7 @@ def run_update(
                 f"可选: {[s.value for s in ConflictStrategy]}"
             ) from e
 
-    template = TemplateConfig.load(project_type)
+    template = load_template_config(project_type)
     if template.nested_templates:
         # 沿用 init 流程：如果有 nested templates 仍优先 typescript (no_input=True)
         from .prompts import prompt_for_nested_template
@@ -132,15 +134,8 @@ def run_update(
         if chosen:
             template.template_dir = template.template_dir / chosen
 
-    templates_suffix = (
-        templates_suffix
-        if templates_suffix is not None
-        else template.templates_suffix
-    )
-    preserve_symlinks = (
-        preserve_symlinks
-        if preserve_symlinks is not None
-        else template.preserve_symlinks
+    templates_suffix, preserve_symlinks = template.resolve_render_opts(
+        templates_suffix, preserve_symlinks
     )
 
     # 用历史 answers 重新渲染到 tmpdir
@@ -150,11 +145,9 @@ def run_update(
     try:
         # Build context from previous answers
         answers = previous
-        hook_runner = HookRunner(dst_path, strict=False)
         context = answers.combined()
-        hook_runner.before_renderer_hook(context)
 
-        _render_to(
+        render_to(
             answers=answers,
             folder_name=dst_path.name,
             template_dir=template.template_dir,
@@ -166,11 +159,10 @@ def run_update(
             envops=template.envops,
             overwrite=False,
             tmpdir=tmpdir,
-            exclude_callback=template.exclude_callback,
+            exclude_callback_spec=template.exclude_callback,
             templates_suffix=templates_suffix,
             preserve_symlinks=preserve_symlinks,
         )
-        hook_runner.after_renderer_hook(context, [])
 
         # 1. 计算每文件的策略
         result = UpdateResult(dst_path=dst_path, project_type=project_type)
@@ -183,7 +175,7 @@ def run_update(
             if rel.name == ".ae-init.lock":
                 continue
             dst_file = dst_path / rel
-            action = _classify_file(src_file, dst_file, conflict_strategy, force, dst_path, dry_run, result)
+            action = _classify_file(src_file, dst_file, conflict_strategy, auto_detect, dst_path, dry_run, result)
             if action:
                 actions.append((src_file, dst_file, action))
                 # dry_run + prompt 提前 return 时也要把 conflicted 计入 result
@@ -228,14 +220,11 @@ def _classify_file(
 
     None 表示该文件应被忽略（如 .ae-answers.yml 自身）。
     """
-    rel = src.relative_to(dst_root.parent) if False else None  # placeholder
     # .ae-answers.yml 自身跳过（run_update 单独更新其 _meta）
     if src.name == ".ae-answers.yml":
         return None
 
     if not dst.exists():
-        # 计算 diff 留底
-        result.diffs[str(src.name)] = "(new file)"
         return "add"
 
     if _file_content_equal(src, dst):
@@ -252,7 +241,6 @@ def _classify_file(
             tofile=f"b/{src.name}",
         )
     )
-    result.diffs[str(dst.relative_to(dst_root))] = diff
 
     if strategy == ConflictStrategy.SKIP:
         return "skip"

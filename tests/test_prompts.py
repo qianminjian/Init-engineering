@@ -331,8 +331,8 @@ class TestAskOneRetryLoop:
 
         assert answers.interactive["name"] == "abcd"
 
-    def test_max_retries_fallback_to_default(self):
-        """达到最大重试次数后使用默认值."""
+    def test_max_retries_raises_validation_error(self):
+        """达到最大重试次数后抛出 ValidationError."""
         q = Question(var_name="count", help="数量", type="int", default=99)
         answers = type("AnswersMap", (), {
             "cli_overrides": {},
@@ -342,16 +342,16 @@ class TestAskOneRetryLoop:
 
         prompt = InteractivePrompt([q], answers)
 
-        # All 5 attempts fail → fallback to default
         calls = ["bad"] * 10
+        from init_engineering.init.errors import ValidationError
+
         with patch("click.prompt", side_effect=calls):
             with patch("click.echo"):
-                prompt._ask_one(q, {})
+                with pytest.raises(ValidationError, match="类型转换失败"):
+                    prompt._ask_one(q, {})
 
-        assert answers.interactive["count"] == 99
-
-    def test_max_retries_no_default(self):
-        """max_retries 且无默认值 → 空字符串."""
+    def test_max_retries_no_default_raises(self):
+        """max_retries 且无默认值 → 抛出 ValidationError."""
         q = Question(var_name="count", help="数量", type="int", default=None)
         answers = type("AnswersMap", (), {
             "cli_overrides": {},
@@ -362,11 +362,12 @@ class TestAskOneRetryLoop:
         prompt = InteractivePrompt([q], answers)
 
         calls = ["bad"] * 10
+        from init_engineering.init.errors import ValidationError
+
         with patch("click.prompt", side_effect=calls):
             with patch("click.echo"):
-                prompt._ask_one(q, {})
-
-        assert answers.interactive["count"] == ""
+                with pytest.raises(ValidationError, match="类型转换失败"):
+                    prompt._ask_one(q, {})
 
 
 class TestPromptForNestedTemplateInteractive:

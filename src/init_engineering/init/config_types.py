@@ -4,8 +4,10 @@
 - copier/_user_data.py:136-295 — Question dataclass 定义
 - copier/_template.py:162-188 — Task dataclass 定义
 
-本模块只放类型与常量，YAML 解析逻辑见 config.py 的 TemplateConfig。
+本模块只放类型与常量，YAML 解析逻辑见 config_loader.py。
 """
+
+from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -35,6 +37,17 @@ DEFAULT_EXCLUDE = [
 DEFAULT_TEMPLATES_SUFFIX = ".jinja"
 
 
+def coerce_bool(val: str | bool | None) -> bool:
+    """将 answers 中可能为空字符串的布尔值转为 Python bool."""
+    if isinstance(val, bool):
+        return val
+    if val is None:
+        return False
+    if isinstance(val, str):
+        return val.strip().lower() in ("true", "yes", "y", "1")
+    return bool(val)
+
+
 # ─── Question ─────────────────────────────────────────────────────────────────
 
 
@@ -54,7 +67,7 @@ class Question:
     var_name: str  # 变量名，对应 ae-template.yml 的 key
     type: str = ""  # str|bool|int|float|json|yaml|choice，空字符串=自动推导
     help: str = ""  # 提示文本
-    default: Any = None  # 默认值
+    default: str | bool | int | float | list | dict | None = None
     choices: list[str] | dict[str, Any] | None = None
     when: str | bool = True  # Jinja2 条件
     validator: str = ""  # Jinja2 校验模板，空=不校验
@@ -92,7 +105,7 @@ class Question:
         result = tpl.render(**context).strip()
         return result.lower() not in ("false", "no", "0", "")
 
-    def render_validator(self, value: Any, context: dict, jinja_env: jinja2.Environment) -> str:
+    def render_validator(self, value: str | bool | int | float | list | dict | None, context: dict, jinja_env: jinja2.Environment) -> str:
         """渲染 validator 模板，返回错误信息或空字符串。
 
         来源：Copier _user_data.py Question._get_answer_validation_error()
@@ -102,7 +115,7 @@ class Question:
         tpl = jinja_env.from_string(self.validator)
         return tpl.render(**{**context, self.var_name: value}).strip()
 
-    def cast_answer(self, raw: str) -> Any:
+    def cast_answer(self, raw: str | bool) -> str | bool | int | float | list | dict | None:
         """将用户输入的字符串转为目标类型。
 
         来源：Copier _user_data.py CAST_STR_TO_NATIVE 字典。
@@ -167,3 +180,56 @@ class Task:
     # PE-P1-4: 单任务超时(秒) — None 走 TaskRunner 默认 (300s)。
     # 模板作者针对 cargo build/large npm install 等慢任务可显式设大值
     timeout: int | None = None
+
+
+# ─── TemplateConfig ──────────────────────────────────────────────────────────
+
+
+@dataclass
+class TemplateConfig:
+    """从 ae-template.yml 解析的完整模板配置。
+
+    参考 Copier _template.py:192-299 Template dataclass。
+
+    ae-template.yml 约定：
+    - _ 前缀字段映射到 TemplateConfig 属性（去 _ 前缀后）
+    - 其余字段解析为 Question 列表
+    """
+
+    template_dir: Path
+    min_ae_version: str = "1.0.0"
+    templates_suffix: str = DEFAULT_TEMPLATES_SUFFIX
+    preserve_symlinks: bool = True
+    exclude: list[str] = field(default_factory=lambda: DEFAULT_EXCLUDE.copy())
+    # 通用 exclude callback (固定值, 不可从 ae-template.yml 覆盖)
+    # 若需可配置, 在 config_loader.py 中增加 _exclude_callback YAML 解析
+    _EXCLUDE_CALLBACK_SPEC: str = "init_engineering.init._shared.exclude:default_match_exclude"
+
+    skip_if_exists: list[str] = field(default_factory=list)
+    exclude_callback: str = _EXCLUDE_CALLBACK_SPEC
+    envops: dict = field(
+        default_factory=lambda: {
+            "autoescape": False,
+            "keep_trailing_newline": True,
+        }
+    )
+    no_render: list[str] = field(default_factory=list)
+    subdirectory: str = ""
+    nested_templates: dict[str, dict[str, str]] = field(default_factory=dict)
+    questions: list[Question] = field(default_factory=list)
+    tasks_before: list[Task] = field(default_factory=list)
+    tasks_after: list[Task] = field(default_factory=list)
+    external_data: dict[str, str] = field(default_factory=dict)
+    message_before: str = ""
+    message_after: str = ""
+
+    def resolve_render_opts(
+        self,
+        templates_suffix: str | None = None,
+        preserve_symlinks: bool | None = None,
+    ) -> tuple[str, bool]:
+        """回填渲染选项默认值 — 调用方可传入 CLI 覆盖值或 None 走模板默认."""
+        return (
+            templates_suffix if templates_suffix is not None else self.templates_suffix,
+            preserve_symlinks if preserve_symlinks is not None else self.preserve_symlinks,
+        )

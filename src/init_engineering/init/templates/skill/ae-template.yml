@@ -1,5 +1,5 @@
 _min_ae_version: "1.0.0"
-_exclude_callback: "auto_engineering.init._shared.exclude:default_match_exclude"
+_exclude_callback: "init_engineering.init._shared.exclude:default_match_exclude"
 skill_name:
   type: str
   help: Skill 名称 (kebab-case)

@@ -11,6 +11,8 @@
 
 from __future__ import annotations
 
+__all__ = ["InitLock"]
+
 import logging
 import os
 import sys
@@ -51,11 +53,10 @@ class InitLock:
     _LK_NBLCK = 2
     _LK_UNLCK = 0
 
-    # P2-7: 心跳配置 — 锁文件写入 PID + timestamp, 进程死锁可识别
-    # _HEARTBEAT_INTERVAL: 多久写一次心跳 (秒)
-    # _HEARTBEAT_TIMEOUT: 多久无心跳认为持锁进程死亡 (秒, 3x interval)
-    _HEARTBEAT_INTERVAL = 30
-    _HEARTBEAT_TIMEOUT = 90
+    # P2-7: 陈旧锁宽限期 — 锁文件写入 PID + timestamp, 进程死锁可识别
+    # _STALE_LOCK_GRACE_PERIOD: 多久无更新认为持锁进程死亡 (秒)
+    # 2026-07-07 审计: 延长至 300s — 大型模板 init (含 cargo build 等慢任务) 可能超 90s
+    _STALE_LOCK_GRACE_PERIOD = 300
 
     def __init__(self, dst_path: Path):
         self.dst_path = dst_path
@@ -64,6 +65,7 @@ class InitLock:
         self._last_heartbeat: float = 0.0
 
     def acquire(self) -> InitLock:
+        """获取 .ae-init.lock 排他锁，自动回收死锁，返回 self 支持 with 语句。"""
         if fcntl is None and not IS_WINDOWS:
             # 非 Windows 平台 + 无 fcntl = 异常环境（如 musl + 某些裁剪）
             raise TargetDirectoryError(
@@ -78,13 +80,13 @@ class InitLock:
                 "当前环境 msvcrt 不可用, 请使用 CPython 官方发行版。"
             )
 
-        # P2-7: acquire 前检查 stale lock — 读心跳, 超过 _HEARTBEAT_TIMEOUT
+        # P2-7: acquire 前检查 stale lock — 读心跳, 超过 _STALE_LOCK_GRACE_PERIOD
         # 且持锁 PID 不存在 → 视为死锁, 强制 unlink 后重试
         if self.lock_file.exists():
             self._try_reap_stale_lock()
 
-        self._fd = os.open(str(self.lock_file), os.O_CREAT | os.O_RDWR)
         try:
+            self._fd = os.open(str(self.lock_file), os.O_CREAT | os.O_RDWR)
             if fcntl is not None:
                 fcntl.flock(self._fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
             else:
@@ -95,13 +97,9 @@ class InitLock:
             # P2-7: 拿到锁后立刻写一次心跳
             self._write_heartbeat()
         except (BlockingIOError, OSError, PermissionError) as lock_err:
-            os.close(self._fd)
-            self._fd = None
-            # B2: 清理 stale lock 文件 — O_CREAT 已创建, 必须显式 unlink 避免残留
-            try:
-                self.lock_file.unlink()
-            except OSError:
-                pass
+            if self._fd is not None:
+                os.close(self._fd)
+                self._fd = None
             raise TargetDirectoryError(
                 f"目录 {self.dst_path.name} 正在被另一个 ae init 进程使用。"
                 f"请等待完成后再试，或删除 .ae-init.lock 强制解锁。"
@@ -119,18 +117,7 @@ class InitLock:
             os.ftruncate(self._fd, len(payload))
             self._last_heartbeat = time.time()
         except OSError:
-            pass
-
-    def maybe_heartbeat(self) -> None:
-        """P2-7: 距上次心跳超过 _HEARTBEAT_INTERVAL → 续心跳.
-
-        调用方应在长任务中周期性调用 (e.g. 每渲染 N 个文件后).
-        InitWorker 暂时未调用 (P2-7 仅为机制预留, 真正集成在后续版本).
-        """
-        if self._fd is None:
-            return
-        if time.time() - self._last_heartbeat >= self._HEARTBEAT_INTERVAL:
-            self._write_heartbeat()
+            _logger.debug("heartbeat write failed", exc_info=True)
 
     def _try_reap_stale_lock(self) -> None:
         """P2-7: 检查锁文件心跳 — 持锁进程死亡时强制清理.
@@ -138,7 +125,7 @@ class InitLock:
         逻辑:
         1. 读锁文件内容, 解析 PID + ts
         2. 持锁 PID 在 /proc 中存在 → 进程还活着, 不要动
-        3. ts 距今 < _HEARTBEAT_TIMEOUT → 可能只是慢任务, 不要动
+        3. ts 距今 < _STALE_LOCK_GRACE_PERIOD → 可能只是慢任务, 不要动
         4. PID 死亡 + ts 超时 → 死锁, unlink 锁文件
         """
         try:
@@ -152,18 +139,18 @@ class InitLock:
                 try:
                     pid = int(line.split("=", 1)[1])
                 except ValueError:
-                    pass
+                    _logger.debug("stale lock pid parse failed: %s", line, exc_info=True)
             elif line.startswith("ts="):
                 try:
                     ts = float(line.split("=", 1)[1])
                 except ValueError:
-                    pass
+                    _logger.debug("stale lock ts parse failed: %s", line, exc_info=True)
         if pid is None or ts is None:
             return  # 无心跳格式, 不动
         # P2-3: 跨平台 PID 存活检测 — os.kill(pid, 0) Windows 不支持
         if _is_pid_alive(pid):
             return  # 进程在, 锁有效
-        if time.time() - ts < self._HEARTBEAT_TIMEOUT:
+        if time.time() - ts < self._STALE_LOCK_GRACE_PERIOD:
             return  # 时间未到, 等待
         # 死锁 — 强制清理
         _logger.warning(
@@ -173,9 +160,10 @@ class InitLock:
         try:
             self.lock_file.unlink()
         except OSError:
-            pass
+            _logger.debug("stale lock unlink failed", exc_info=True)
 
     def release(self) -> None:
+        """释放排他锁，关闭 fd，删除 .ae-init.lock 文件。失败静默（仅 debug 日志）。"""
         if self._fd is None:
             return
         try:
@@ -185,18 +173,18 @@ class InitLock:
                 # DI-P1-1: Windows 释放锁 — 解锁那 1 字节
                 msvcrt.locking(self._fd, self._LK_UNLCK, 1)  # type: ignore[union-attr]
         except Exception as exc:
-            _logger.debug("flock unlock failed (ignored): %s", exc)
+            _logger.debug("flock unlock failed (ignored): %s", exc, exc_info=True)
         try:
             os.close(self._fd)
         except Exception as exc:
-            _logger.debug("fd close failed (ignored): %s", exc)
+            _logger.debug("fd close failed (ignored): %s", exc, exc_info=True)
         finally:
             self._fd = None
         try:
             if self.lock_file.exists():
                 self.lock_file.unlink()
         except Exception as exc:
-            _logger.debug("lock file unlink failed (ignored): %s", exc)
+            _logger.debug("lock file unlink failed (ignored): %s", exc, exc_info=True)
 
     @classmethod
     def acquire_for(cls, dst_path: Path) -> InitLock:

@@ -2,26 +2,32 @@
 
 从 cli/__init__.py 拆分 (2026-07-03 深度审计 P2-A):
 原 __init__.py 427 行超 300 行约束, 拆出:
-- _cmd_init (init 命令实现, 来自 P2-12)
+- cmd_init (init 命令实现, 来自 P2-12)
 - --list-types / --list-templates / --analyze 分支 (纯函数, init() 调用)
 - update / status 命令拆分到 cli/subcommands.py (code review P2-12 follow-up)
 """
 
 from __future__ import annotations
 
-import contextlib
-import os as _os
+import logging
 import time as _time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import click
 
 from init_engineering import __version__
+
+_logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from init_engineering.init.detector import ProjectDetector
 from init_engineering.cli._helpers import (
     configure_logging as _configure_logging,
+)
+from init_engineering.cli._helpers import (
     sanitize_error as _sanitize_error,
 )
-
 
 # ============================================================
 # init 命令的轻量子分支 (纯函数, init() 内部调用)
@@ -54,9 +60,14 @@ def _cmd_list_templates(templates_root: Path) -> None:
                 click.echo(f"  {rel}")
 
 
-def _cmd_analyze(dst_path: Path, project_detector_cls) -> None:
-    """--analyze: 只运行代码分析, 不初始化."""
-    detector = project_detector_cls(dst_path)
+def _cmd_analyze(dst_path: Path, detector_cls: type["ProjectDetector"]) -> None:
+    """--analyze: 只运行代码分析, 不初始化.
+
+    Args:
+        dst_path: 目标目录
+        detector_cls: ProjectDetector 类 (可替换用于测试注入)
+    """
+    detector = detector_cls(dst_path)
     result = detector.analyze()
     click.echo(f"分析目录: {dst_path}")
     click.echo(f"项目名称: {result.project_name}")
@@ -80,7 +91,7 @@ def _cmd_analyze(dst_path: Path, project_detector_cls) -> None:
         click.echo(f"框架: {', '.join(result.frameworks)}")
 
 
-def _cmd_init(
+def cmd_init(
     *,
     project: str | None,
     project_type: str | None,
@@ -118,8 +129,9 @@ def _cmd_init(
     调用方 (init click 装饰函数) 只负责参数收集和转发.
     """
     from init_engineering.init import InitWorker
-    from init_engineering.init.config import TEMPLATES_ROOT
+    from init_engineering.init.config_types import TEMPLATES_ROOT
     from init_engineering.init.detector import ProjectDetector
+    from init_engineering.init.errors import InitError
 
     # --list-types / --list-templates / --analyze 早返回分支
     if list_types:
@@ -143,8 +155,7 @@ def _cmd_init(
         if not quiet:
             click.echo(f"从 {answers_file} 恢复答案")
         if not project_type:
-            with contextlib.suppress(KeyError):
-                project_type = answers.get("project_type") or ""
+            project_type = answers.get("project_type", default="") or ""
         defaults = True
     else:
         answers = None
@@ -172,15 +183,11 @@ def _cmd_init(
 
     # --telemetry: 首次开启强制引导用户同意 (避免静默收集)
     if telemetry:
-        from init_engineering.telemetry import has_consent, request_consent
+        from init_engineering.telemetry import has_consent, request_and_persist_consent
         if not has_consent():
-            if not request_consent():
+            if not request_and_persist_consent():
                 click.echo("已禁用 telemetry (本次 init 不发送数据)", err=False)
                 telemetry = False
-            else:
-                _os.environ["AE_TELEMETRY"] = "1"
-        else:
-            _os.environ["AE_TELEMETRY"] = "1"
 
     _configure_logging(verbose=verbose)
 
@@ -205,7 +212,6 @@ def _cmd_init(
         incremental=incremental,
         strict=strict,
         template_dir_override=Path(template_dir_override) if template_dir_override else None,
-        force_unsafe_template=force_unsafe_template,
         templates_suffix=templates_suffix,
         preserve_symlinks=preserve_symlinks,
         hook_timeout=hook_timeout,
@@ -218,23 +224,32 @@ def _cmd_init(
             worker._previous_answers = answers
 
         _start_ts = _time.monotonic()
+        _telemetry_error: str | None = None
         try:
             result = worker.execute()
-            elapsed_ms = int((_time.monotonic() - _start_ts) * 1000)
-            _emit_telemetry(
-                telemetry, project_type=result.project_type, language=language,
-                success=True, elapsed_ms=elapsed_ms,
+            return result
+        except InitError as e:
+            _telemetry_error = type(e).__name__
+            _logger.error(
+                "init failed for %s: %s (recovery: %s)",
+                dst_path, e, e.recovery_hint or "无",
             )
+            safe_msg = _sanitize_error(str(e))
+            click.echo(f"✗ 初始化失败: {safe_msg}", err=True)
+            raise SystemExit(e.exit_code) from e
         except Exception as e:
-            elapsed_ms = int((_time.monotonic() - _start_ts) * 1000)
-            _emit_telemetry(
-                telemetry, project_type=project_type or "", language=language,
-                success=False, elapsed_ms=elapsed_ms, error_type=type(e).__name__,
-            )
-            # P2-13: 错误消息脱敏 — 替换 token/api_key/password 等为 [REDACTED]
+            _telemetry_error = type(e).__name__
+            _logger.exception("init failed unexpectedly for %s", dst_path)
             safe_msg = _sanitize_error(str(e))
             click.echo(f"✗ 初始化失败: {safe_msg}", err=True)
             raise SystemExit(1) from e
+        finally:
+            elapsed_ms = int((_time.monotonic() - _start_ts) * 1000)
+            _emit_telemetry(
+                telemetry, project_type=project_type or "", language=language,
+                success=_telemetry_error is None, elapsed_ms=elapsed_ms,
+                error_type=_telemetry_error,
+            )
 
 
 def _emit_telemetry(

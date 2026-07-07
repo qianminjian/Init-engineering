@@ -178,11 +178,12 @@ class TestRenderTo:
             tmpdir=tmp_path / "out",
         )
         assert len(generated) > 0
-        assert answers.builtins["_folder_name"] == "testproj"
-        assert answers.builtins["project_name"] == "testproj"
-        assert answers.builtins["use_typescript"] is False
-        assert answers.builtins["use_lefthook"] is False
-        assert answers.builtins["use_docker"] is False
+        # P0-5: render_to 不再修改传入的 answers（使用局部 overrides 而非 mutation）
+        assert "_folder_name" not in answers.builtins
+        assert "project_name" not in answers.builtins
+        assert "use_typescript" not in answers.builtins
+        assert "use_lefthook" not in answers.builtins
+        assert "use_docker" not in answers.builtins
 
     def test_render_to_with_external_and_subdirectory(self, tmp_path: Path):
         """render_to 使用 external_template_dir 和 subdirectory."""
@@ -222,7 +223,7 @@ class TestRenderTo:
         assert len(generated) >= 2  # ext shared + tmpl
 
     def test_render_to_exclude_callback_parse_error(self, tmp_path: Path):
-        """exclude_callback 格式错误时抛 ValueError (line 200-201)."""
+        """exclude_callback_spec格式错误时抛 ValueError (line 200-201)."""
         from init_engineering.init.scaffold_render import render_to
         from init_engineering.init.answers import AnswersMap
 
@@ -238,7 +239,7 @@ class TestRenderTo:
         tmpl_dir = tmp_path / "tmpl"
         tmpl_dir.mkdir()
 
-        with pytest.raises(ValueError, match="exclude_callback"):
+        with pytest.raises(ValueError, match="exclude_callback_spec"):
             render_to(
                 answers=answers,
                 folder_name="test",
@@ -250,11 +251,11 @@ class TestRenderTo:
                 envops={},
                 overwrite=False,
                 tmpdir=tmp_path / "out",
-                exclude_callback="invalid_format_no_colon",
+                exclude_callback_spec="invalid_format_no_colon",
             )
 
     def test_render_to_exclude_callback_nonexistent_module(self, tmp_path: Path):
-        """exclude_callback 指定不存在的模块 → 回退 (line 198-199)."""
+        """exclude_callback_spec指定不存在的模块 → 回退 (line 198-199)."""
         from init_engineering.init.scaffold_render import render_to
         from init_engineering.init.answers import AnswersMap
 
@@ -283,7 +284,7 @@ class TestRenderTo:
             envops={},
             overwrite=False,
             tmpdir=tmp_path / "out",
-            exclude_callback="nonexistent_module_xyz:some_func",
+            exclude_callback_spec="nonexistent_module_xyz:some_func",
         )
         assert len(generated) > 0
 
