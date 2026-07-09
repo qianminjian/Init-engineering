@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://auto-engineering/init-manifest.schema.json",
+  "version": "1.1",
+  "type": "object",
+  "required": ["schema_version", "project_type", "language", "conventions", "structure"],
+  "additionalProperties": true,
+  "properties": {
+    "schema_version": { "type": "string" },
+    "project_type": {
+      "enum": ["app-service","library","cli-tool","skill","hook","mcp-server","spec-doc","monorepo","plugin"]
+    },
+    "language": { "enum": ["python","typescript","go","rust","bash"] },
+    "conventions": {
+      "type": "object",
+      "required": ["linter", "type_checker", "test_runner"],
+      "properties": {
+        "linter": { "type": "string" },
+        "type_checker": { "type": "string" },
+        "test_runner": { "type": "string" },
+        "build_cmd": { "type": "string" },
+        "ci_platform": { "enum": ["github","gitlab","none"], "default": "none" }
+      }
+    },
+    "structure": {
+      "type": "object",
+      "required": ["source_root", "test_root"],
+      "properties": {
+        "source_root": { "type": "string" },
+        "test_root": { "type": "string" },
+        "design_root": { "type": "string" }
+      }
+    }
+  }
+}

@@ -18,6 +18,7 @@ from datetime import datetime
 from pathlib import Path
 
 from ..answers import AnswersMap
+from ..manifest import build_manifest, write_manifest
 
 _logger = logging.getLogger(__name__)
 
@@ -38,6 +39,12 @@ def phase_finalize(
         did_create_dst: 本次是否创建了目标目录（用于错误清理）。
     """
     answers.write_to(tmpdir / ".ae-answers.yml")
+
+    # Init → Loop contract: write init-manifest.json to .ae-state/
+    # Only populate design_root if a design/ directory was actually scaffolded
+    _design_root = "design" if (tmpdir / "design").is_dir() else None
+    manifest = build_manifest(answers, project_type or "unknown", design_root=_design_root)
+    write_manifest(manifest, tmpdir)
 
     # P2-15: defense-in-depth 二次校验 — phase_detect 已校验,但 phase_finalize
     # 也可能从测试 / 内部 API 直接调用,绕过 phase_detect 校验链。

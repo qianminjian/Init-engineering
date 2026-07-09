@@ -83,10 +83,13 @@ class AnswersMap:
     def get(self, key: str, default: Any = _MISSING) -> Any:
         """按优先级链查找变量：cli → interactive → previous → defaults → builtins → external。
 
+        行为与 dict.get() 一致：未找到时返回 default，default 未传时返回 None。
+
+        ⚠ 隐式 IO: external 层 key 会触发 _load_external() 磁盘读取。
+
         Args:
             key: 变量名
-            default: 未找到时返回此值。不传 default 时对缺失 key 抛 KeyError（与 dict.get 不同，
-                     dict.get 默认返回 None）。传 default=None 会返回 None 而非抛异常。
+            default: 未找到时返回此值（默认 None）。
         """
         try:
             for layer in [

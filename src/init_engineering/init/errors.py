@@ -125,7 +125,9 @@ class HookExecutionError(InitError):
     """钩子命令执行失败（strict 模式下抛出，非 strict 模式仅为 warning）。"""
 
     exit_code = 9
-    recovery_hint = "检查钩子命令是否正确，或使用 --strict 让钩子失败时立即终止"
+    recovery_hint = (
+        "检查钩子命令是否正确。去掉 --strict 可让非关键钩子失败时降级为 warning 而非终止"
+    )
 
     def __init__(self, command: str, process_exit_code: int = 1, stderr: str = ""):
         self.command = command
