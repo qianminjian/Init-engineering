@@ -62,6 +62,13 @@ class BasicPromptBackend:
         show_default: bool = True,
         value_proc: Any = None,
     ) -> Any:
+        import sys
+
+        if not sys.stdin.isatty():
+            raise UserAbort(
+                "stdin 不是终端（Claude Code / CI / 管道）。"
+                " 请使用 --defaults 非交互模式，或通过 CLI 参数指定所有必要选项。"
+            )
         if show_default and default is not None:
             text = f"{text} [{default}]"
         try:

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import re
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -265,6 +266,12 @@ def _run_init(
                 kwargs[param] = True
             elif val not in ("true", "false"):
                 kwargs[param] = val
+
+    # 非 TTY 环境（Claude Code / CI / 管道）自动启用 defaults，
+    # 避免 BasicPromptBackend.input() 挂死等待不可用的 stdin。
+    if not sys.stdin.isatty() and not kwargs.get("defaults"):
+        _logger.info("非 TTY 环境，自动启用 --defaults 模式")
+        kwargs["defaults"] = True
 
     try:
         worker = worker_cls(dst_path=dst_path, **kwargs)
