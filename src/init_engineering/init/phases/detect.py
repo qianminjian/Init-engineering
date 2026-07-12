@@ -43,7 +43,20 @@ def phase_detect(
 
     if dst_path.exists() and not force:
         if any(dst_path.iterdir()):
-            mode = "incremental" if incremental else _raise_nonempty(dst_path)
+            if incremental:
+                mode = "incremental"
+                if not (dst_path / ".ae-answers.yml").exists():
+                    if not project_type and defaults:
+                        raise TargetDirectoryError(
+                            "目录非空但缺少 .ae-answers.yml 基线文件，且无法自动检测项目类型。"
+                            " 使用 --type 指定类型后重试，或 --force 进行完整初始化。"
+                        )
+                    _logger.warning(
+                        "目录非空但缺少 .ae-answers.yml 基线文件，增量模式可能遗漏文件。"
+                        " 建议: 先 ae init --type <type> --defaults --force 完整初始化。"
+                    )
+            else:
+                _raise_nonempty(dst_path)
         else:
             mode = "fresh"
     else:

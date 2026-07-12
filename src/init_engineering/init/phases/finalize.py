@@ -64,6 +64,12 @@ def phase_finalize(
                 "\n✓ 增量模式：已补充 %d 个文件，跳过 %d 个已有文件",
                 len(created), len(skipped),
             )
+            if len(created) == 0 and not (dst_path / ".ae-answers.yml").exists():
+                _logger.warning(
+                    "  未添加任何新文件。目录可能已包含所有模板文件，"
+                    " 或 .ae-answers.yml 基线缺失导致增量模式无法确定差异。"
+                    " 使用 --force 进行完整初始化，或 --type 指定项目类型。"
+                )
         return False
     else:
         did_create_dst = not dst_path.exists()
@@ -105,6 +111,8 @@ def _atomic_copytree(src: Path, dst: Path) -> None:
     含指向 tmpdir 路径的 shebang/二进制引用 — 复制到 dst 后会失效。
     dst 的依赖安装在 phase_post_install 重新执行。
     """
+    # Resolve before .name/.with_name — Path('.') has empty .name on POSIX
+    dst = dst.resolve()
     partial = dst.with_name(f"{dst.name}.partial-{int(_time.time() * 1000)}")
     new_marker = dst.with_name(f"{dst.name}.new")
 

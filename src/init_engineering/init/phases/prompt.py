@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+import logging
+import shutil
 from pathlib import Path
 
 from ..answers import AnswersMap
@@ -14,6 +16,8 @@ from ..detector import DetectionResult
 from ..errors import InitInterruptedError
 from ..prompts import InteractivePrompt, prompt_for_nested_template
 from ..scaffold_question_eval import evaluate_question_defaults
+
+_logger = logging.getLogger(__name__)
 
 
 def phase_prompt(
@@ -29,6 +33,7 @@ def phase_prompt(
     use_lefthook: bool | None,
     use_docker: bool | None,
     detection: DetectionResult | None,
+    dst_path: Path | None = None,
 ) -> tuple[TemplateConfig, AnswersMap]:
     """加载 TemplateConfig + 应用 CLI overrides + 评估 question + 交互 prompt."""
     template = load_template_config(project_type or "")
@@ -83,6 +88,15 @@ def phase_prompt(
         if var not in answers:  # __contains__ 处理单 key
             answers.builtins[var] = ""
 
+    # --defaults 模式: project_name 使用目标目录名而非硬编码 "my-app"
+    if defaults and dst_path is not None:
+        dir_name = dst_path.resolve().name
+        if dir_name and dir_name != ".":
+            answers.defaults["project_name"] = dir_name
+
+    # PM 可用性检查：默认 PM 不可用时自动降级（仅 defaults 层，CLI 显式指定不覆盖）
+    _check_pm_availability(answers)
+
     evaluate_question_defaults(template, answers)
 
     if not defaults:
@@ -94,3 +108,33 @@ def phase_prompt(
             raise InitInterruptedError() from None
 
     return template, answers
+
+
+def _check_pm_availability(answers: AnswersMap) -> None:
+    """检测包管理器 CLI 可用性，不可用时自动降级。
+
+    仅当 package_manager 来自 defaults 层（非 CLI/interactive 显式指定）时才检查。
+    Node.js PM 降级链: pnpm → npm, yarn → npm, bun → npm。
+    """
+    pm = answers.get("package_manager")
+    if not pm:
+        return
+    # 用户显式指定（CLI 或交互）→ 不覆盖
+    if pm in answers.cli_overrides or pm in answers.interactive:
+        return
+    if shutil.which(pm) is not None:
+        return
+    # PM 不可用，尝试降级
+    node_fallbacks = {"pnpm": "npm", "yarn": "npm", "bun": "npm"}
+    fallback = node_fallbacks.get(pm)
+    if fallback and shutil.which(fallback):
+        _logger.warning(
+            "%s 未安装，已自动降级为 %s。安装 %s 后可重新初始化。",
+            pm, fallback, pm,
+        )
+        answers.defaults["package_manager"] = fallback
+    else:
+        _logger.warning(
+            "%s 未安装且无可降级方案。请安装后重新运行，或使用 --package-manager 指定。",
+            pm,
+        )

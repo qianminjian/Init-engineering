@@ -128,8 +128,8 @@ class TestInitMultiLayerTemplates:
             ]
         )
         assert result.returncode == 0
-        # R4/R5 模板重构: 源码文件在 {{ project_name }}/ 子目录 (默认 "my-app")
-        app_dir = target / "my-app"
+        # --defaults 模式: project_name 使用目标目录名 (非硬编码 "my-app")
+        app_dir = target / target.name
         ts_files = [
             "tsconfig.json",
             "package.json",

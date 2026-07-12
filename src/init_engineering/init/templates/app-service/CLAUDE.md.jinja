@@ -6,11 +6,35 @@
 
 - 名称：{{ project_name }}
 - 类型：{{ project_type }}
+- 语言：{{ language }}{% if use_typescript %} (TypeScript){% endif %}
 
 ## 架构
 
 ## 核心命令
 
-## 管理约束
+{% if package_manager %}
+- 安装依赖: `{{ package_manager }} install`
+{% endif %}
+{% if test_runner %}
+- 运行测试: `{{ test_runner }}`
+{% endif %}
+{% if language == 'typescript' %}
+- Lint: `npx eslint .`
+- Format: `npx prettier --write .`
+{% elif language == 'python' %}
+- Lint: `ruff check .`
+- Format: `ruff format .`
+{% elif language == 'go' %}
+- Lint: `go vet ./...`
+- Format: `gofmt -w .`
+{% elif language == 'rust' %}
+- Lint: `cargo clippy`
+- Format: `cargo fmt`
+{% endif %}
 
-- 测试运行遵守 `@.claude/rules/pytest-memory-management.md`
+## 管理约束
+{% if language == 'python' %}
+- 测试运行遵守 `@.claude/rules/pytest-memory-management.md`（16G 内存约束）
+{% elif language == 'typescript' %}
+- 测试运行: `{{ test_runner }} --no-cov`
+{% endif %}

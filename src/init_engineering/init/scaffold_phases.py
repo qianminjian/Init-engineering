@@ -239,6 +239,7 @@ class InitWorker:
             use_lefthook=self.use_lefthook,
             use_docker=self.use_docker,
             detection=detection_for_prompt,
+            dst_path=self.dst_path,
         )
         check_template_version(self._template.min_ae_version)
 
