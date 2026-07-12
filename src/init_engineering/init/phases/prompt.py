@@ -71,7 +71,11 @@ def phase_prompt(
     answers.builtins["project_type"] = project_type or ""
     if detection is not None:
         for k, v in detection.as_answers().items():
-            answers.builtins.setdefault(k, v)
+            # 只将真正从项目文件检测到的字段放入 defaults（覆盖模板默认值）
+            # project_name 始终为目录名，不是检测结果，不覆盖模板默认
+            if k in ("language", "package_manager", "test_runner", "ci_platform",
+                       "use_lefthook", "use_docker"):
+                answers.defaults[k] = v
 
     # 检查 var 单个字符串,不是 list in AnswersMap (会触发 __contains__ 内部迭代 ChainMap)
     for var in ["project_description", "language", "package_manager",
