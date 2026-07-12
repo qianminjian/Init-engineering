@@ -4,7 +4,7 @@ description: >-
   Initialize project environment. Two modes: (1) new project wizard,
   (2) existing project auto-detection. 9 project types × 4 languages.
   Trigger: /ae-init
-command: uv run --directory ~/.claude/skills/ae-init ae $ARGUMENTS
+command: ~/.claude/skills/ae-init/.venv/bin/ae $ARGUMENTS
 argument-hint: "<project> [--type <type>] [options]"
 ---
 

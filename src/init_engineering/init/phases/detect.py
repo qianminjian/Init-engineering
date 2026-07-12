@@ -51,10 +51,17 @@ def phase_detect(
                             "目录非空但缺少 .ae-answers.yml 基线文件，且无法自动检测项目类型。"
                             " 使用 --type 指定类型后重试，或 --force 进行完整初始化。"
                         )
-                    _logger.warning(
-                        "目录非空但缺少 .ae-answers.yml 基线文件，增量模式可能遗漏文件。"
-                        " 建议: 先 ae init --type <type> --defaults --force 完整初始化。"
-                    )
+                    if project_type:
+                        _logger.warning(
+                            "目录非空但缺少 .ae-answers.yml 基线文件，增量模式可能遗漏文件。"
+                            " 建议: 先 ae init --type %s --defaults --force 完整初始化。",
+                            project_type,
+                        )
+                    else:
+                        _logger.warning(
+                            "目录非空但缺少 .ae-answers.yml 基线文件，增量模式可能遗漏文件。"
+                            " 建议: 先 ae init --type <type> --defaults --force 完整初始化。"
+                        )
             else:
                 _raise_nonempty(dst_path)
         else:

@@ -170,6 +170,7 @@ def phase_post_install(
     from ..scaffold_hooks import (
         DEFAULT_SUBPROCESS_TIMEOUT,
         PM_INSTALL_CMD,
+        _is_pnpm_ignored_builds,
         has_package_file,
         run_pm_install_cmd,
     )
@@ -194,6 +195,14 @@ def phase_post_install(
         result = run_pm_install_cmd(pm, dst_path, timeout=effective_timeout)
         if result.returncode != 0:
             cmd_str = " ".join(PM_INSTALL_CMD[pm])
+            if _is_pnpm_ignored_builds(result.stderr or ""):
+                if not quiet:
+                    _logger.warning(
+                        "%s: 依赖已安装，但 pnpm 阻止了构建脚本。"
+                        " 运行 'pnpm approve-builds' 批准后执行 '%s'。",
+                        cmd_str, cmd_str,
+                    )
+                return
             if strict:
                 from ..errors import HookExecutionError
                 raise HookExecutionError(
@@ -246,6 +255,8 @@ def merge_incremental(
     """
     created: list[Path] = []
     skipped: list[Path] = []
+    # Resolve dst_path to absolute — 防御 uv run --directory 等 CWD 变更场景
+    dst_path = dst_path.resolve()
     # PR#5 P2-5: 早跳过 _shared.exclude.EXCLUDED_DIRS (与 renderer 一致)
     # 之前只在循环内后置过滤 .git, 嵌套深时仍需遍历 pack/idx
     from .._shared.exclude import EXCLUDED_DIRS

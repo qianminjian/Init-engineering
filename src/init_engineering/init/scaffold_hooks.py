@@ -116,6 +116,11 @@ def has_package_file(tmpdir: Path, pm: str) -> bool:
     return (tmpdir / expected).exists()
 
 
+def _is_pnpm_ignored_builds(stderr: str) -> bool:
+    """检测 pnpm v11+ ERR_PNPM_IGNORED_BUILDS — 非致命错误，包已安装，仅构建脚本未执行。"""
+    return "ERR_PNPM_IGNORED_BUILDS" in stderr
+
+
 def _ensure_git_config(project_dir: Path) -> None:
     """确保 git user.email/user.name 在 project_dir 仓库内配置（不污染 --global）。
 
@@ -200,8 +205,16 @@ def _pm_install_step(
         result = run_pm_install_cmd(pm, tmpdir, timeout=timeout)
         if result.returncode != 0:
             cmd_str = " ".join(PM_INSTALL_CMD[pm])
-            _fail(cmd_str, result.returncode,
-                  f"exit={result.returncode}, run '{cmd_str}' manually")
+            if _is_pnpm_ignored_builds(result.stderr):
+                if not quiet:
+                    _logger.warning(
+                        "%s: 依赖已安装，但 pnpm 阻止了构建脚本。"
+                        " 运行 'pnpm approve-builds' 批准构建后执行 'pnpm install'。",
+                        cmd_str,
+                    )
+            else:
+                _fail(cmd_str, result.returncode,
+                      f"exit={result.returncode}, run '{cmd_str}' manually")
     except (FileNotFoundError, OSError) as e:
         cmd_str = " ".join(PM_INSTALL_CMD[pm])
         _fail(cmd_str, 127,

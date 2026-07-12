@@ -94,10 +94,11 @@ def phase_prompt(
         if dir_name and dir_name != ".":
             answers.defaults["project_name"] = dir_name
 
-    # PM 可用性检查：默认 PM 不可用时自动降级（仅 defaults 层，CLI 显式指定不覆盖）
-    _check_pm_availability(answers)
-
     evaluate_question_defaults(template, answers)
+
+    # PM 可用性检查：默认 PM 不可用时自动降级（仅 defaults 层，CLI 显式指定不覆盖）
+    # 必须在 evaluate_question_defaults 之后，确保 Jinja2 模板默认值已渲染
+    _check_pm_availability(answers)
 
     if not defaults:
         prompt = InteractivePrompt(template.questions, answers)

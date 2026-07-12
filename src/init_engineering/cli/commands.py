@@ -149,7 +149,7 @@ def cmd_init(
         _cmd_list_templates(TEMPLATES_ROOT)
         return
 
-    dst_path = Path(project) if project else Path.cwd()
+    dst_path = (Path(project) if project else Path.cwd()).resolve()
 
     if analyze_only:
         _cmd_analyze(dst_path, ProjectDetector, project_type=project_type or None)
