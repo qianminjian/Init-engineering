@@ -33,8 +33,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 
-import click
-
+from ._shared.prompt_backend import BasicPromptBackend, PromptBackend
 from .answers import AnswersMap
 from .config_loader import load_template_config
 from .detector import ProjectDetector
@@ -101,6 +100,7 @@ def run_update(
     conflict_strategy: ConflictStrategy | str = ConflictStrategy.SKIP,
     templates_suffix: str | None = None,
     preserve_symlinks: bool | None = None,
+    backend: PromptBackend | None = None,
 ) -> UpdateResult:
     """升级已存在的项目 — 重新渲染模板 + 合并到目标目录。
 
@@ -185,7 +185,8 @@ def run_update(
                 continue
             dst_file = dst_path / rel
             action = _classify_file(
-                src_file, dst_file, conflict_strategy, auto_detect, dst_path, dry_run, result
+                src_file, dst_file, conflict_strategy, auto_detect, dst_path, dry_run, result,
+                backend=backend,
             )
             if action:
                 actions.append((src_file, dst_file, action))
@@ -226,6 +227,7 @@ def _classify_file(
     dst_root: Path,
     dry_run: bool,
     result: UpdateResult,
+    backend: PromptBackend | None = None,
 ) -> str | None:
     """决定每个文件的处理动作 — 返回 "add"|"update"|"skip"|"conflict"|None。
 
@@ -242,8 +244,8 @@ def _classify_file(
         return "skip"
 
     # 文件存在且内容不同 — 冲突
-    src_content = src.read_text()
-    dst_content = dst.read_text()
+    src_content = src.read_text(encoding="utf-8")
+    dst_content = dst.read_text(encoding="utf-8")
     diff = "".join(
         difflib.unified_diff(
             dst_content.splitlines(keepends=True),
@@ -260,9 +262,10 @@ def _classify_file(
     if strategy == ConflictStrategy.PROMPT:
         if dry_run:
             return "conflict"
-        click.echo(f"\n冲突: {dst.relative_to(dst_root)}")
-        click.echo(diff)
-        if click.confirm("应用新版本?", default=False):
+        be = backend or BasicPromptBackend()
+        be.echo(f"\n冲突: {dst.relative_to(dst_root)}")
+        be.echo(diff)
+        if be.confirm("应用新版本?", default=False):
             return "update"
         return "skip"
     return "skip"
@@ -298,4 +301,4 @@ def _update_answers_meta(answers_file: Path, project_type: str) -> None:
     meta["ae_version"] = __version__
     meta["project_type"] = project_type
     data["_meta"] = meta
-    answers_file.write_text(yaml.dump(data, allow_unicode=True))
+    answers_file.write_text(yaml.dump(data, allow_unicode=True), encoding="utf-8")

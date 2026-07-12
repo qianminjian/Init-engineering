@@ -82,7 +82,7 @@ def _load_schema() -> dict:
     """Load and cache the schema file. Cached for the process lifetime."""
     schema_path = Path(__file__).parent / "init-manifest.schema.json"
     try:
-        return json.loads(schema_path.read_text())
+        return json.loads(schema_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as e:
         raise RuntimeError(
             f"Failed to load manifest schema from {schema_path}: {e}"
@@ -134,11 +134,22 @@ def validate_manifest(manifest: dict) -> list[str]:
                 if field not in conv or conv[field] is None:
                     errors.append(f"Missing required field: conventions.{field}")
 
-            ci_enum = (
-                conv_schema.get("properties", {})
-                .get("ci_platform", {})
-                .get("enum", [])
-            )
+            conv_props = conv_schema.get("properties", {})
+            for field, field_schema in conv_props.items():
+                val = conv.get(field)
+                if val is None:
+                    continue
+                expected_type = field_schema.get("type")
+                if expected_type == "string" and not isinstance(val, str):
+                    errors.append(
+                        f"conventions.{field} must be a string, got {type(val).__name__}"
+                    )
+                elif expected_type == "integer" and not isinstance(val, int):
+                    errors.append(
+                        f"conventions.{field} must be an integer, got {type(val).__name__}"
+                    )
+
+            ci_enum = conv_props.get("ci_platform", {}).get("enum", [])
             if (
                 ci_enum
                 and conv.get("ci_platform") is not None
@@ -172,6 +183,7 @@ def build_manifest(
     project_type: str,
     *,
     design_root: str | None = None,
+    now: datetime | None = None,
 ) -> dict[str, Any]:
     """Build a manifest dict conforming to schema 1.1.
 
@@ -179,11 +191,14 @@ def build_manifest(
         answers: Resolved AnswersMap from the init pipeline.
         project_type: Detected or CLI-overridden project type.
         design_root: Optional design doc directory path (e.g. "design").
+        now: Optional clock injection for test time freezing.
 
     Returns:
         Manifest dict ready for validation and serialization.
     """
-    from .. import __version__
+    from .. import __version__ as _ae_version
+
+    dt = now or datetime.now(UTC)
 
     language = answers.get("language", default="unknown")
     package_manager = answers.get("package_manager", default=None)
@@ -214,11 +229,11 @@ def build_manifest(
         "schema_version": "1.1",
         "project_type": project_type,
         "language": language,
-        "created_at": datetime.now(UTC).isoformat(),
-        "init_version": __version__,
+        "created_at": dt.isoformat(),
+        "init_version": _ae_version,
         "conventions": conventions,
         "structure": structure,
-        "templates_applied": [project_type],
+        "templates_applied": [project_type, language],
         "answers": answers.combined(),
     }
 

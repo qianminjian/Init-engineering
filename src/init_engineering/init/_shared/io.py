@@ -122,15 +122,6 @@ def is_binary(path: str) -> bool:
         return True
 
 
-def read_yaml(path: Path) -> dict:
-    """读取 YAML 文件，返回 dict（文件不存在或为空时返回 {}）。
-
-    已迁移到 init_engineering._shared.io — 此处为向后兼容 re-export。
-    """
-    from ..._shared.io import read_yaml as _read_yaml
-    return _read_yaml(path)
-
-
 def detect_newline(file_path: Path) -> str | None:
     """检测文件的换行符风格。"""
     try:

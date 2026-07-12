@@ -41,7 +41,7 @@
 | 字段 | 类型 | 必需 | 含义 / Init 如何填 | 版本 |
 |------|------|------|-------------------|------|
 | `schema_version` | string | ✅ | 本 manifest 遵循的 schema 版本，当前 `"1.1"`。Loop 兼容窗口：≥1.0 接受，>9.9 WARN。 | 1.0 |
-| `project_type` | enum(8) | ✅ | 见 §3 枚举。决定 Loop 的项目类型校验。 | 1.0 |
+| `project_type` | enum(9) | ✅ | 见 §3 枚举。决定 Loop 的项目类型校验。 | 1.0 |
 | `language` | enum(5) | ✅ | `python`/`typescript`/`go`/`rust`/`bash`。决定默认工具链。 | 1.0 |
 | `conventions.linter` | string | ✅ | linter 命令名（如 `ruff`/`eslint`）。Loop 配 lint Gate。 | 1.0 |
 | `conventions.type_checker` | string | ✅ | 类型检查命令（如 `mypy`/`tsc`）。Loop 配 type_check Gate。 | 1.0 |
@@ -85,7 +85,7 @@
 
 ## 3. 枚举合法值
 
-**`project_type`（8）**：`app-service` · `library` · `cli-tool` · `skill` · `hook` · `mcp-server` · `spec-doc` · `monorepo`
+**`project_type`（9）**：`app-service` · `library` · `cli-tool` · `skill` · `hook` · `mcp-server` · `spec-doc` · `monorepo` · `plugin`
 
 **`language`（5）**：`python` · `typescript` · `go` · `rust` · `bash`
 
@@ -136,7 +136,7 @@
   "properties": {
     "schema_version": { "type": "string" },
     "project_type": {
-      "enum": ["app-service","library","cli-tool","skill","hook","mcp-server","spec-doc","monorepo"]
+      "enum": ["app-service","library","cli-tool","skill","hook","mcp-server","spec-doc","monorepo","plugin"]
     },
     "language": { "enum": ["python","typescript","go","rust","bash"] },
     "conventions": {

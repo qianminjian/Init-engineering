@@ -199,7 +199,7 @@ def render_to(
     try:
         match_exclude = parse_exclude_callback(exclude_callback_spec)
     except ImportError:
-        _logger.debug(
+        _logger.warning(
             "exclude callback module not found, falling back to default: %s",
             exclude_callback_spec,
         )

@@ -142,9 +142,11 @@ def init(
     """项目环境初始化."""
     # P2-12: 函数体拆到 cli/commands.py::cmd_init —
     # cli/__init__.py 只保留 click 选项装饰器 + 调度, 控制在 300 行内.
+    from init_engineering.cli._click_backend import ClickPromptBackend
     from init_engineering.cli.commands import cmd_init
 
     cmd_init(
+        prompt_backend=ClickPromptBackend(),
         project=project,
         project_type=project_type,
         defaults=defaults,

@@ -19,9 +19,10 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
+
+from tests.conftest import MockPromptBackend
 
 
 @pytest.fixture
@@ -192,14 +193,13 @@ def test_prompt_with_changed_file_accept(
         "init_engineering.init.scaffold_update.render_to",
         _mock_render_to("GENERATED\n"),
     )
-    # mock click.confirm 返回 True
-    monkeypatch.setattr("click.confirm", lambda *a, **kw: True)
     from init_engineering.init.scaffold_update import run_update
 
     result = run_update(
         dst_path=project_with_answers,
         dry_run=False,
         conflict_strategy="prompt",
+        backend=MockPromptBackend(confirm_responses=[True]),
     )
     assert (project_with_answers / "target.txt").read_text() == "GENERATED\n"
     assert any("target.txt" in str(f) for f in result.files_updated)
@@ -214,13 +214,13 @@ def test_prompt_with_changed_file_reject(
         "init_engineering.init.scaffold_update.render_to",
         _mock_render_to("GENERATED\n"),
     )
-    monkeypatch.setattr("click.confirm", lambda *a, **kw: False)
     from init_engineering.init.scaffold_update import run_update
 
     result = run_update(
         dst_path=project_with_answers,
         dry_run=False,
         conflict_strategy="prompt",
+        backend=MockPromptBackend(confirm_responses=[False]),
     )
     assert (project_with_answers / "target.txt").read_text() == "USER\n"
     assert any("target.txt" in str(f) for f in result.files_skipped)

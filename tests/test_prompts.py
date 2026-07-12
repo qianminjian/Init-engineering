@@ -3,15 +3,16 @@
 from pathlib import Path
 from unittest.mock import patch
 
-import click
 import pytest
 
+from init_engineering.init._shared.prompt_backend import UserAbort
+from init_engineering.init.config_types import Question
 from init_engineering.init.prompts import (
     InteractivePrompt,
     prompt_for_nested_template,
     prompt_for_project_type,
 )
-from init_engineering.init.config_types import Question
+from tests.conftest import MockPromptBackend
 
 
 class TestPromptForNestedTemplate:
@@ -156,19 +157,18 @@ class TestPromptForProjectType:
     """prompt_for_project_type — click.prompt 分支 (line 239)."""
 
     def test_prompt_for_project_type(self):
-        """click.prompt 被调用."""
-        with patch("init_engineering.init.prompts.click.prompt") as mock_prompt:
-            mock_prompt.return_value = "app-service"
-            result = prompt_for_project_type(["app-service", "library"])
-            assert result == "app-service"
-            mock_prompt.assert_called_once()
+        """backend.prompt 被调用."""
+        backend = MockPromptBackend(prompt_responses=["app-service"])
+        result = prompt_for_project_type(["app-service", "library"], backend=backend)
+        assert result == "app-service"
+        assert len(backend.prompt_calls) == 1
 
     def test_prompt_for_project_type_non_tty_raises_validation_error(self):
-        """P3: 非 TTY 环境 click.Abort → ValidationError."""
+        """P3: 非 TTY 环境 UserAbort → ValidationError."""
         from init_engineering.init.errors import ValidationError
 
         def aborting_prompt(*args, **kwargs):
-            raise click.exceptions.Abort()
+            raise UserAbort()
 
         with pytest.raises(ValidationError, match="非 TTY"):
             prompt_for_project_type(
@@ -242,11 +242,9 @@ class TestAskOneMultiselect:
         })()
         answers.combined = lambda: {"features": ["a"]}
 
-        prompt = InteractivePrompt([q], answers)
-
-        with patch("click.prompt", return_value="a, b"):
-            with patch("click.echo"):
-                prompt._ask_one(q, {})
+        backend = MockPromptBackend(prompt_responses=["a, b"])
+        prompt = InteractivePrompt([q], answers, backend=backend)
+        prompt._ask_one(q, {})
 
         assert "features" in answers.interactive
 
@@ -265,12 +263,9 @@ class TestAskOneMultiselect:
         })()
         answers.combined = lambda: {}
 
-        prompt = InteractivePrompt([q], answers)
-
-        calls = ["x, y", "a"]  # First invalid, then valid
-        with patch("click.prompt", side_effect=calls):
-            with patch("click.echo"):
-                prompt._ask_one(q, {})
+        backend = MockPromptBackend(prompt_responses=["x, y", "a"])
+        prompt = InteractivePrompt([q], answers, backend=backend)
+        prompt._ask_one(q, {})
 
         assert "features" in answers.interactive
 
@@ -289,12 +284,9 @@ class TestAskOneMultiselect:
         })()
         answers.combined = lambda: {}
 
-        prompt = InteractivePrompt([q], answers)
-
-        calls = ["", "a"]  # First empty, then valid
-        with patch("click.prompt", side_effect=calls):
-            with patch("click.echo"):
-                prompt._ask_one(q, {})
+        backend = MockPromptBackend(prompt_responses=["", "a"])
+        prompt = InteractivePrompt([q], answers, backend=backend)
+        prompt._ask_one(q, {})
 
         assert "features" in answers.interactive
 
@@ -311,13 +303,9 @@ class TestAskOneRetryLoop:
         })()
         answers.combined = lambda: {}
 
-        prompt = InteractivePrompt([q], answers)
-
-        # First call returns "not-a-number" (cast fails), second returns "42"
-        calls = ["not-a-number", "42"]
-        with patch("click.prompt", side_effect=calls):
-            with patch("click.echo"):
-                prompt._ask_one(q, {})
+        backend = MockPromptBackend(prompt_responses=["not-a-number", "42"])
+        prompt = InteractivePrompt([q], answers, backend=backend)
+        prompt._ask_one(q, {})
 
         assert answers.interactive["count"] == 42
 
@@ -335,13 +323,9 @@ class TestAskOneRetryLoop:
         })()
         answers.combined = lambda: {}
 
-        prompt = InteractivePrompt([q], answers)
-
-        # "ab" is too short (2 chars, validator fails), "abcd" passes
-        calls = ["ab", "abcd"]
-        with patch("click.prompt", side_effect=calls):
-            with patch("click.echo"):
-                prompt._ask_one(q, {})
+        backend = MockPromptBackend(prompt_responses=["ab", "abcd"])
+        prompt = InteractivePrompt([q], answers, backend=backend)
+        prompt._ask_one(q, {})
 
         assert answers.interactive["name"] == "abcd"
 
@@ -354,15 +338,12 @@ class TestAskOneRetryLoop:
         })()
         answers.combined = lambda: {}
 
-        prompt = InteractivePrompt([q], answers)
-
-        calls = ["bad"] * 10
+        backend = MockPromptBackend(prompt_responses=["bad"] * 10)
+        prompt = InteractivePrompt([q], answers, backend=backend)
         from init_engineering.init.errors import ValidationError
 
-        with patch("click.prompt", side_effect=calls):
-            with patch("click.echo"):
-                with pytest.raises(ValidationError, match="类型转换失败"):
-                    prompt._ask_one(q, {})
+        with pytest.raises(ValidationError, match="类型转换失败"):
+            prompt._ask_one(q, {})
 
     def test_max_retries_no_default_raises(self):
         """max_retries 且无默认值 → 抛出 ValidationError."""
@@ -373,15 +354,12 @@ class TestAskOneRetryLoop:
         })()
         answers.combined = lambda: {}
 
-        prompt = InteractivePrompt([q], answers)
-
-        calls = ["bad"] * 10
+        backend = MockPromptBackend(prompt_responses=["bad"] * 10)
+        prompt = InteractivePrompt([q], answers, backend=backend)
         from init_engineering.init.errors import ValidationError
 
-        with patch("click.prompt", side_effect=calls):
-            with patch("click.echo"):
-                with pytest.raises(ValidationError, match="类型转换失败"):
-                    prompt._ask_one(q, {})
+        with pytest.raises(ValidationError, match="类型转换失败"):
+            prompt._ask_one(q, {})
 
 
 class TestPromptForNestedTemplateInteractive:
@@ -393,18 +371,16 @@ class TestPromptForNestedTemplateInteractive:
             "ts": {"path": "./typescript", "title": "TypeScript"},
             "js": {"path": "./javascript", "title": "JavaScript"},
         }
-        with patch("init_engineering.init.prompts.click.prompt") as mock_prompt:
-            mock_prompt.return_value = "ts"
-            result = prompt_for_nested_template(nested, no_input=False)
-            assert result == "./typescript"
+        backend = MockPromptBackend(prompt_responses=["ts"])
+        result = prompt_for_nested_template(nested, no_input=False, backend=backend)
+        assert result == "./typescript"
 
     def test_interactive_returns_none_for_missing_choice(self):
-        """无效选择返回空字符串."""
+        """无效选择返回 None."""
         nested = {"ts": {"path": "./ts", "title": "TS"}}
-        with patch("init_engineering.init.prompts.click.prompt") as mock_prompt:
-            mock_prompt.return_value = "nonexistent"
-            result = prompt_for_nested_template(nested, no_input=False)
-            assert result == ""
+        backend = MockPromptBackend(prompt_responses=["nonexistent"])
+        result = prompt_for_nested_template(nested, no_input=False, backend=backend)
+        assert result is None
 
     def test_prompt_for_nested_template_non_tty_raises_validation_error(self):
         """P3: 非 TTY 环境 prompt_for_nested_template → ValidationError."""
@@ -413,7 +389,7 @@ class TestPromptForNestedTemplateInteractive:
         nested = {"ts": {"path": "./ts", "title": "TS"}}
 
         def aborting_prompt(*args, **kwargs):
-            raise click.exceptions.Abort()
+            raise UserAbort()
 
         with pytest.raises(ValidationError, match="非 TTY"):
             prompt_for_nested_template(
@@ -422,10 +398,10 @@ class TestPromptForNestedTemplateInteractive:
 
 
 class TestNonTtyAbortHandling:
-    """P3: 非 TTY 环境下 click.Abort → ValidationError（清晰错误信息）."""
+    """P3: 非 TTY 环境下 UserAbort → ValidationError（清晰错误信息）."""
 
     def test_ask_one_catches_abort_and_raises_validation_error(self):
-        """InteractivePrompt._ask_one 捕获 Abort → ValidationError."""
+        """InteractivePrompt._ask_one 捕获 UserAbort → ValidationError."""
         from init_engineering.init.errors import ValidationError
 
         q = Question(var_name="name", help="名称", type="str", default="x")
@@ -435,12 +411,13 @@ class TestNonTtyAbortHandling:
         })()
         answers.combined = lambda: {}
 
-        prompt = InteractivePrompt([q], answers)
+        class AbortingBackend(MockPromptBackend):
+            def prompt(self, *args, **kwargs):
+                raise UserAbort()
 
-        def aborting_prompt(*args, **kwargs):
-            raise click.exceptions.Abort()
+        backend = AbortingBackend()
+        prompt = InteractivePrompt([q], answers, backend=backend)
 
-        with patch("init_engineering.init.prompts._PROMPT_DISPATCH", {"str": aborting_prompt}):
-            with pytest.raises(ValidationError, match="非 TTY"):
-                prompt._ask_one(q, {})
+        with pytest.raises(ValidationError, match="非 TTY"):
+            prompt._ask_one(q, {})
 

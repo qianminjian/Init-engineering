@@ -8,6 +8,7 @@ from __future__ import annotations
 import logging
 import shutil
 from pathlib import Path
+from typing import Any
 
 from ..answers import AnswersMap
 from ..config_loader import load_template_config
@@ -34,6 +35,7 @@ def phase_prompt(
     use_docker: bool | None,
     detection: DetectionResult | None,
     dst_path: Path | None = None,
+    prompt_backend: Any = None,
 ) -> tuple[TemplateConfig, AnswersMap]:
     """加载 TemplateConfig + 应用 CLI overrides + 评估 question + 交互 prompt."""
     template = load_template_config(project_type or "")
@@ -47,6 +49,7 @@ def phase_prompt(
             template.nested_templates,
             no_input=defaults,
             preferred=preferred,
+            backend=prompt_backend,
         )
         if chosen:
             template.template_dir = template.template_dir / chosen
@@ -101,7 +104,7 @@ def phase_prompt(
     _check_pm_availability(answers)
 
     if not defaults:
-        prompt = InteractivePrompt(template.questions, answers)
+        prompt = InteractivePrompt(template.questions, answers, backend=prompt_backend)
         try:
             answers = prompt.run()
         except KeyboardInterrupt:

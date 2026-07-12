@@ -11,6 +11,7 @@ from pathlib import Path
 
 import click
 
+from init_engineering.cli._helpers import sanitize_error as _sanitize_error
 from init_engineering.init.scaffold_update import ConflictStrategy
 
 _logger = logging.getLogger(__name__)
@@ -55,12 +56,12 @@ def update(
             conflict_strategy=conflict_strategy,
         )
     except InitError as e:
-        click.echo(f"✗ 升级失败: {e}", err=True)
+        click.echo(f"✗ 升级失败: {_sanitize_error(str(e))}", err=True)
         if e.recovery_hint:
-            click.echo(f"  恢复建议: {e.recovery_hint}", err=True)
+            click.echo(f"  恢复建议: {_sanitize_error(e.recovery_hint)}", err=True)
         raise SystemExit(e.exit_code) from e
     except (FileNotFoundError, ValueError) as e:
-        click.echo(f"✗ 升级失败: {e}", err=True)
+        click.echo(f"✗ 升级失败: {_sanitize_error(str(e))}", err=True)
         raise SystemExit(1) from e
     if not quiet:
         click.echo(result.summary())
@@ -98,9 +99,9 @@ def status():
         click.echo("  (未初始化 — 运行 ae init 创建项目)")
     except InitError as e:
         _logger.warning("status command failed: %s", e, exc_info=True)
-        click.echo(f"  读取项目环境失败: {e}")
+        click.echo(f"  读取项目环境失败: {_sanitize_error(str(e))}")
         if e.recovery_hint:
-            click.echo(f"  恢复建议: {e.recovery_hint}")
+            click.echo(f"  恢复建议: {_sanitize_error(e.recovery_hint)}")
     except Exception as e:
         _logger.warning("status command failed unexpectedly", exc_info=True)
-        click.echo(f"  读取项目环境失败: {e}")
+        click.echo(f"  读取项目环境失败: {_sanitize_error(str(e))}")

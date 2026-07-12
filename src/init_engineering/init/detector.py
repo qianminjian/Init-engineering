@@ -34,8 +34,8 @@ from .detector_helpers import (
 class ProjectDetector:
     """扫描目标目录，推断项目类型与配置。"""
 
-    def __init__(self, target_dir: Path):
-        self.target_dir = target_dir
+    def __init__(self, dst_path: Path):
+        self.dst_path = dst_path
 
     def detect(self) -> str | None:
         """返回唯一匹配的项目类型，0 或多于 1 个匹配返回 None。"""
@@ -48,10 +48,10 @@ class ProjectDetector:
         """返回所有匹配的项目类型列表。"""
         matches = []
         for ptype, signatures in FRAMEWORK_SIGNATURES:
-            if any(_signature_matches(self.target_dir, sig) for sig in signatures):
+            if any(_signature_matches(self.dst_path, sig) for sig in signatures):
                 # mcp-server 与 app-service 共享 package.json 签名，需额外消歧义
                 if ptype == "mcp-server" and not check_pkg_dep(
-                    self.target_dir,
+                    self.dst_path,
                     lambda deps: "@modelcontextprotocol/sdk" in str(deps),
                 ):
                     continue
@@ -64,15 +64,15 @@ class ProjectDetector:
             candidates=self.list_candidates(),
             project_type=self.detect(),
         )
-        result.project_name = self.target_dir.resolve().name
+        result.project_name = self.dst_path.resolve().name
 
-        pkg_json = self.target_dir / "package.json"
-        pyproject = self.target_dir / "pyproject.toml"
-        go_mod = self.target_dir / "go.mod"
-        cargo_toml = self.target_dir / "Cargo.toml"
+        pkg_json = self.dst_path / "package.json"
+        pyproject = self.dst_path / "pyproject.toml"
+        go_mod = self.dst_path / "go.mod"
+        cargo_toml = self.dst_path / "Cargo.toml"
 
         if pkg_json.exists():
-            analyze_node(pkg_json, self.target_dir, result)
+            analyze_node(pkg_json, self.dst_path, result)
         if pyproject.exists():
             analyze_python(pyproject, result)
         if go_mod.exists():
@@ -80,10 +80,10 @@ class ProjectDetector:
         if cargo_toml.exists():
             result.language = "rust"
 
-        result.package_manager = _detect_package_manager(self.target_dir)
-        result.test_runner = _detect_test_runner(self.target_dir, result.language)
-        result.ci_platform = _detect_ci_platform(self.target_dir)
-        result.has_lefthook = (self.target_dir / "lefthook.yml").exists()
-        result.has_docker = (self.target_dir / "Dockerfile").exists()
+        result.package_manager = _detect_package_manager(self.dst_path)
+        result.test_runner = _detect_test_runner(self.dst_path, result.language)
+        result.ci_platform = _detect_ci_platform(self.dst_path)
+        result.has_lefthook = (self.dst_path / "lefthook.yml").exists()
+        result.has_docker = (self.dst_path / "Dockerfile").exists()
 
         return result

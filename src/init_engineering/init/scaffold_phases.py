@@ -20,7 +20,7 @@ import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 if TYPE_CHECKING:
     from .detector_constants import DetectionResult
@@ -47,6 +47,8 @@ class InitResult:
     files: list[Path] = field(default_factory=list)
     answers: dict = field(default_factory=dict)
     project_type: str = ""
+    mode: str = "fresh"  # "fresh" | "incremental"
+    skipped_files: int = 0  # 增量模式跳过的文件数
 
 
 @dataclass
@@ -83,6 +85,8 @@ class InitWorker:
     template_dir_override: Path | None = None
     # PE-P1-4: 全局钩子超时(秒),None 走 TaskRunner 默认 (300s)
     hook_timeout: int | None = None
+    # 用户交互后端 — CLI 层注入 ClickPromptBackend, 测试层注入 mock
+    prompt_backend: Any = None
 
     _current_phase: str = field(init=False, default="")
     _template: TemplateConfig = field(init=False, default=None)
@@ -93,6 +97,7 @@ class InitWorker:
     _mode: Literal["fresh", "incremental"] = field(init=False, default="fresh")
     _lock: InitLock | None = field(init=False, default=None)
     _detection: DetectionResult | None = field(init=False, default=None)
+    _skipped_files: int = field(init=False, default=0)
 
     def __enter__(self):
         return self
@@ -204,6 +209,8 @@ class InitWorker:
             files=generated,
             answers=self._answers.to_answers_file(),
             project_type=self.project_type or "",
+            mode=self._mode,
+            skipped_files=self._skipped_files,
         )
 
     # ─── thin wrapper（monkey-patch 友好，向后兼容测试）──────────
@@ -240,6 +247,7 @@ class InitWorker:
             use_docker=self.use_docker,
             detection=detection_for_prompt,
             dst_path=self.dst_path,
+            prompt_backend=self.prompt_backend,
         )
         check_template_version(self._template.min_ae_version)
 
@@ -272,7 +280,7 @@ class InitWorker:
         )
 
     def _phase_finalize(self, tmpdir: Path, generated: list[Path]) -> bool:
-        did_create = phase_finalize(
+        did_create, skipped = phase_finalize(
             answers=self._answers,
             project_type=self.project_type,
             tmpdir=tmpdir,
@@ -282,6 +290,7 @@ class InitWorker:
             quiet=self.quiet,
             generated=generated,
         )
+        self._skipped_files = skipped
         # PE-P0-4: 在 dst_path (而非 tmpdir) 重新跑依赖安装,修复 .venv shebang 断裂
         phase_post_install(
             answers=self._answers,

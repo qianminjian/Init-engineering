@@ -46,7 +46,7 @@ def detect_package_manager(target_dir: Path) -> str | None:
     pkg_json = target_dir / "package.json"
     if pkg_json.exists():
         try:
-            data = json.loads(pkg_json.read_text())
+            data = json.loads(pkg_json.read_text(encoding="utf-8"))
             pm = data.get("packageManager", "")
             if isinstance(pm, str) and pm:
                 return pm.split("@")[0]
@@ -66,7 +66,7 @@ def detect_test_runner(target_dir: Path, language: str | None = None) -> str | N
         pkg = target_dir / "package.json"
         if pkg.exists():
             try:
-                data = json.loads(pkg.read_text())
+                data = json.loads(pkg.read_text(encoding="utf-8"))
                 deps = {**data.get("dependencies", {}), **data.get("devDependencies", {})}
                 if "vitest" in deps:
                     return "vitest"

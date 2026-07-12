@@ -35,6 +35,7 @@ class TaskRunner:
         current_phase: str = "",
         default_timeout: int | None = None,
         strict: bool = False,
+        base_env: dict | None = None,
     ):
         self.project_dir = project_dir
         self._current_phase = current_phase
@@ -42,6 +43,7 @@ class TaskRunner:
             default_timeout if default_timeout is not None else self.DEFAULT_TIMEOUT
         )
         self._strict = strict
+        self._base_env = base_env
 
     def run(
         self,
@@ -138,7 +140,7 @@ class TaskRunner:
                 use_shell = False
 
             # 5. 执行
-            env = {**os.environ, **extra_env}
+            env = {**(self._base_env or os.environ), **extra_env}
             # PE-P1-4: task 级 timeout 覆盖 default_timeout — 模板作者可对
             # cargo build / large npm install 等慢任务显式设大值
             effective_timeout = (

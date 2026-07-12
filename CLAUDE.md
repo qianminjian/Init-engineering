@@ -71,7 +71,6 @@ Init-Engineering
 │   ├── hooks.py                  # TaskRunner（pre/post钩子执行）
 │   ├── prompts.py                # InteractivePrompt（交互式问答）
 │   ├── renderer.py               # Jinja2模板渲染
-│   ├── renderer_symlinks.py      # 符号链接解析
 │   ├── scaffold_hooks.py         # 内置钩子（git/pm/lefthook）
 │   ├── scaffold_lock.py          # fcntl并发锁 + 心跳
 │   ├── scaffold_phases.py        # InitWorker 5阶段编排器
@@ -121,6 +120,7 @@ Init-Engineering
 | `design/v1.0-Design-Init.md` | v1.0 init 子系统设计 + 实现偏差审计 | 开发 `ae init` 时 |
 | `design/v1.0-Design-Templates.md` | 43 个模板文件 + 8 个 ae-template.yml | 实现 `init/templates/` 时 |
 | `design/his_bak/v1.0-Design-Shared.md` | 共享架构、CLI 设计、共享契约 | Init/Loop 共享契约参考 |
+| `design/audit-backlog.md` | 已知但暂不修复的审计发现（避免重复报） | **任何审计前必须先读** |
 
 ## 核心命令
 

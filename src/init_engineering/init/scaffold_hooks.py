@@ -140,7 +140,7 @@ def _ensure_git_config(project_dir: Path) -> None:
                 timeout=10,
             )
         except subprocess.TimeoutExpired:
-            # best-effort: 跳过, 用 git 全局默认即可
+            _logger.debug("git config %s timed out, using global defaults", key)
             continue
         if result.returncode != 0 or not result.stdout.strip():
             try:
@@ -151,6 +151,7 @@ def _ensure_git_config(project_dir: Path) -> None:
                     timeout=10,
                 )
             except subprocess.TimeoutExpired:
+                _logger.debug("git config %s (set default) timed out, using global defaults", key)
                 continue
 
 

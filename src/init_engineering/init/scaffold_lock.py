@@ -176,14 +176,14 @@ class InitLock:
             _logger.debug("flock unlock failed (ignored): %s", exc, exc_info=True)
         try:
             os.close(self._fd)
-        except Exception as exc:
+        except OSError as exc:
             _logger.debug("fd close failed (ignored): %s", exc, exc_info=True)
         finally:
             self._fd = None
         try:
             if self.lock_file.exists():
                 self.lock_file.unlink()
-        except Exception as exc:
+        except OSError as exc:
             _logger.debug("lock file unlink failed (ignored): %s", exc, exc_info=True)
 
     @classmethod

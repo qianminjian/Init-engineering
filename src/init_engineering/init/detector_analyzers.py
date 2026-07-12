@@ -24,11 +24,11 @@ from .detector_constants import (  # noqa: E402
 )
 
 
-def analyze_node(pkg_path: Path, target_dir: Path, result: DetectionResult) -> DetectionResult:
+def analyze_node(pkg_path: Path, dst_path: Path, result: DetectionResult) -> DetectionResult:
     """分析 Node.js 项目 — package.json + tsconfig。Modifies and returns result."""
     result.language = "typescript"
     try:
-        data = json.loads(pkg_path.read_text())
+        data = json.loads(pkg_path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         _logger.debug("无法解析 package.json: %s", pkg_path, exc_info=True)
         return result
@@ -42,7 +42,7 @@ def analyze_node(pkg_path: Path, target_dir: Path, result: DetectionResult) -> D
         ) and framework not in result.frameworks:
             result.frameworks.append(framework)
 
-    tsconfig = target_dir / "tsconfig.json"
+    tsconfig = dst_path / "tsconfig.json"
     deps_str = str(all_deps)
     if not tsconfig.exists() and "typescript" not in deps_str:
         result.language = "javascript"
@@ -57,7 +57,7 @@ def analyze_python(py_path: Path, result: DetectionResult) -> DetectionResult:
     """分析 Python 项目 — pyproject.toml (PEP 621)。Modifies and returns result."""
     result.language = "python"
     try:
-        data = tomllib.loads(py_path.read_text())
+        data = tomllib.loads(py_path.read_text(encoding="utf-8"))
     except (OSError, ValueError, tomllib.TOMLDecodeError):
         _logger.debug("无法解析 pyproject.toml: %s", py_path, exc_info=True)
         return result
@@ -91,7 +91,7 @@ def analyze_go(go_path: Path, result: DetectionResult) -> DetectionResult:
     """分析 Go 项目 — go.mod。Modifies and returns result."""
     result.language = "go"
     try:
-        content = go_path.read_text()
+        content = go_path.read_text(encoding="utf-8")
     except OSError:
         _logger.debug("无法读取 go.mod: %s", go_path, exc_info=True)
         return result

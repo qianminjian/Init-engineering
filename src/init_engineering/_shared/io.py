@@ -13,7 +13,7 @@ _logger = logging.getLogger(__name__)
 def read_yaml(path: Path) -> dict:
     """读取 YAML 文件，返回 dict（文件不存在或为空时返回 {}）。"""
     try:
-        data = yaml.safe_load(path.read_text())
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
         return data if isinstance(data, dict) else {}
     except FileNotFoundError:
         _logger.debug("yaml file not found, returning {}: %s", path)

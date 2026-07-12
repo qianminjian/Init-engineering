@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 import time as _time
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import click
 
@@ -27,8 +27,9 @@ from init_engineering.cli._helpers import (
 _logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
-    from init_engineering.init import InitResult
     from init_engineering.init.detector import ProjectDetector
+
+from init_engineering.init import InitResult  # noqa: E402 — runtime use in _print_completion_report
 
 # ============================================================
 # init 命令的轻量子分支 (纯函数, init() 内部调用)
@@ -130,6 +131,7 @@ def cmd_init(
     template_dir_override: str | None,
     hook_timeout: int | None,
     force_unsafe_template: bool,
+    prompt_backend: Any = None,
 ) -> InitResult | None:
     """P2-12: init 命令实现 — 从 cli/__init__.py 拆分以满足 ≤ 300 行约束.
 
@@ -210,6 +212,7 @@ def cmd_init(
         template_dir_override=template_dir_override,
         templates_suffix=templates_suffix,
         preserve_symlinks=preserve_symlinks, hook_timeout=hook_timeout,
+        prompt_backend=prompt_backend,
     )
 
     # B1: 必须用 with 块 — __exit__ → _cleanup() 释放 InitLock,
@@ -222,6 +225,8 @@ def cmd_init(
         _telemetry_error: str | None = None
         try:
             result = worker.execute()
+            if not quiet and not pretend:
+                _print_completion_report(result)
             return result
         except InitError as e:
             _telemetry_error = type(e).__name__
@@ -272,6 +277,7 @@ def _build_init_worker_kwargs(
     templates_suffix: str | None,
     preserve_symlinks: bool | None,
     hook_timeout: int | None,
+    prompt_backend: Any = None,
 ) -> dict:
     """构建 InitWorker 构造参数 — 从 cmd_init 提取以减小函数体."""
     return {
@@ -298,7 +304,52 @@ def _build_init_worker_kwargs(
         "templates_suffix": templates_suffix,
         "preserve_symlinks": preserve_symlinks,
         "hook_timeout": hook_timeout,
+        "prompt_backend": prompt_backend,
     }
+
+
+def _print_completion_report(result: InitResult) -> None:
+    """Print structured init completion report with stage boundary declaration.
+
+    Design: ae-init-process-analysis.md §4.3 — every successful init must
+    output a completion report that declares the stage boundary, so the agent
+    (and user) know init is done and design phase comes next.
+    """
+    file_count = len(result.files)
+    mode_label = "增量补充" if result.mode == "incremental" else "全新初始化"
+
+    lines = [
+        "",
+        "╔══════════════════════════════════════════╗",
+        "║         Init 完成报告                    ║",
+        "╚══════════════════════════════════════════╝",
+        "",
+        f"  项目类型:   {result.project_type}",
+        f"  初始化模式: {mode_label}",
+        f"  生成文件:   {file_count} 个",
+    ]
+
+    if result.mode == "incremental" and result.skipped_files > 0:
+        lines.append(f"  跳过文件:   {result.skipped_files} 个（已有）")
+
+    lines += [
+        f"  目标目录:   {result.dst_path}",
+        "",
+        "──────────────── 阶段边界 ────────────────",
+        "  ✅ init 阶段完成",
+        "  ⏭  下一步: 设计阶段",
+        "      - 确认技术选型（框架/库/工具）",
+        "      - 填充 BEACON.md 业务目标与范围",
+        "      - 产出架构方案",
+        "",
+        "  ❌ 不要直接安装业务依赖或编写业务代码",
+        "  ❌ 不要填充 BEACON.md 业务内容",
+        "  ⏸  等待用户确认后进入设计阶段",
+        "──────────────────────────────────────────",
+    ]
+
+    for line in lines:
+        click.echo(line)
 
 
 def _emit_telemetry(

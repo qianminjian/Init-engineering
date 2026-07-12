@@ -32,11 +32,11 @@ def phase_finalize(
     mode: str,
     quiet: bool,
     generated: list[Path] | None = None,
-) -> bool:
+) -> tuple[bool, int]:
     """写入 .ae-answers.yml + 增量/全量 copytree。
 
     Returns:
-        did_create_dst: 本次是否创建了目标目录（用于错误清理）。
+        (did_create_dst, skipped_count): 本次是否创建了目标目录，增量模式跳过的文件数。
     """
     answers.write_to(tmpdir / ".ae-answers.yml")
 
@@ -58,11 +58,12 @@ def phase_finalize(
     if mode == "incremental":
         # PR#3 P1-1: merge_incremental 已在同模块,无需延迟 import
         created, skipped = merge_incremental(tmpdir, dst_path, created_files)
+        skipped_count = len(skipped)
         if not quiet:
             # PE-AUDIT-P0-2: 进度消息走 logger
             _logger.info(
                 "\n✓ 增量模式：已补充 %d 个文件，跳过 %d 个已有文件",
-                len(created), len(skipped),
+                len(created), skipped_count,
             )
             if len(created) == 0 and not (dst_path / ".ae-answers.yml").exists():
                 _logger.warning(
@@ -70,7 +71,7 @@ def phase_finalize(
                     " 或 .ae-answers.yml 基线缺失导致增量模式无法确定差异。"
                     " 使用 --force 进行完整初始化，或 --type 指定项目类型。"
                 )
-        return False
+        return False, skipped_count
     else:
         did_create_dst = not dst_path.exists()
         if did_create_dst:
@@ -88,7 +89,7 @@ def phase_finalize(
             _logger.info("✓ 项目已生成: %s", dst_path)
             _logger.info("  文件数: %d", file_count)
             _logger.info("  下一步: cd %s && git log", dst_path.name)
-        return did_create_dst
+        return did_create_dst, 0
 
 
 def _atomic_copytree(src: Path, dst: Path) -> None:

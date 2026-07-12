@@ -24,7 +24,7 @@ class TestResolvePath:
 
     def test_resolve_existing_path(self, tmp_path: Path):
         """存在的路径直接 resolve."""
-        from init_engineering.init._shared.path_utils import resolve_user_path
+        from init_engineering._shared.path_utils import resolve_user_path
 
         existing = tmp_path / "real"
         existing.mkdir()
@@ -33,14 +33,14 @@ class TestResolvePath:
 
     def test_resolve_dot_returns_cwd(self, tmp_path: Path):
         """path='.' 返回 cwd."""
-        from init_engineering.init._shared.path_utils import resolve_user_path
+        from init_engineering._shared.path_utils import resolve_user_path
 
         result = resolve_user_path(".", tmp_path)
         assert result == tmp_path
 
     def test_resolve_none_returns_cwd(self, tmp_path: Path):
         """path=None 返回 cwd."""
-        from init_engineering.init._shared.path_utils import resolve_user_path
+        from init_engineering._shared.path_utils import resolve_user_path
 
         result = resolve_user_path(None, tmp_path)
         assert result == tmp_path
@@ -48,7 +48,7 @@ class TestResolvePath:
     def test_resolve_expands_tilde(self, tmp_path: Path, monkeypatch):
         """~ 展开为家目录路径."""
         import os
-        from init_engineering.init._shared.path_utils import resolve_user_path
+        from init_engineering._shared.path_utils import resolve_user_path
 
         # Patch os.path.expanduser to return tmp_path as home
         monkeypatch.setattr(os.path, "expanduser", lambda _: str(tmp_path))

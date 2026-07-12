@@ -120,3 +120,46 @@ def run_async(coro):
     """同步上下文跑 async 协程. Phase 1 不引入 pytest-asyncio 依赖."""
     return asyncio.run(coro)
 
+
+# ── PromptBackend mock ──────────────────────────────────────
+
+
+class MockPromptBackend:
+    """可编程的 PromptBackend — 测试注入点。
+
+    用法:
+        backend = MockPromptBackend(prompt_responses=["answer1", "answer2"])
+        worker = InitWorker(..., prompt_backend=backend)
+    """
+
+    def __init__(self, prompt_responses=None, confirm_responses=None):
+        self.prompt_responses = list(prompt_responses or [])
+        self.confirm_responses = list(confirm_responses or [])
+        self.echo_calls: list[tuple[str, bool]] = []
+        self.prompt_calls: list[dict] = []
+        self.confirm_calls: list[dict] = []
+
+    def echo(self, message: str, *, err: bool = False) -> None:
+        self.echo_calls.append((message, err))
+
+    def prompt(self, text: str, *, default=None, type=None, show_default=True, value_proc=None) -> str:
+        self.prompt_calls.append({
+            "text": text, "default": default, "type": type,
+            "show_default": show_default, "value_proc": value_proc,
+        })
+        if self.prompt_responses:
+            return self.prompt_responses.pop(0)
+        return default or ""
+
+    def confirm(self, text: str, *, default: bool = False) -> bool:
+        self.confirm_calls.append({"text": text, "default": default})
+        if self.confirm_responses:
+            return self.confirm_responses.pop(0)
+        return default
+
+
+@pytest.fixture
+def mock_backend():
+    """可编程 PromptBackend fixture — 测试中检查调用 + 预设响应。"""
+    return MockPromptBackend()
+

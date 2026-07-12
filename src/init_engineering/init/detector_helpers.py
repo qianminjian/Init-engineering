@@ -16,38 +16,38 @@ from pathlib import Path
 
 _logger = logging.getLogger(__name__)
 
-def check_pkg_dep(target_dir: Path, check_fn: Callable[[dict], bool]) -> bool:
+def check_pkg_dep(dst_path: Path, check_fn: Callable[[dict], bool]) -> bool:
     """Check package.json dependencies.
 
     Args:
-        target_dir: project root
+        dst_path: project root
         check_fn: callback receiving dependencies dict, returning bool
     """
-    pkg = target_dir / "package.json"
+    pkg = dst_path / "package.json"
     if not pkg.exists():
         return False
     try:
-        data = json.loads(pkg.read_text())
+        data = json.loads(pkg.read_text(encoding="utf-8"))
         return check_fn(data.get("dependencies", {}))
     except (json.JSONDecodeError, OSError):
         _logger.debug("无法解析 package.json: %s", pkg, exc_info=True)
         return False
 
 
-def signature_matches(target_dir: Path, sig: str) -> bool:
+def signature_matches(dst_path: Path, sig: str) -> bool:
     """Check if a signature matches — supports glob wildcards."""
     if sig.endswith("/"):
-        return (target_dir / sig).exists()
+        return (dst_path / sig).exists()
     if "*" in sig or "?" in sig or "[" in sig:
         import fnmatch
 
         rel_dir = sig.rsplit("/", 1)[0] if "/" in sig else ""
         pattern = sig.rsplit("/", 1)[-1]
-        base = target_dir / rel_dir if rel_dir else target_dir
+        base = dst_path / rel_dir if rel_dir else dst_path
         if not base.exists():
             return False
         for entry in base.iterdir():
             if entry.is_file() and fnmatch.fnmatch(entry.name, pattern):
                 return True
         return False
-    return (target_dir / sig).exists()
+    return (dst_path / sig).exists()

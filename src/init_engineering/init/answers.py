@@ -21,6 +21,8 @@ from typing import Any
 
 import yaml
 
+from .. import __version__ as _ae_version
+
 from ._answers_io import (
     _build_answers_data,
     _load_answers_file,
@@ -41,6 +43,16 @@ BUILTIN_VARS: MappingProxyType = MappingProxyType({
 def _current_year_builtin() -> str:
     """动态计算 current_year — 避免 import 时 frozen 跨年任务."""
     return str(datetime.now().year)
+
+
+def _current_month_builtin() -> str:
+    """动态计算 current_month — 零填充两位，用于模板日期."""
+    return f"{datetime.now().month:02d}"
+
+
+def _current_day_builtin() -> str:
+    """动态计算 current_day — 零填充两位，用于模板日期."""
+    return f"{datetime.now().day:02d}"
 
 
 def _python_executable_builtin() -> str:
@@ -113,12 +125,14 @@ class AnswersMap:
                 return default
             return None
 
-    def combined(self) -> dict[str, Any]:
+    def combined(self, now: datetime | None = None) -> dict[str, Any]:
         """全量合并。用于 Jinja2 渲染上下文。外挂 _external_data 键（懒加载）。
 
         B3: current_year 在此方法调用时动态计算 (跨年 daemon / agent 任务场景)。
         P2-2: _ae_python 同模式 — 避免 import 时 frozen, 跨进程 Python 升级后失效。
+        now: 可注入时钟 — 测试 freeze time 时传入, 默认当前时间。
         """
+        dt = now or datetime.now()
         result = dict(
             ChainMap(
                 self.cli_overrides,
@@ -128,13 +142,14 @@ class AnswersMap:
                 self.builtins,
             )
         )
-        # B3: 动态注入 current_year — 每次调用重新计算, 避免 frozen 在 import 时的年份
-        result["current_year"] = _current_year_builtin()
+        # B3: 动态注入日期变量 — 每次调用重新计算, 避免 frozen 在 import 时
+        result["current_year"] = str(dt.year)
+        result["current_month"] = f"{dt.month:02d}"
+        result["current_day"] = f"{dt.day:02d}"
         # P2-2: 动态注入 _ae_python — 同 current_year 模式, 防止跨升级失效
         result["_ae_python"] = _python_executable_builtin()
-        # P2-10: 动态注入 _ae_version — 与 __version__ 同步, 避免硬编码
-        from .. import __version__
-        result["_ae_version"] = __version__
+        # P2-10: _ae_version — 与 __version__ 同步, 避免硬编码 (IN-09: 已提升到模块级)
+        result["_ae_version"] = _ae_version
         if self.external:
             result["_external_data"] = _LazyExternalDict(
                 self.external,
@@ -255,8 +270,8 @@ def _load_external_file(
     if not file_path.exists():
         return None
     if file_path.suffix == ".json":
-        return json.loads(file_path.read_text())
-    return yaml.safe_load(file_path.read_text())
+        return json.loads(file_path.read_text(encoding="utf-8"))
+    return yaml.safe_load(file_path.read_text(encoding="utf-8"))
 
 
 class _LazyExternalDict:
@@ -271,8 +286,14 @@ class _LazyExternalDict:
         external_map: dict[str, str],
         sandbox_roots: list[Path] | None = None,
     ) -> None:
+        import tempfile
+
         self._external_map = external_map
-        self._sandbox_roots = sandbox_roots or []
+        # PR#4 P1-5 fallback: 与 _load_external() 一致，sandbox_roots 为空时
+        # 用 [cwd, home, tempdir] 作为最小安全边界，防止路径穿越。
+        self._sandbox_roots = sandbox_roots or [
+            Path.cwd(), Path.home(), Path(tempfile.gettempdir())
+        ]
         self._cache: dict[str, Any] = {}
 
     def __getitem__(self, key: str) -> Any:

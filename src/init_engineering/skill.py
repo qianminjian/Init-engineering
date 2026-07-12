@@ -20,7 +20,9 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .init._shared.path_utils import resolve_user_path
+import click
+
+from ._shared.path_utils import resolve_user_path
 
 _logger = logging.getLogger(__name__)
 
@@ -67,10 +69,9 @@ def skill(command_str: str, cwd: Path | None = None) -> SkillResult:
         return SkillResult(
             success=False,
             message=(
-                f"无法解析指令: {command_str!r}。"
-                f"支持格式: init <project> [--type <type>], "
-                f"analyze <path>, detect <path>。"
-                f"示例: skill('init my-project --type app-service')"
+                f"未知指令动词 '{action}'。"
+                f"支持: init <project> [--type <type>] [options], "
+                f"analyze <path>, detect <path>"
             ),
             action="parse",
         )
@@ -122,21 +123,18 @@ def _parse_prompt(prompt: str) -> tuple[str, str | None, dict]:
             project_path = parts[idx + 1] if idx + 1 < len(parts) else "."
             return ("analyze", project_path, options)
 
-        for opt_match in re.finditer(r"--([\w-]+)(?:\s+(.+?))?(?=\s+--|\s+|$)", args_str):
-            key, val = opt_match.group(1), opt_match.group(2) or "true"
-            options[key] = val
-            # 标记已消费的 token
-            consumed_indices.add(opt_match.group(0).split()[0])  # 这里不精确, 改用下面方法
-
-        # 重新解析: 标记所有 --key 和其后的 value token 为已消费
+        # 解析选项: --key val → options[key] = val, 同时标记 consumed_indices
         i = 0
         while i < len(parts):
             if parts[i].startswith("--"):
+                key = parts[i][2:]  # strip leading --
                 consumed_indices.add(i)
-                # 如果下一个 token 不是 -- 开头, 且不是最后一个, 则它是 option value
                 if i + 1 < len(parts) and not parts[i + 1].startswith("--"):
+                    options[key] = parts[i + 1]
                     consumed_indices.add(i + 1)
                     i += 1
+                else:
+                    options[key] = "true"
             i += 1
 
         # 取第一个未消费的非 -- token 为 project_path
@@ -228,6 +226,7 @@ def _run_init(
         _worker_cls: 测试注入点 — 替换 InitWorker 类
     """
     from init_engineering.init import InitWorker
+    from init_engineering.init.errors import InitError
 
     worker_cls = _worker_cls if _worker_cls is not None else InitWorker
 
@@ -280,7 +279,7 @@ def _run_init(
         )
     except (KeyboardInterrupt, SystemExit):
         raise
-    except Exception as e:
+    except (InitError, OSError, ValueError) as e:
         _logger.exception("InitWorker 执行失败: %s", e)
         hint = getattr(e, "recovery_hint", "")
         if hint:
@@ -309,10 +308,10 @@ if __name__ == "__main__":
 
     if len(sys.argv) > 1:
         result = skill(" ".join(sys.argv[1:]))
-        print(result.message)
+        click.echo(result.message)
         sys.exit(0 if result.success else 1)
     else:
-        print("Usage: python -m init_engineering.skill <command>")
-        print("  analyze <path>  - 分析存量项目")
-        print("  detect <path>  - 检测项目类型")
-        print("  init <project> [--type <type>] - 初始化新项目")
+        click.echo("Usage: python -m init_engineering.skill <command>")
+        click.echo("  analyze <path>  - 分析存量项目")
+        click.echo("  detect <path>  - 检测项目类型")
+        click.echo("  init <project> [--type <type>] - 初始化新项目")

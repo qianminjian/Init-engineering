@@ -78,7 +78,7 @@ def resolve_symlink(
         atomic_write_binary(dst_file, target)
     else:
         newline = detect_newline(target)
-        atomic_write_text(dst_file, target.read_text(), newline=newline)
+        atomic_write_text(dst_file, target.read_text(encoding="utf-8"), newline=newline)
     try:
         shutil.copymode(src_file, dst_file)
     except OSError:
@@ -210,7 +210,7 @@ class TemplateRenderer:
             atomic_write_binary(dst_file, src_file)
         else:
             newline = detect_newline(src_file)
-            atomic_write_text(dst_file, src_file.read_text(), newline=newline)
+            atomic_write_text(dst_file, src_file.read_text(encoding="utf-8"), newline=newline)
 
     def _write_rendered(
         self, src_file: Path, dst_file: Path, src_dir: Path, *, is_template: bool
@@ -218,7 +218,7 @@ class TemplateRenderer:
         """核心渲染分支:template 走 jinja,其他按二进制/文本复制。"""
         if is_template:
             try:
-                content = self._render(src_file.read_text())
+                content = self._render(src_file.read_text(encoding="utf-8"))
             except jinja2.TemplateError as e:
                 raise TemplateRenderError(str(src_file.relative_to(src_dir)), e) from e
             newline = detect_newline(src_file)
@@ -227,7 +227,7 @@ class TemplateRenderer:
             atomic_write_binary(dst_file, src_file)
         else:
             newline = detect_newline(src_file)
-            atomic_write_text(dst_file, src_file.read_text(), newline=newline)
+            atomic_write_text(dst_file, src_file.read_text(encoding="utf-8"), newline=newline)
 
     def _render_path(self, path_str: str) -> str:
         """渲染路径模板。"""

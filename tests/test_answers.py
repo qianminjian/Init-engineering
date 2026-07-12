@@ -471,7 +471,9 @@ class TestLazyExternalDict:
             Path(tmp_path).unlink(missing_ok=True)
 
     def test_getitem_returns_none_for_missing_file(self):
-        d = _LazyExternalDict({"key": "/nonexistent/file.yml"})
+        import tempfile
+        missing = Path(tempfile.gettempdir()) / "ae-test-nonexistent-file.yml"
+        d = _LazyExternalDict({"key": str(missing)})
         result = d["key"]
         assert result is None
 

@@ -111,7 +111,7 @@ def request_and_persist_consent() -> bool:
     choice = click.confirm("是否启用遥测?", default=False)
     consent_path = Path.home() / _TELEMETRY_CONSENT_FILE
     try:
-        consent_path.write_text("yes" if choice else "no")
+        consent_path.write_text("yes" if choice else "no", encoding="utf-8")
     except OSError:
         _logger.debug("consent file write failed: %s", consent_path, exc_info=True)
         return choice
@@ -177,7 +177,8 @@ def send(
         )
         proxy_handler = urllib.request.ProxyHandler({})
         opener = urllib.request.build_opener(proxy_handler)
-        opener.open(req, timeout=1)
+        with opener.open(req, timeout=1):
+            pass
         _logger.debug(
             "telemetry sent: cmd=%s type=%s success=%s",
             event.command, event.project_type, event.success,
