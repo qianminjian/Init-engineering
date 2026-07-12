@@ -67,10 +67,11 @@ def phase_detect(
                     dst_path.rmdir()
             raise
 
-    analysis: DetectionResult | None = None
+    # 始终运行检测分析 — 即使用户已提供 project_type，
+    # 仍需要 language/package_manager/test_runner 等自动检测结果
+    detector = ProjectDetector(dst_path)
+    analysis = detector.analyze()
     if not project_type:
-        detector = ProjectDetector(dst_path)
-        analysis = detector.analyze()
         project_type = analysis.project_type
         if not project_type:
             if defaults:

@@ -61,12 +61,17 @@ def _cmd_list_templates(templates_root: Path) -> None:
                 click.echo(f"  {rel}")
 
 
-def _cmd_analyze(dst_path: Path, detector_cls: type[ProjectDetector]) -> None:
+def _cmd_analyze(
+    dst_path: Path,
+    detector_cls: type[ProjectDetector],
+    project_type: str | None = None,
+) -> None:
     """--analyze: 只运行代码分析, 不初始化.
 
     Args:
         dst_path: 目标目录
         detector_cls: ProjectDetector 类 (可替换用于测试注入)
+        project_type: 用户通过 --type 指定的项目类型（消歧义时覆盖自动检测）
     """
     detector = detector_cls(dst_path)
     result = detector.analyze()
@@ -76,6 +81,8 @@ def _cmd_analyze(dst_path: Path, detector_cls: type[ProjectDetector]) -> None:
         click.echo(f"检测到的项目类型候选: {', '.join(result.candidates)}")
         if result.project_type:
             click.echo(f"✓ 自动检测结果: {result.project_type}")
+        elif project_type:
+            click.echo(f"✓ 使用 --type 指定类型: {project_type}")
         else:
             click.echo("⚠ 多个候选，无法自动确定类型")
     else:
@@ -145,7 +152,7 @@ def cmd_init(
     dst_path = Path(project) if project else Path.cwd()
 
     if analyze_only:
-        _cmd_analyze(dst_path, ProjectDetector)
+        _cmd_analyze(dst_path, ProjectDetector, project_type=project_type or None)
         return
 
     # --from-answers: 从 .ae-answers.yml 恢复 + 隐式非交互

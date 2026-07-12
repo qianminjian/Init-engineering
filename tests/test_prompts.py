@@ -3,6 +3,7 @@
 from pathlib import Path
 from unittest.mock import patch
 
+import click
 import pytest
 
 from init_engineering.init.prompts import (
@@ -161,6 +162,19 @@ class TestPromptForProjectType:
             result = prompt_for_project_type(["app-service", "library"])
             assert result == "app-service"
             mock_prompt.assert_called_once()
+
+    def test_prompt_for_project_type_non_tty_raises_validation_error(self):
+        """P3: 非 TTY 环境 click.Abort → ValidationError."""
+        from init_engineering.init.errors import ValidationError
+
+        def aborting_prompt(*args, **kwargs):
+            raise click.exceptions.Abort()
+
+        with pytest.raises(ValidationError, match="非 TTY"):
+            prompt_for_project_type(
+                ["app-service", "library"],
+                _input_fn=aborting_prompt,
+            )
 
 
 class TestRenderDefault:
@@ -391,4 +405,42 @@ class TestPromptForNestedTemplateInteractive:
             mock_prompt.return_value = "nonexistent"
             result = prompt_for_nested_template(nested, no_input=False)
             assert result == ""
+
+    def test_prompt_for_nested_template_non_tty_raises_validation_error(self):
+        """P3: 非 TTY 环境 prompt_for_nested_template → ValidationError."""
+        from init_engineering.init.errors import ValidationError
+
+        nested = {"ts": {"path": "./ts", "title": "TS"}}
+
+        def aborting_prompt(*args, **kwargs):
+            raise click.exceptions.Abort()
+
+        with pytest.raises(ValidationError, match="非 TTY"):
+            prompt_for_nested_template(
+                nested, no_input=False, _input_fn=aborting_prompt,
+            )
+
+
+class TestNonTtyAbortHandling:
+    """P3: 非 TTY 环境下 click.Abort → ValidationError（清晰错误信息）."""
+
+    def test_ask_one_catches_abort_and_raises_validation_error(self):
+        """InteractivePrompt._ask_one 捕获 Abort → ValidationError."""
+        from init_engineering.init.errors import ValidationError
+
+        q = Question(var_name="name", help="名称", type="str", default="x")
+        answers = type("AnswersMap", (), {
+            "cli_overrides": {},
+            "interactive": {},
+        })()
+        answers.combined = lambda: {}
+
+        prompt = InteractivePrompt([q], answers)
+
+        def aborting_prompt(*args, **kwargs):
+            raise click.exceptions.Abort()
+
+        with patch("init_engineering.init.prompts._PROMPT_DISPATCH", {"str": aborting_prompt}):
+            with pytest.raises(ValidationError, match="非 TTY"):
+                prompt._ask_one(q, {})
 

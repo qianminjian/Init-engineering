@@ -860,6 +860,36 @@ class TestScaffoldPrerequisites:
         check_basic_tools()  # 不抛
 
 
+class TestPhaseDetectWithProjectType:
+    """P2: 即使 project_type 已提供，检测仍运行以获取 language/PM/test_runner."""
+
+    def test_phase_detect_runs_analysis_when_project_type_given(self, tmp_path):
+        """P2: project_type via CLI → detection 仍运行，analysis 非 None."""
+        from init_engineering.init.phases.detect import phase_detect
+
+        project = tmp_path / "pyplugin"
+        project.mkdir()
+        (project / ".claude-plugin").mkdir()
+        (project / "pyproject.toml").write_text("[project]\nname = 'test'\n")
+
+        ptype, mode, analysis, lock = phase_detect(
+            project_type="plugin",
+            dst_path=project,
+            language=None,
+            skip_tasks=True,
+            incremental=True,
+            force=False,
+            pretend=False,
+            defaults=True,
+        )
+        assert ptype == "plugin"
+        # P2: analysis 不应该是 None — 检测仍然运行
+        assert analysis is not None
+        # Python 语言应该被正确检测到（不再默认为 bash）
+        assert analysis.language == "python"
+        assert analysis.project_name == "pyplugin"
+
+
 class TestScaffoldNonEmptyDir:
     """覆盖 scaffold.py:195-208 _phase_detect 目录存在性分支."""
 

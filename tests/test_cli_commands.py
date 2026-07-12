@@ -89,6 +89,33 @@ class TestCmdAnalyze:
         # Should detect language or package manager
         assert "Python" in captured.out or "python" in captured.out or "语言" in captured.out
 
+    def test_analyze_with_type_override(self, tmp_path: Path, capsys):
+        """P1: --type 与 --analyze 同用时传参不崩溃."""
+        project = tmp_path / "simple"
+        project.mkdir()
+        (project / ".claude-plugin").mkdir()
+
+        from init_engineering.init.detector import ProjectDetector
+
+        _cmd_analyze(project, ProjectDetector, project_type="plugin")
+        captured = capsys.readouterr()
+        assert "分析目录" in captured.out
+
+    def test_analyze_with_type_disambiguates_multi_candidates(self, tmp_path: Path, capsys):
+        """P1: 多候选时 --type 可消歧义，显示 '使用 --type 指定类型'."""
+        project = tmp_path / "multi"
+        project.mkdir()
+        # 同时触发 spec-doc 和 plugin — detector 无法唯一确定
+        (project / "design").mkdir()
+        (project / "design" / "BEACON.md").write_text("# beacon")
+        (project / "pyproject.toml").write_text("[project]\nname = 'test'")
+
+        from init_engineering.init.detector import ProjectDetector
+
+        _cmd_analyze(project, ProjectDetector, project_type="spec-doc")
+        captured = capsys.readouterr()
+        assert "使用 --type 指定类型: spec-doc" in captured.out
+
 
 class TestCmdInitEarlyReturn:
     """cmd_init 早返回分支."""

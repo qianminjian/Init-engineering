@@ -21,6 +21,7 @@ import jinja2.sandbox
 from jinja2 import StrictUndefined
 
 from .answers import AnswersMap
+from .errors import ValidationError
 
 _logger = logging.getLogger(__name__)
 from .config_types import Question  # noqa: E402
@@ -183,7 +184,13 @@ class InteractivePrompt:
 
         max_retries = 5
         for attempt in range(max_retries):
-            raw_value = prompt_fn(q, context)
+            try:
+                raw_value = prompt_fn(q, context)
+            except click.exceptions.Abort:
+                raise ValidationError(
+                    "非 TTY 环境无法交互，请使用 --defaults 非交互模式",
+                    field_name=q.var_name,
+                ) from None
             # multiselect 返回 tuple → 转为 YAML 列表字符串给 cast_answer
             if isinstance(raw_value, tuple):
                 raw_value = "\n".join(f"- {v}" for v in raw_value)
@@ -195,7 +202,6 @@ class InteractivePrompt:
                     q.var_name, raw_value, e,
                 )
                 if attempt == max_retries - 1:
-                    from .errors import ValidationError
                     raise ValidationError(
                         f"类型转换失败 (已达最大重试 {max_retries}): {e}",
                         field_name=q.var_name,
@@ -204,7 +210,6 @@ class InteractivePrompt:
                 continue
             except ValueError as e:
                 if attempt == max_retries - 1:
-                    from .errors import ValidationError
                     raise ValidationError(
                         f"类型转换失败 (已达最大重试 {max_retries}): {e}",
                         field_name=q.var_name,
@@ -215,7 +220,6 @@ class InteractivePrompt:
             error = q.render_validator(value, context, self._jinja_env)
             if error:
                 if attempt == max_retries - 1:
-                    from .errors import ValidationError
                     raise ValidationError(
                         f"校验失败 (已达最大重试 {max_retries}): {error}",
                         field_name=q.var_name,
@@ -277,11 +281,17 @@ def prompt_for_project_type(available_types: list[str], *, _input_fn=None) -> st
     """当无法自动检测项目类型且非 --defaults 模式时调用。"""
     if _input_fn is None:
         _input_fn = click.prompt
-    return _input_fn(
-        "请选择项目类型",
-        type=click.Choice(available_types),
-        show_choices=True,
-    )
+    try:
+        return _input_fn(
+            "请选择项目类型",
+            type=click.Choice(available_types),
+            show_choices=True,
+        )
+    except click.exceptions.Abort:
+        raise ValidationError(
+            "非 TTY 环境无法交互选择项目类型，请使用 --type 指定",
+            field_name="project_type",
+        ) from None
 
 
 def prompt_for_nested_template(
@@ -311,10 +321,16 @@ def prompt_for_nested_template(
     if preferred and preferred in nested:
         return nested[preferred].get("path", "")
     prompt_fn = _input_fn if _input_fn is not None else click.prompt
-    choice = prompt_fn(
-        "请选择模板变体",
-        type=click.Choice(list(choices.keys())),
-        default=next(iter(choices.keys())),
-        show_choices=True,
-    )
+    try:
+        choice = prompt_fn(
+            "请选择模板变体",
+            type=click.Choice(list(choices.keys())),
+            default=next(iter(choices.keys())),
+            show_choices=True,
+        )
+    except click.exceptions.Abort:
+        raise ValidationError(
+            "非 TTY 环境无法交互选择模板变体，请使用 --defaults 或 --language 指定",
+            field_name="nested_template",
+        ) from None
     return nested.get(choice, {}).get("path", "")
