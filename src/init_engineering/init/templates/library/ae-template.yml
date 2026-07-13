@@ -16,18 +16,19 @@ language:
     python: Python
     go: Go
     rust: Rust
+    java: Java/Maven
   default: typescript
 package_manager:
   type: choice
   help: 包管理器
-  choices: [npm, pnpm, yarn, bun, uv, poetry, cargo]
-  default: "{{ 'pnpm' if language == 'typescript' else 'uv' if language == 'python' else 'cargo' if language == 'rust' else '' }}"
+  choices: [npm, pnpm, yarn, bun, uv, poetry, cargo, mvn]
+  default: "{{ 'pnpm' if language == 'typescript' else 'uv' if language == 'python' else 'cargo' if language == 'rust' else 'mvn' if language == 'java' else '' }}"
   when: "{{ language != 'go' }}"
 test_runner:
   type: choice
   help: 测试框架
-  choices: [vitest, jest, pytest, "go test", "cargo test"]
-  default: "{{ 'vitest' if language == 'typescript' else 'pytest' if language == 'python' else 'go test' if language == 'go' else 'cargo test' }}"
+  choices: [vitest, jest, pytest, "go test", "cargo test", junit]
+  default: "{{ 'vitest' if language == 'typescript' else 'pytest' if language == 'python' else 'go test' if language == 'go' else 'cargo test' if language == 'rust' else 'junit' if language == 'java' else '' }}"
   when: "{{ language != 'none' }}"
 use_typescript:
   type: bool

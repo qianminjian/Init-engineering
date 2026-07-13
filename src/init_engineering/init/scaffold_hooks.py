@@ -35,6 +35,7 @@ _ALLOWED_PACKAGE_MANAGERS = frozenset({
     "npm", "pnpm", "yarn", "bun",  # Node.js
     "uv", "poetry", "pip",          # Python
     "cargo", "go",                   # Rust / Go
+    "mvn", "gradle",                 # Java
 })
 
 # PE-P0-1: 每个 PM 的依赖安装命令 — uv 不用 install 用 sync; cargo / go 无独立 install
@@ -50,6 +51,8 @@ PM_INSTALL_CMD: dict[str, list[str] | None] = {
     "pip": ["pip", "install", "-e", "."],
     "cargo": None,                  # cargo build 自动 fetch, 无 install 阶段
     "go": None,                     # go mod download 在 build 时执行, 无 install 阶段
+    "mvn": None,                    # Maven: mvn compile 自动下载依赖, 无独立 install 阶段
+    "gradle": None,                 # Gradle: gradle build 自动下载依赖, 无独立 install 阶段
 }
 
 
@@ -189,13 +192,25 @@ def _pm_install_step(
     _fail,
 ) -> None:
     """包管理器安装 — 从 run_builtin_hooks 提取."""
+    _run_pm_install_and_report(answers, tmpdir, timeout, quiet, no_install, _fail)
+
+
+def _run_pm_install_and_report(
+    answers: AnswersMap,
+    target_dir: Path,
+    timeout: int = 300,
+    quiet: bool = False,
+    no_install: bool = False,
+    _fail: object = None,
+) -> None:
+    """共享 PM install 逻辑 — phase_post_install 与 _pm_install_step 共用."""
     pm = answers.get("package_manager")
     if no_install and pm:
         if not quiet:
             _logger.info("  (skipping %s install: --no-install flag set)", pm)
         return
-    if not pm or not has_package_file(tmpdir, pm):
-        if pm and not has_package_file(tmpdir, pm) and not quiet:
+    if not pm or not has_package_file(target_dir, pm):
+        if pm and not has_package_file(target_dir, pm) and not quiet:
             _logger.info("  (skipping %s install: no package file found)", pm)
         return
     if PM_INSTALL_CMD.get(pm) is None:
@@ -203,26 +218,35 @@ def _pm_install_step(
             _logger.info("  (skipping %s install: no separate install phase)", pm)
         return
     try:
-        result = run_pm_install_cmd(pm, tmpdir, timeout=timeout)
+        result = run_pm_install_cmd(pm, target_dir, timeout=timeout)
         if result.returncode != 0:
             cmd_str = " ".join(PM_INSTALL_CMD[pm])
-            if _is_pnpm_ignored_builds(result.stderr):
+            if _is_pnpm_ignored_builds(result.stderr or ""):
                 if not quiet:
                     _logger.warning(
                         "%s: 依赖已安装，但 pnpm 阻止了构建脚本。"
                         " 运行 'pnpm approve-builds' 批准构建后执行 'pnpm install'。",
                         cmd_str,
                     )
-            else:
+                return
+            if _fail is not None:
                 _fail(cmd_str, result.returncode,
                       f"exit={result.returncode}, run '{cmd_str}' manually")
+            elif not quiet:
+                _logger.warning("warning: %s failed: exit=%d", cmd_str, result.returncode)
     except (FileNotFoundError, OSError) as e:
         cmd_str = " ".join(PM_INSTALL_CMD[pm])
-        _fail(cmd_str, 127,
-              f"'{PM_INSTALL_CMD[pm][0]}' not found ({e}), run '{cmd_str}' manually")
+        if _fail is not None:
+            _fail(cmd_str, 127,
+                  f"'{PM_INSTALL_CMD[pm][0]}' not found ({e}), run '{cmd_str}' manually")
+        elif not quiet:
+            _logger.warning("warning: %s not found: %s", cmd_str, e)
     except subprocess.TimeoutExpired:
         cmd_str = " ".join(PM_INSTALL_CMD[pm])
-        _fail(cmd_str, -1, f"{cmd_str} timed out after {timeout}s")
+        if _fail is not None:
+            _fail(cmd_str, -1, f"{cmd_str} timed out after {timeout}s")
+        elif not quiet:
+            _logger.warning("warning: %s timed out after %ds", cmd_str, timeout)
 
 
 def _git_add_commit_step(tmpdir: Path, git_ok: bool, _fail) -> bool:

@@ -109,14 +109,49 @@ class InteractivePrompt:
             self._backend.echo(f"  ✗ 无效选项: {raw}，有效选项: {choices}", err=True)
 
     def _prompt_secret(self, q: Question, _ctx: dict) -> str:
-        # secret 降级为 prompt (BasicPromptBackend 不支持 hide_input)
-        return self._backend.prompt(q.help, default=q.default or "")
+        if hasattr(self._backend, "hide_input"):
+            return self._backend.hide_input(q.help, default=str(q.default or ""))
+        return self._backend.prompt(q.help, default=str(q.default or ""))
 
     def _prompt_json(self, q: Question, _ctx: dict) -> str:
         return self._backend.prompt(q.help, default=str(q.default or "{}"))
 
     def _prompt_yaml(self, q: Question, _ctx: dict) -> str:
         return self._backend.prompt(q.help, default=str(q.default or ""))
+
+    def _make_multiselect_prompter(self, q: Question) -> Callable:
+        """构建 multiselect 类型的 prompt 函数."""
+        choices_list = (
+            list(q.choices)
+            if isinstance(q.choices, list)
+            else list(q.choices.keys())
+        )
+        default_str = (
+            ",".join(q.default)
+            if isinstance(q.default, list)
+            else q.default or ""
+        )
+
+        def _prompt(_q, _ctx, _choices=choices_list, _default=default_str):
+            while True:
+                raw = self._backend.prompt(
+                    _q.help,
+                    default=_default,
+                    show_default=True,
+                )
+                selected = [s.strip() for s in raw.split(",") if s.strip()]
+                invalid = [s for s in selected if s not in _choices]
+                if invalid:
+                    self._backend.echo(
+                        f"  ✗ 无效选项: {invalid}，有效选项: {_choices}", err=True
+                    )
+                    continue
+                if not selected:
+                    self._backend.echo("  ✗ 请至少选择一个选项", err=True)
+                    continue
+                return "\n".join(f"- {v}" for v in selected)
+
+        return _prompt
 
     def _get_prompt_fn(self, type_name: str) -> Callable:
         dispatch = {
@@ -150,40 +185,9 @@ class InteractivePrompt:
         if not q.render_when(context, self._jinja_env):
             return
 
-        # 类型推导 → 选择 prompt 方法
         type_name = q.get_type_name()
         if q.multiselect:
-            choices_list = (
-                list(q.choices)
-                if isinstance(q.choices, list)
-                else list(q.choices.keys())
-            )
-            default_str = (
-                ",".join(q.default)
-                if isinstance(q.default, list)
-                else q.default or ""
-            )
-
-            def _multiselect_prompt(_q, _ctx, _choices=choices_list, _default=default_str):
-                while True:
-                    raw = self._backend.prompt(
-                        _q.help,
-                        default=_default,
-                        show_default=True,
-                    )
-                    selected = [s.strip() for s in raw.split(",") if s.strip()]
-                    invalid = [s for s in selected if s not in _choices]
-                    if invalid:
-                        self._backend.echo(
-                            f"  ✗ 无效选项: {invalid}，有效选项: {_choices}", err=True
-                        )
-                        continue
-                    if not selected:
-                        self._backend.echo("  ✗ 请至少选择一个选项", err=True)
-                        continue
-                    return "\n".join(f"- {v}" for v in selected)
-
-            prompt_fn = _multiselect_prompt
+            prompt_fn = self._make_multiselect_prompter(q)
         else:
             prompt_fn = self._get_prompt_fn(type_name)
 
@@ -194,55 +198,57 @@ class InteractivePrompt:
         orig_default = q.default
         q.default = rendered_default
 
-        prefix = f"  {progress} " if progress else "  "
-        self._backend.echo(f"{prefix}{q.help}")
+        try:
+            prefix = f"  {progress} " if progress else "  "
+            self._backend.echo(f"{prefix}{q.help}")
 
-        max_retries = 5
-        for attempt in range(max_retries):
-            try:
-                raw_value = prompt_fn(q, context)
-            except UserAbort:
-                raise ValidationError(
-                    "非 TTY 环境无法交互，请使用 --defaults 非交互模式",
-                    field_name=q.var_name,
-                ) from None
-            if isinstance(raw_value, tuple):
-                raw_value = "\n".join(f"- {v}" for v in raw_value)
-            try:
-                value = q.cast_answer(raw_value)
-            except TypeError as e:
-                _logger.debug(
-                    "cast_answer TypeError (var=%s, raw=%r): %s",
-                    q.var_name, raw_value, e,
-                )
-                if attempt == max_retries - 1:
+            max_retries = 5
+            for attempt in range(max_retries):
+                try:
+                    raw_value = prompt_fn(q, context)
+                except UserAbort:
                     raise ValidationError(
-                        f"类型转换失败 (已达最大重试 {max_retries}): {e}",
+                        "非 TTY 环境无法交互，请使用 --defaults 非交互模式",
                         field_name=q.var_name,
-                    ) from e
-                self._backend.echo(f"  ✗ 类型转换失败: {e}", err=True)
-                continue
-            except ValueError as e:
-                if attempt == max_retries - 1:
-                    raise ValidationError(
-                        f"类型转换失败 (已达最大重试 {max_retries}): {e}",
-                        field_name=q.var_name,
-                    ) from e
-                self._backend.echo(f"  ✗ 类型转换失败: {e}", err=True)
-                continue
-
-            error = q.render_validator(value, context, self._jinja_env)
-            if error:
-                if attempt == max_retries - 1:
-                    raise ValidationError(
-                        f"校验失败 (已达最大重试 {max_retries}): {error}",
-                        field_name=q.var_name,
+                    ) from None
+                if isinstance(raw_value, tuple):
+                    raw_value = "\n".join(f"- {v}" for v in raw_value)
+                try:
+                    value = q.cast_answer(raw_value)
+                except TypeError as e:
+                    _logger.debug(
+                        "cast_answer TypeError (var=%s, raw=%r): %s",
+                        q.var_name, raw_value, e,
                     )
-                self._backend.echo(f"  ✗ {error}", err=True)
-                continue
-            break
+                    if attempt == max_retries - 1:
+                        raise ValidationError(
+                            f"类型转换失败 (已达最大重试 {max_retries}): {e}",
+                            field_name=q.var_name,
+                        ) from e
+                    self._backend.echo(f"  ✗ 类型转换失败: {e}", err=True)
+                    continue
+                except ValueError as e:
+                    if attempt == max_retries - 1:
+                        raise ValidationError(
+                            f"类型转换失败 (已达最大重试 {max_retries}): {e}",
+                            field_name=q.var_name,
+                        ) from e
+                    self._backend.echo(f"  ✗ 类型转换失败: {e}", err=True)
+                    continue
 
-        q.default = orig_default
+                error = q.render_validator(value, context, self._jinja_env)
+                if error:
+                    if attempt == max_retries - 1:
+                        raise ValidationError(
+                            f"校验失败 (已达最大重试 {max_retries}): {error}",
+                            field_name=q.var_name,
+                        )
+                    self._backend.echo(f"  ✗ {error}", err=True)
+                    continue
+                break
+        finally:
+            q.default = orig_default
+
         self.answers.interactive[q.var_name] = value
 
     def _visible_questions(self, pass_name: str) -> list[Question]:
@@ -312,14 +318,14 @@ def prompt_for_nested_template(
     choices = {label: cfg.get("title", label) for label, cfg in nested.items()}
     if no_input:
         if preferred and preferred in nested:
-            return nested[preferred].get("path", "")
+            return nested[preferred].get("path")
         if preferred:
             raise ValueError(
                 f"非交互模式下 preferred template '{preferred}' 不在 nested 选项 "
                 f"({', '.join(nested.keys())}) 中，无法自动选择。"
             )
         first_key = next(iter(nested.keys()))
-        return nested[first_key].get("path", "")
+        return nested[first_key].get("path")
     if preferred and preferred in nested:
         return nested[preferred].get("path", "")
     be = backend or BasicPromptBackend()

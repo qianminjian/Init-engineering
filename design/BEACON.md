@@ -5,7 +5,7 @@
 1. **Agent Skill 模式运行**：`ae init` 作为 Claude Code Skill 在 agent 里调用，为 agent 工作流提供项目环境初始化能力
 2. **存量项目自动初始化**：通过代码分析自动识别项目类型、依赖、配置，生成正确的初始化配置
 3. **新项目向导初始化**：交互式询问确认项目方向、技术栈、目录结构，生成定制化项目骨架
-4. **模板组合引擎**：9 类型 × 4 语言（含 plugin 多 Skill 插件模板）
+4. **模板组合引擎**：9 类型 × 5 语言（含 plugin 多 Skill 插件模板）
 5. **路径穿越防护**：!include + external_data 路径必须在 sandbox 内（realpath 双侧校验）
 6. **项目升级支持**：`ae update` 重新渲染已有项目模板，支持 skip/overwrite/prompt 三种冲突策略
 7. **CI / Docker / Lefthook 条件渲染**：use_docker / use_lefthook / ci_platform 字段控制可选模板
@@ -17,8 +17,8 @@
 - 存量项目初始化：代码分析 → 自动识别 → 自动化配置
 - 新项目向导：交互式询问 → 确认方向 → 生成骨架
 - 升级模式：`ae update` 重新渲染已有项目，保留用户修改
-- 9 类型 × 4 语言模板：app-service / cli-tool / library / monorepo / mcp-server / spec-doc / skill / hook / plugin
-- 语言特性：TypeScript / Python / Go / Rust
+- 9 类型 × 5 语言模板：app-service / cli-tool / library / monorepo / mcp-server / spec-doc / skill / hook / plugin
+- 语言特性：TypeScript / Python / Go / Rust / Java
 - 条件化 feature：lefthook / docker / github-actions / gitlab-ci
 - init 模板体系：50+ 模板文件 + `ae-template.yml` 完整字段集
 - 路径穿越防护 + 钩子错误传播 + fcntl 并发锁

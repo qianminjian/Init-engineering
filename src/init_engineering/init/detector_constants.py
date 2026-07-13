@@ -27,6 +27,7 @@ class DetectionResult:
     has_docker: bool = False
     project_name: str | None = None
     project_description: str = ""
+    _java_info: dict | None = None
 
     def as_answers(self) -> dict[str, object]:
         """转为 AnswersMap 兼容的键值对，跳过 None/空值。"""
@@ -47,6 +48,15 @@ class DetectionResult:
             result["use_lefthook"] = True
         if self.has_docker:
             result["use_docker"] = True
+        if self._java_info:
+            _java_export_keys = (
+                "java_version", "spring_boot_version",
+                "kotlin_version", "scala_version", "groovy_version",
+            )
+            for k in _java_export_keys:
+                v = self._java_info.get(k)
+                if v:
+                    result[f"detected_{k}"] = v
         return result
 
 
@@ -89,6 +99,17 @@ _GO_FRAMEWORKS: list[tuple[str, str]] = [
     ("beego", "Beego"),
 ]
 
+_JAVA_FRAMEWORKS: list[tuple[str, str]] = [
+    ("spring-boot-starter", "Spring Boot"),
+    ("spring-cloud-starter", "Spring Cloud"),
+    ("quarkus", "Quarkus"),
+    ("micronaut", "Micronaut"),
+    ("jakarta", "Jakarta EE"),
+    ("javalin", "Javalin"),
+    ("helidon", "Helidon"),
+    ("vertx", "Vert.x"),
+]
+
 
 # ─── 签名检测 ────────────────────────────────────────────────────────
 
@@ -102,6 +123,10 @@ FRAMEWORK_SIGNATURES: list[tuple[str, list[str]]] = [
     ("spec-doc", ["design/BEACON.md", "design/*.md"]),
     ("mcp-server", ["package.json"]),
     ("cli-tool", ["src/cli.py", "src/cli/__init__.py", "src/cli.ts", "cmd/"]),
-    ("library", ["pyproject.toml", "setup.py", "Cargo.toml", "go.mod"]),
-    ("app-service", ["package.json"]),
+    (
+        "library",
+        ["pyproject.toml", "setup.py", "Cargo.toml", "go.mod",
+         "pom.xml", "build.gradle", "build.gradle.kts"],
+    ),
+    ("app-service", ["package.json", "pom.xml", "build.gradle", "build.gradle.kts"]),
 ]

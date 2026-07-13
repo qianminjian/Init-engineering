@@ -239,7 +239,8 @@ class TestRenderTo:
         tmpl_dir = tmp_path / "tmpl"
         tmpl_dir.mkdir()
 
-        with pytest.raises(ValueError, match="exclude_callback_spec"):
+        from init_engineering.init.errors import ConfigFileError
+        with pytest.raises(ConfigFileError, match="exclude_callback_spec"):
             render_to(
                 answers=answers,
                 folder_name="test",

@@ -144,9 +144,8 @@ class TestRenderToReceivesFields:
             InitWorker,
             "_phase_prompt",
             return_value=None,
-        ), patch.object(
-            InitWorker,
-            "_check_template_version",
+        ), patch(
+            "init_engineering.init.scaffold_phases.check_template_version",
             return_value=None,
         ), patch(
             "init_engineering.init.phases.render.render_to"
@@ -190,9 +189,8 @@ class TestRenderToReceivesFields:
             InitWorker,
             "_phase_prompt",
             return_value=None,
-        ), patch.object(
-            InitWorker,
-            "_check_template_version",
+        ), patch(
+            "init_engineering.init.scaffold_phases.check_template_version",
             return_value=None,
         ), patch(
             "init_engineering.init.phases.render.render_to"
@@ -236,9 +234,8 @@ class TestRenderToReceivesFields:
             InitWorker,
             "_phase_prompt",
             return_value=None,
-        ), patch.object(
-            InitWorker,
-            "_check_template_version",
+        ), patch(
+            "init_engineering.init.scaffold_phases.check_template_version",
             return_value=None,
         ), patch(
             "init_engineering.init.phases.render.render_to"
@@ -284,9 +281,8 @@ class TestRenderToReceivesFields:
             InitWorker,
             "_phase_prompt",
             return_value=None,
-        ), patch.object(
-            InitWorker,
-            "_check_template_version",
+        ), patch(
+            "init_engineering.init.scaffold_phases.check_template_version",
             return_value=None,
         ), patch(
             "init_engineering.init.phases.render.render_to"

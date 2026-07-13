@@ -22,7 +22,6 @@ from typing import Any
 import yaml
 
 from .. import __version__ as _ae_version
-
 from ._answers_io import (
     _build_answers_data,
     _load_answers_file,
@@ -210,6 +209,11 @@ class AnswersMap:
         except OSError as e:
             raise ValidationError(
                 f"无法读取 answers 文件 {path}: {e}",
+                field_name="answers_file",
+            ) from e
+        except ValueError as e:
+            raise ValidationError(
+                f"answers 文件 {path} 格式或版本不兼容: {e}",
                 field_name="answers_file",
             ) from e
 

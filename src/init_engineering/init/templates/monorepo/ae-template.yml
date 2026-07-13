@@ -16,6 +16,7 @@ language:
     python: Python（uv workspaces）
     go: Go（go.work）
     rust: Rust（Cargo workspaces）
+    java: Java/Maven（multi-module）
   default: typescript
 
 # typescript: 包管理器
@@ -47,6 +48,19 @@ go_workspace_members:
   default: "pkg1,pkg2"
   when: "{{ language == 'go' }}"
 
+# java: Maven multi-module 配置
+java_group_id:
+  type: str
+  help: Maven groupId
+  default: com.example
+  when: "{{ language == 'java' }}"
+
+java_modules:
+  type: str
+  help: Maven module 路径（逗号分隔）
+  default: "module1,module2"
+  when: "{{ language == 'java' }}"
+
 ci_platform:
   type: choice
   help: CI 平台
@@ -75,3 +89,6 @@ _nested_templates:
   rust:
     path: rust
     title: Rust monorepo (Cargo workspaces)
+  java:
+    path: java
+    title: Java monorepo (Maven multi-module)

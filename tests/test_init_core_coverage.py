@@ -297,14 +297,14 @@ class TestAnswersMap:
 class TestProjectDetectorEdgeCases:
     def test_detect_returns_none_when_no_match(self, tmp_path: Path):
         d = ProjectDetector(tmp_path)
-        assert d.detect() is None
+        assert d._detect() is None
 
     def test_detect_returns_none_when_multiple_match(self, tmp_path: Path):
         # monorepo + library — both should match
         (tmp_path / "pnpm-workspace.yaml").write_text("")
         (tmp_path / "pyproject.toml").write_text("")
         d = ProjectDetector(tmp_path)
-        assert d.detect() is None
+        assert d._detect() is None
 
     def test_list_candidates_returns_all(self, tmp_path: Path):
         (tmp_path / "pnpm-workspace.yaml").write_text("")
@@ -909,21 +909,6 @@ class TestTemplateRendererEdgeCases:
         (dst / "f.txt").write_text("old")
 
         r = TemplateRenderer([tpl_dir], {}, overwrite=True)
-        r.render_to(dst)
-        assert (dst / "f.txt").read_text() == "new"
-
-    def test_render_conflict_handler(self, tmp_path: Path):
-        tpl_dir = tmp_path / "tpl"
-        tpl_dir.mkdir()
-        (tpl_dir / "f.txt").write_text("new")
-        dst = tmp_path / "dst"
-        dst.mkdir()
-        (dst / "f.txt").write_text("old")
-
-        def handler(path):
-            return path == "f.txt"  # overwrite
-
-        r = TemplateRenderer([tpl_dir], {}, conflict_handler=handler)
         r.render_to(dst)
         assert (dst / "f.txt").read_text() == "new"
 

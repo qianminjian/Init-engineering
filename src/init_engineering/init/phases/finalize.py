@@ -12,7 +12,6 @@ import contextlib
 import logging
 import os as _os
 import shutil
-import subprocess
 import time as _time
 from datetime import datetime
 from pathlib import Path
@@ -49,7 +48,7 @@ def phase_finalize(
     # P2-15: defense-in-depth 二次校验 — phase_detect 已校验,但 phase_finalize
     # 也可能从测试 / 内部 API 直接调用,绕过 phase_detect 校验链。
     # _write_replay 把 raw_type 拼到 ~/.ae-replays/<type>/ 路径,无校验即被路径穿越。
-    from .detect import validate_project_type
+    from . import validate_project_type
 
     raw_type = project_type or "unknown"
     validate_project_type(raw_type)
@@ -170,70 +169,22 @@ def phase_post_install(
     """
     from ..scaffold_hooks import (
         DEFAULT_SUBPROCESS_TIMEOUT,
-        PM_INSTALL_CMD,
-        _is_pnpm_ignored_builds,
-        has_package_file,
-        run_pm_install_cmd,
+        _run_pm_install_and_report,
     )
 
     effective_timeout = timeout if timeout is not None else DEFAULT_SUBPROCESS_TIMEOUT
 
-    if no_install:
-        if not quiet:
-            _logger.info("  (skipping post-install: --no-install flag set)")
-        return
-
-    pm = answers.get("package_manager")
-    if not pm or not has_package_file(dst_path, pm):
-        return
-
-    if PM_INSTALL_CMD.get(pm) is None:
-        if not quiet:
-            _logger.info("  (skipping %s install: no separate install phase)", pm)
-        return
-
-    try:
-        result = run_pm_install_cmd(pm, dst_path, timeout=effective_timeout)
-        if result.returncode != 0:
-            cmd_str = " ".join(PM_INSTALL_CMD[pm])
-            if _is_pnpm_ignored_builds(result.stderr or ""):
-                if not quiet:
-                    _logger.warning(
-                        "%s: 依赖已安装，但 pnpm 阻止了构建脚本。"
-                        " 运行 'pnpm approve-builds' 批准后执行 '%s'。",
-                        cmd_str, cmd_str,
-                    )
-                return
-            if strict:
-                from ..errors import HookExecutionError
-                raise HookExecutionError(
-                    command=cmd_str,
-                    process_exit_code=result.returncode,
-                    stderr=result.stderr,
-                )
-            if not quiet:
-                _logger.warning("warning: %s failed: exit=%d", cmd_str, result.returncode)
-    except ValueError:
-        # PM has no install phase (cargo/go) — already checked above, but defensive
-        return
-    except (FileNotFoundError, OSError) as e:
-        cmd_str = " ".join(PM_INSTALL_CMD[pm])
-        if strict:
+    if strict:
+        def _fail(cmd: str, rc: int, stderr: str) -> bool:
             from ..errors import HookExecutionError
-            raise HookExecutionError(command=cmd_str, process_exit_code=127, stderr=str(e)) from e
-        if not quiet:
-            _logger.warning("warning: %s not found: %s", cmd_str, e)
-    except subprocess.TimeoutExpired as e:
-        cmd_str = " ".join(PM_INSTALL_CMD[pm])
-        if strict:
-            from ..errors import HookExecutionError
-            raise HookExecutionError(
-                command=cmd_str,
-                process_exit_code=-1,
-                stderr=f"timed out after {effective_timeout}s",
-            ) from e
-        if not quiet:
-            _logger.warning("warning: %s timed out after %ds", cmd_str, effective_timeout)
+            raise HookExecutionError(command=cmd, process_exit_code=rc, stderr=stderr)
+    else:
+        _fail = None
+
+    _run_pm_install_and_report(
+        answers, dst_path, timeout=effective_timeout, quiet=quiet,
+        no_install=no_install, _fail=_fail,
+    )
 
 
 def merge_incremental(

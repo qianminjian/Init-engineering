@@ -1,18 +1,26 @@
 {
   "compilerOptions": {
     "target": "ES2022",
+{% if project_type == 'app-service' %}
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+{% else %}
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "outDir": "dist",
-    "rootDir": "{{ project_name }}",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+{% endif %}
+    "rootDir": "src",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "declaration": true,
-    "declarationMap": true,
-    "sourceMap": true
+    "forceConsistentCasingInFileNames": true
   },
-  "include": ["{{ project_name }}"],
-  "exclude": ["node_modules", "dist", "tests"]
+  "include": ["src"],
+  "exclude": ["node_modules", "dist"{% if project_type == 'app-service' %}, ".vite"{% endif %}]
 }

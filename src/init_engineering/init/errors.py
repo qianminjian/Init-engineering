@@ -68,6 +68,10 @@ class ValidationError(InitError):
         self.raw_value = raw_value
         self.constraint = constraint
         if field_name:
+            hint = f"请修正 [{field_name}] 的值"
+            if constraint:
+                hint += f"（约束: {constraint}）"
+            self.recovery_hint = hint
             super().__init__(f"校验失败 [{field_name}]: {message}")
         else:
             super().__init__(message)

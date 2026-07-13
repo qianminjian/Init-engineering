@@ -20,9 +20,10 @@ import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
+    from ._shared.prompt_backend import PromptBackend
     from .detector_constants import DetectionResult
 
 from .answers import AnswersMap
@@ -86,10 +87,10 @@ class InitWorker:
     # PE-P1-4: 全局钩子超时(秒),None 走 TaskRunner 默认 (300s)
     hook_timeout: int | None = None
     # 用户交互后端 — CLI 层注入 ClickPromptBackend, 测试层注入 mock
-    prompt_backend: Any = None
+    prompt_backend: PromptBackend | None = None
 
     _current_phase: str = field(init=False, default="")
-    _template: TemplateConfig = field(init=False, default=None)
+    _template: TemplateConfig | None = field(init=False, default=None)
     _answers: AnswersMap = field(init=False, default_factory=AnswersMap)
     _cleanup_hooks: list[Callable] = field(default_factory=list, init=False)
     _previous_answers: AnswersMap | None = field(init=False, default=None)
@@ -214,11 +215,6 @@ class InitWorker:
         )
 
     # ─── thin wrapper（monkey-patch 友好，向后兼容测试）──────────
-
-    def _check_template_version(self) -> None:
-        if self._template is None:
-            return
-        check_template_version(self._template.min_ae_version)
 
     def _phase_detect(self) -> None:
         self.project_type, self._mode, self._detection, self._lock = phase_detect(

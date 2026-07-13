@@ -42,6 +42,14 @@ class ClickPromptBackend:
 
             raise UserAbort() from None
 
+    def hide_input(self, text: str, *, default: str = "") -> str:
+        try:
+            return click.prompt(text, default=default, hide_input=True)
+        except click.exceptions.Abort:
+            from init_engineering.init._shared.prompt_backend import UserAbort
+
+            raise UserAbort() from None
+
     def confirm(self, text: str, *, default: bool = False) -> bool:
         try:
             return click.confirm(text, default=default)

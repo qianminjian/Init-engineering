@@ -32,7 +32,7 @@ def main():
 @click.option(
     "--from-answers", "answers_file", type=click.Path(exists=True), help="从 .ae-answers.yml 重放"
 )
-@click.option("--language", help="主要语言 (typescript/python/go/rust)")
+@click.option("--language", help="主要语言 (typescript/python/go/rust/java)")
 @click.option("--package-manager", help="包管理器 (npm/pnpm/yarn/bun/uv/poetry)")
 @click.option("--ci", "ci_platform", help="CI 平台 (github/gitlab/none)")
 @click.option("--test-runner", help="测试框架")

@@ -8,8 +8,8 @@ from __future__ import annotations
 import logging
 import shutil
 from pathlib import Path
-from typing import Any
 
+from .._shared.prompt_backend import PromptBackend
 from ..answers import AnswersMap
 from ..config_loader import load_template_config
 from ..config_types import TEMPLATES_ROOT, TemplateConfig
@@ -35,7 +35,7 @@ def phase_prompt(
     use_docker: bool | None,
     detection: DetectionResult | None,
     dst_path: Path | None = None,
-    prompt_backend: Any = None,
+    prompt_backend: PromptBackend | None = None,
 ) -> tuple[TemplateConfig, AnswersMap]:
     """加载 TemplateConfig + 应用 CLI overrides + 评估 question + 交互 prompt."""
     template = load_template_config(project_type or "")
@@ -119,6 +119,8 @@ def _check_pm_availability(answers: AnswersMap) -> None:
 
     仅当 package_manager 来自 defaults 层（非 CLI/interactive 显式指定）时才检查。
     Node.js PM 降级链: pnpm → npm, yarn → npm, bun → npm。
+
+    ⚠ 副作用: 降级时会直接修改 answers.defaults["package_manager"]。
     """
     pm = answers.get("package_manager")
     if not pm:

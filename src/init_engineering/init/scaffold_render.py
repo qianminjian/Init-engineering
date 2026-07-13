@@ -10,11 +10,11 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .config_types import TEMPLATES_ROOT, TemplateConfig, coerce_bool
+from .errors import ConfigFileError
 
 _logger = logging.getLogger(__name__)
 
@@ -29,6 +29,7 @@ _LANG_FEATURE_MAP = {
     "go": "go",
     "rust": "rust",
     "bash": "bash",
+    "java": "java",
 }
 
 # ci_platform → 模板 feature 子目录映射
@@ -149,7 +150,6 @@ def render_to(
     exclude_callback_spec: str | None = None,
     templates_suffix: str = ".jinja",
     preserve_symlinks: bool = True,
-    on_exists: Callable[[str], None] | None = None,
     external_template_dir: Path | None = None,
 ) -> list[Path]:
     """Phase 渲染 — 委托给 TemplateRenderer，渲染到 tmpdir。
@@ -205,7 +205,10 @@ def render_to(
         )
         match_exclude = default_match_exclude
     except (ValueError, AttributeError) as e:
-        raise ValueError(f"exclude_callback_spec 配置错误: {e}") from e
+        raise ConfigFileError(
+            f"exclude_callback_spec 配置错误: {e}",
+            config_path=exclude_callback_spec,
+        ) from e
 
     from .renderer import TemplateRenderer
 
@@ -220,6 +223,5 @@ def render_to(
         match_exclude=match_exclude,
         templates_suffix=templates_suffix,
         preserve_symlinks=preserve_symlinks,
-        on_exists=on_exists,
     )
     return renderer.render_to(tmpdir)

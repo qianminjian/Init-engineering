@@ -59,19 +59,15 @@ def _resolve_endpoint() -> str | None:
     来源：B6 修复, 不再允许环境变量覆盖为 http://
     仅允许环境变量控制 path (以 _ 开头表示内部变量, 默认走 DEFAULT)。
     """
-    raw = os.environ.get("AE_TELEMETRY_PATH")
-    if raw:
-        # SE-P1-3: 显式开关 — telemetry 未开启时, AE_TELEMETRY_PATH 静默忽略
-        if not _is_enabled():
-            _logger.warning(
-                "AE_TELEMETRY_PATH 设置但 telemetry 未开启, 忽略 (SE-P1-3)"
-            )
-            return None
-        full = urllib.parse.urljoin(DEFAULT_TELEMETRY_ENDPOINT, raw)
-    else:
-        full = DEFAULT_TELEMETRY_ENDPOINT
+    if not _is_enabled():
+        return None
 
-    # B6 安全: 强制 HTTPS 防止 http://attacker 注入
+    raw = os.environ.get("AE_TELEMETRY_PATH")
+    full = (
+        urllib.parse.urljoin(DEFAULT_TELEMETRY_ENDPOINT, raw)
+        if raw else DEFAULT_TELEMETRY_ENDPOINT
+    )
+
     if not full.startswith("https://"):
         _logger.warning("telemetry endpoint 必须 HTTPS, 已忽略: %s", full)
         return None

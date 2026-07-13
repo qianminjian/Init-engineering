@@ -1,10 +1,10 @@
-"""CLI 子命令 — init 命令实现 + 轻量子分支.
+"""CLI 子命令 — init 命令实现.
 
 从 cli/__init__.py 拆分 (2026-07-03 深度审计 P2-A):
 原 __init__.py 427 行超 300 行约束, 拆出:
-- cmd_init (init 命令实现, 来自 P2-12)
-- --list-types / --list-templates / --analyze 分支 (纯函数, init() 调用)
-- update / status 命令拆分到 cli/subcommands.py (code review P2-12 follow-up)
+- cmd_init (init 命令实现)
+- --list-types / --list-templates / --analyze 分支拆到 cli/_list_cmds.py (2026-07-13 P0-1)
+- update / status 命令拆到 cli/subcommands.py
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 import time as _time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import click
 
@@ -23,82 +23,15 @@ from init_engineering.cli._helpers import (
 from init_engineering.cli._helpers import (
     sanitize_error as _sanitize_error,
 )
-
-_logger = logging.getLogger(__name__)
+from init_engineering.cli._list_cmds import cmd_analyze, cmd_list_templates, cmd_list_types
+from init_engineering.init import InitResult
 
 if TYPE_CHECKING:
-    from init_engineering.init.detector import ProjectDetector
+    from typing import Any
 
-from init_engineering.init import InitResult  # noqa: E402 — runtime use in _print_completion_report
+    from init_engineering.init._shared.prompt_backend import PromptBackend
 
-# ============================================================
-# init 命令的轻量子分支 (纯函数, init() 内部调用)
-# ============================================================
-
-
-def _cmd_list_types(templates_root: Path) -> None:
-    """--list-types: 列出所有可用的项目类型."""
-    types = sorted(
-        d.name for d in templates_root.iterdir()
-        if d.is_dir() and not d.name.startswith("_")
-    )
-    click.echo("可用的项目类型:")
-    for t in types:
-        click.echo(f"  {t}")
-
-
-def _cmd_list_templates(templates_root: Path) -> None:
-    """--list-templates: 列出每个类型的模板文件."""
-    types = sorted(
-        d.name for d in templates_root.iterdir()
-        if d.is_dir() and not d.name.startswith("_")
-    )
-    for t in types:
-        click.echo(f"\n[{t}]")
-        type_dir = templates_root / t
-        for f in sorted(type_dir.rglob("*")):
-            if f.is_file() and not f.name.startswith("."):
-                rel = f.relative_to(type_dir)
-                click.echo(f"  {rel}")
-
-
-def _cmd_analyze(
-    dst_path: Path,
-    detector_cls: type[ProjectDetector],
-    project_type: str | None = None,
-) -> None:
-    """--analyze: 只运行代码分析, 不初始化.
-
-    Args:
-        dst_path: 目标目录
-        detector_cls: ProjectDetector 类 (可替换用于测试注入)
-        project_type: 用户通过 --type 指定的项目类型（消歧义时覆盖自动检测）
-    """
-    detector = detector_cls(dst_path)
-    result = detector.analyze()
-    click.echo(f"分析目录: {dst_path}")
-    click.echo(f"项目名称: {result.project_name}")
-    if result.candidates:
-        click.echo(f"检测到的项目类型候选: {', '.join(result.candidates)}")
-        if result.project_type:
-            click.echo(f"✓ 自动检测结果: {result.project_type}")
-        elif project_type:
-            click.echo(f"✓ 使用 --type 指定类型: {project_type}")
-        else:
-            click.echo("⚠ 多个候选，无法自动确定类型")
-    else:
-        click.echo("⚠ 未检测到已知项目类型（空目录或未知类型）")
-    if result.language:
-        click.echo(f"语言: {result.language}")
-    if result.package_manager:
-        click.echo(f"包管理器: {result.package_manager}")
-    if result.test_runner:
-        click.echo(f"测试框架: {result.test_runner}")
-    if result.ci_platform:
-        click.echo(f"CI 平台: {result.ci_platform}")
-    if result.frameworks:
-        click.echo(f"框架: {', '.join(result.frameworks)}")
-
+_logger = logging.getLogger(__name__)
 
 def cmd_init(
     *,
@@ -131,7 +64,7 @@ def cmd_init(
     template_dir_override: str | None,
     hook_timeout: int | None,
     force_unsafe_template: bool,
-    prompt_backend: Any = None,
+    prompt_backend: PromptBackend | None = None,
 ) -> InitResult | None:
     """P2-12: init 命令实现 — 从 cli/__init__.py 拆分以满足 ≤ 300 行约束.
 
@@ -145,16 +78,16 @@ def cmd_init(
 
     # --list-types / --list-templates / --analyze 早返回分支
     if list_types:
-        _cmd_list_types(TEMPLATES_ROOT)
+        cmd_list_types(TEMPLATES_ROOT)
         return
     if list_templates:
-        _cmd_list_templates(TEMPLATES_ROOT)
+        cmd_list_templates(TEMPLATES_ROOT)
         return
 
     dst_path = (Path(project) if project else Path.cwd()).resolve()
 
     if analyze_only:
-        _cmd_analyze(dst_path, ProjectDetector, project_type=project_type or None)
+        cmd_analyze(dst_path, ProjectDetector, project_type=project_type or None)
         return
 
     # --from-answers: 从 .ae-answers.yml 恢复 + 隐式非交互
@@ -277,8 +210,8 @@ def _build_init_worker_kwargs(
     templates_suffix: str | None,
     preserve_symlinks: bool | None,
     hook_timeout: int | None,
-    prompt_backend: Any = None,
-) -> dict:
+    prompt_backend: PromptBackend | None = None,
+) -> dict[str, Any]:
     """构建 InitWorker 构造参数 — 从 cmd_init 提取以减小函数体."""
     return {
         "dst_path": dst_path,

@@ -15,9 +15,13 @@ __all__ = ["run_tasks_phase"]
 import logging
 import subprocess
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from jinja2 import StrictUndefined
 from jinja2.sandbox import SandboxedEnvironment
+
+if TYPE_CHECKING:
+    from .config_types import TemplateConfig
 
 from .answers import AnswersMap
 from .hooks import TaskRunner
@@ -29,7 +33,7 @@ _logger = logging.getLogger(__name__)
 def run_tasks_phase(
     tmpdir: Path,
     dst_path: Path,
-    template,
+    template: TemplateConfig,
     answers: AnswersMap,
     current_phase: str,
     strict: bool,

@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import contextlib
 import logging
-import re
 from pathlib import Path
 
 _logger = logging.getLogger(__name__)
@@ -15,10 +14,11 @@ _logger = logging.getLogger(__name__)
 from ..config_types import TEMPLATES_ROOT  # noqa: E402
 from ..detector import ProjectDetector  # noqa: E402
 from ..detector_constants import DetectionResult  # noqa: E402
-from ..errors import TargetDirectoryError, ValidationError  # noqa: E402
+from ..errors import TargetDirectoryError  # noqa: E402
 from ..prompts import prompt_for_project_type  # noqa: E402
 from ..scaffold_lock import InitLock  # noqa: E402
 from ..scaffold_prereq import check_basic_tools, check_language_tools  # noqa: E402
+from . import validate_project_type  # noqa: E402
 
 
 def phase_detect(
@@ -41,29 +41,28 @@ def phase_detect(
     if project_type:
         validate_project_type(project_type)
 
-    if dst_path.exists() and not force:
-        if any(dst_path.iterdir()):
-            if incremental:
-                mode = "incremental"
-                if not (dst_path / ".ae-answers.yml").exists():
-                    if not project_type and defaults:
-                        raise TargetDirectoryError(
-                            "目录非空但缺少 .ae-answers.yml 基线文件，且无法自动检测项目类型。"
-                            " 使用 --type 指定类型后重试，或 --force 进行完整初始化。"
-                        )
-                    if project_type:
-                        _logger.warning(
-                            "目录非空但缺少 .ae-answers.yml 基线文件，增量模式可能遗漏文件。"
-                            " 建议: 先 ae init --type %s --defaults --force 完整初始化。",
-                            project_type,
-                        )
-                    else:
-                        _logger.warning(
-                            "目录非空但缺少 .ae-answers.yml 基线文件，增量模式可能遗漏文件。"
-                            " 建议: 先 ae init --type <type> --defaults --force 完整初始化。"
-                        )
-            else:
-                _raise_nonempty(dst_path)
+    if dst_path.exists() and any(dst_path.iterdir()):
+        if incremental:
+            mode = "incremental"
+            if not (dst_path / ".ae-answers.yml").exists():
+                if not project_type and defaults:
+                    raise TargetDirectoryError(
+                        "目录非空但缺少 .ae-answers.yml 基线文件，且无法自动检测项目类型。"
+                        " 使用 --type 指定类型后重试，或 --force 进行完整初始化。"
+                    )
+                if project_type:
+                    _logger.warning(
+                        "目录非空但缺少 .ae-answers.yml 基线文件，增量模式可能遗漏文件。"
+                        " 建议: 先 ae init --type %s --defaults --force 完整初始化。",
+                        project_type,
+                    )
+                else:
+                    _logger.warning(
+                        "目录非空但缺少 .ae-answers.yml 基线文件，增量模式可能遗漏文件。"
+                        " 建议: 先 ae init --type <type> --defaults --force 完整初始化。"
+                    )
+        elif not force:
+            _raise_nonempty(dst_path)
         else:
             mode = "fresh"
     else:
@@ -119,16 +118,3 @@ def _raise_nonempty(dst_path: Path) -> None:
         f"--incremental 增量补充缺失文件，"
         f"或在空目录/新目录中运行 ae init"
     )
-
-
-def validate_project_type(project_type: str) -> None:
-    """防路径穿越：project_type 仅允许字母/数字/下划线/连字符。
-
-    来源：所有项目类型（CLI / detector / 交互）都需通过此校验。
-    之前在 phase_finalize 校验，但 ~/.ae-replays/<type>/ 路径已在更早阶段生成。
-    """
-    if not re.match(r"^[A-Za-z0-9_-]+$", project_type):
-        raise ValidationError(
-            f"project_type '{project_type}' 含非法字符。"
-            f"只允许字母/数字/下划线/连字符 (防路径穿越)."
-        )

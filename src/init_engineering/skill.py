@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import re
+import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -286,7 +287,7 @@ def _run_init(
         )
     except (KeyboardInterrupt, SystemExit):
         raise
-    except (InitError, OSError, ValueError) as e:
+    except (InitError, OSError, ValueError, subprocess.TimeoutExpired) as e:
         _logger.exception("InitWorker 执行失败: %s", e)
         hint = getattr(e, "recovery_hint", "")
         if hint:

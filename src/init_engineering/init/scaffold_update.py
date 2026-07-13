@@ -185,7 +185,7 @@ def run_update(
                 continue
             dst_file = dst_path / rel
             action = _classify_file(
-                src_file, dst_file, conflict_strategy, auto_detect, dst_path, dry_run, result,
+                src_file, dst_file, conflict_strategy, dst_path, dry_run, result,
                 backend=backend,
             )
             if action:
@@ -223,7 +223,6 @@ def _classify_file(
     src: Path,
     dst: Path,
     strategy: ConflictStrategy,
-    force: bool,
     dst_root: Path,
     dry_run: bool,
     result: UpdateResult,
@@ -244,6 +243,23 @@ def _classify_file(
         return "skip"
 
     # 文件存在且内容不同 — 冲突
+    from ._shared.io import is_binary
+
+    if is_binary(str(src)) or is_binary(str(dst)):
+        if strategy == ConflictStrategy.SKIP:
+            return "skip"
+        if strategy == ConflictStrategy.OVERWRITE:
+            return "update"
+        if strategy == ConflictStrategy.PROMPT:
+            if dry_run:
+                return "conflict"
+            be = backend or BasicPromptBackend()
+            be.echo(f"\n冲突 (二进制): {dst.relative_to(dst_root)}")
+            if be.confirm("应用新版本?", default=False):
+                return "update"
+            return "skip"
+        return "skip"
+
     src_content = src.read_text(encoding="utf-8")
     dst_content = dst.read_text(encoding="utf-8")
     diff = "".join(

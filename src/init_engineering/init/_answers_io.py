@@ -82,10 +82,7 @@ def _load_answers_file(path: Path) -> dict:
 
     from .. import __version__
 
-    try:
-        raw = _yaml.safe_load(path.read_text(encoding="utf-8"))
-    except OSError:
-        raise
+    raw = _yaml.safe_load(path.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
         if raw is None:
             raw = {}
@@ -113,7 +110,10 @@ def _load_answers_file(path: Path) -> dict:
                     f"如确认来源可信, 请删除 _meta.ae_version 后重试。"
                 )
         except (IndexError, AttributeError):
-            _logger.debug("version check skipped: __version__ or meta_version parse failed", exc_info=True)
+            _logger.debug(
+                "version check skipped: __version__ or meta_version parse failed",
+                exc_info=True,
+            )
 
     # DI-P1-2: schema_version 检查 — _meta.schema_version 是文件格式版本,
     # 必须等于当前支持的 schema 版本 (1)。schema 字段重命名/类型变更时 bump。

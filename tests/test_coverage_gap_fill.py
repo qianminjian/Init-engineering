@@ -218,7 +218,8 @@ class TestAnswersMapFromFile:
 
         f = tmp_path / ".ae-answers.yml"
         f.write_text("just a string\n")
-        with pytest.raises(ValueError, match="顶层必须是 mapping"):
+        from init_engineering.init.errors import ValidationError
+        with pytest.raises(ValidationError, match="顶层必须是 mapping"):
             AnswersMap.from_answers_file(f)
 
     def test_non_dict_meta_treated_as_empty(self, tmp_path: Path):
@@ -236,7 +237,8 @@ class TestAnswersMapFromFile:
         f.write_text(
             yaml.dump({"_meta": {"ae_version": "99.0.0"}, "key": "val"})
         )
-        with pytest.raises(ValueError, match="不兼容"):
+        from init_engineering.init.errors import ValidationError
+        with pytest.raises(ValidationError, match="不兼容"):
             AnswersMap.from_answers_file(f)
 
     def test_schema_version_unsupported_raises(self, tmp_path: Path):
@@ -246,7 +248,8 @@ class TestAnswersMapFromFile:
         f.write_text(
             yaml.dump({"_meta": {"schema_version": 999}, "key": "val"})
         )
-        with pytest.raises(ValueError, match="schema_version"):
+        from init_engineering.init.errors import ValidationError
+        with pytest.raises(ValidationError, match="schema_version"):
             AnswersMap.from_answers_file(f)
 
     def test_missing_meta_schema_version_ok(self, tmp_path: Path):

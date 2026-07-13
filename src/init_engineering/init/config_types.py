@@ -73,7 +73,6 @@ class Question:
     validator: str = ""  # Jinja2 校验模板，空=不校验
     secret: bool = False
     multiselect: bool = False
-    placeholder: str = ""
 
     def get_type_name(self) -> str:
         """返回最终类型名。空字符串时从 default 类型推导。

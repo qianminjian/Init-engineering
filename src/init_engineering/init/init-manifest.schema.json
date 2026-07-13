@@ -10,7 +10,7 @@
     "project_type": {
       "enum": ["app-service","library","cli-tool","skill","hook","mcp-server","spec-doc","monorepo","plugin"]
     },
-    "language": { "enum": ["python","typescript","go","rust","bash"] },
+    "language": { "enum": ["python","typescript","go","rust","bash","java"] },
     "conventions": {
       "type": "object",
       "required": ["linter", "type_checker", "test_runner"],

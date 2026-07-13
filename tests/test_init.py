@@ -128,8 +128,6 @@ class TestInitMultiLayerTemplates:
             ]
         )
         assert result.returncode == 0
-        # --defaults 模式: project_name 使用目标目录名 (非硬编码 "my-app")
-        app_dir = target / target.name
         ts_files = [
             "tsconfig.json",
             "package.json",
@@ -138,8 +136,8 @@ class TestInitMultiLayerTemplates:
         ]
         for fname in ts_files:
             assert (target / fname).exists(), f"Missing TS file: {fname}"
-        assert (app_dir / "index.ts").exists(), "Missing TS file: index.ts"
-        assert (app_dir / "index.test.ts").exists(), "Missing TS file: index.test.ts"
+        assert (target / "src" / "index.ts").exists(), "Missing TS file: src/index.ts"
+        assert (target / "src" / "index.test.ts").exists(), "Missing TS file: src/index.test.ts"
 
     def test_all_project_types_generate_shared(self):
         """All 8 project types generate shared templates."""

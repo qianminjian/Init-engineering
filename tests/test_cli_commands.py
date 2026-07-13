@@ -1,25 +1,23 @@
 """CLI commands 单元测试 (P1-12).
 
 覆盖 commands.py 和 subcommands.py 的纯函数路径：
-- _cmd_list_types / _cmd_list_templates
-- _cmd_analyze
+- cmd_list_types / cmd_list_templates
+- cmd_analyze
 - cmd_init 早返回分支 (--list-types / --list-templates / --analyze)
 - ConflictStrategy enum
 """
 
 from pathlib import Path
 
-import click
 import pytest
-from click.testing import CliRunner
 
-from init_engineering.cli.commands import _cmd_analyze, _cmd_list_templates, _cmd_list_types, cmd_init
-from init_engineering.cli.subcommands import update as _cli_update
+from init_engineering.cli._list_cmds import cmd_analyze, cmd_list_templates, cmd_list_types
+from init_engineering.cli.commands import cmd_init
 from init_engineering.init.scaffold_update import ConflictStrategy
 
 
 class TestListTypes:
-    """_cmd_list_types — --list-types 分支."""
+    """cmd_list_types — --list-types 分支."""
 
     def test_lists_available_types(self, tmp_path: Path, capsys):
         """列出 templates/ 下所有非 _ 开头的目录."""
@@ -27,7 +25,7 @@ class TestListTypes:
         (tmp_path / "cli-tool").mkdir()
         (tmp_path / "_shared").mkdir()  # should be excluded
 
-        _cmd_list_types(tmp_path)
+        cmd_list_types(tmp_path)
         captured = capsys.readouterr()
         assert "app-service" in captured.out
         assert "cli-tool" in captured.out
@@ -35,7 +33,7 @@ class TestListTypes:
 
 
 class TestListTemplates:
-    """_cmd_list_templates — --list-templates 分支."""
+    """cmd_list_templates — --list-templates 分支."""
 
     def test_lists_files_by_type(self, tmp_path: Path, capsys):
         """列出每个类型的模板文件."""
@@ -43,7 +41,7 @@ class TestListTemplates:
         type_dir.mkdir()
         (type_dir / "README.md.jinja").write_text("")
 
-        _cmd_list_templates(tmp_path)
+        cmd_list_templates(tmp_path)
         captured = capsys.readouterr()
         assert "[app-service]" in captured.out
         assert "README.md.jinja" in captured.out
@@ -55,14 +53,14 @@ class TestListTemplates:
         (type_dir / "main.py.jinja").write_text("")
         (type_dir / ".hidden").write_text("")
 
-        _cmd_list_templates(tmp_path)
+        cmd_list_templates(tmp_path)
         captured = capsys.readouterr()
         assert "main.py.jinja" in captured.out
         assert ".hidden" not in captured.out
 
 
 class TestCmdAnalyze:
-    """_cmd_analyze — --analyze 分支."""
+    """cmd_analyze — --analyze 分支."""
 
     def test_analyze_empty_dir(self, tmp_path: Path, capsys):
         """空目录分析."""
@@ -71,7 +69,7 @@ class TestCmdAnalyze:
 
         from init_engineering.init.detector import ProjectDetector
 
-        _cmd_analyze(project, ProjectDetector)
+        cmd_analyze(project, ProjectDetector)
         captured = capsys.readouterr()
         assert "分析目录" in captured.out
 
@@ -83,7 +81,7 @@ class TestCmdAnalyze:
 
         from init_engineering.init.detector import ProjectDetector
 
-        _cmd_analyze(project, ProjectDetector)
+        cmd_analyze(project, ProjectDetector)
         captured = capsys.readouterr()
         assert "分析目录" in captured.out
         # Should detect language or package manager
@@ -97,7 +95,7 @@ class TestCmdAnalyze:
 
         from init_engineering.init.detector import ProjectDetector
 
-        _cmd_analyze(project, ProjectDetector, project_type="plugin")
+        cmd_analyze(project, ProjectDetector, project_type="plugin")
         captured = capsys.readouterr()
         assert "分析目录" in captured.out
 
@@ -112,7 +110,7 @@ class TestCmdAnalyze:
 
         from init_engineering.init.detector import ProjectDetector
 
-        _cmd_analyze(project, ProjectDetector, project_type="spec-doc")
+        cmd_analyze(project, ProjectDetector, project_type="spec-doc")
         captured = capsys.readouterr()
         assert "使用 --type 指定类型: spec-doc" in captured.out
 

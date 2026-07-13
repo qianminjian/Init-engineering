@@ -36,6 +36,10 @@ class PromptBackend(Protocol):
         """确认 yes/no 问题。"""
         ...
 
+    def hide_input(self, text: str, *, default: str = "") -> str:
+        """提示用户输入敏感信息（不回显）。"""
+        ...
+
 
 class UserAbort(Exception):
     """用户主动中断交互 (等价于 click.exceptions.Abort)。"""
@@ -83,6 +87,22 @@ class BasicPromptBackend:
             except (ValueError, TypeError):
                 pass
         return raw
+
+    def hide_input(self, text: str, *, default: str = "") -> str:
+        import getpass
+        import sys
+
+        if not sys.stdin.isatty():
+            raise UserAbort(
+                "stdin 不是终端。请使用 --defaults 非交互模式。"
+            )
+        if default:
+            text = f"{text} [{default}]"
+        try:
+            raw = getpass.getpass(f"{text}: ")
+        except (EOFError, KeyboardInterrupt):
+            raise UserAbort() from None
+        return raw if raw else default
 
     def confirm(self, text: str, *, default: bool = False) -> bool:
         suffix = " [Y/n]" if default else " [y/N]"

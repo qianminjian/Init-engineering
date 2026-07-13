@@ -1,28 +1,45 @@
-# Byte-compiled / optimized / DLL files
+# Dependencies
+node_modules/
+{% if language == 'python' %}.venv/
+{% elif language == 'rust' %}target/
+{% endif %}
+
+{% if language == 'typescript' or language == 'python' %}
+# Build output
+dist/
+build/
+{% if language == 'typescript' %}.vite/
+{% endif %}
+{% endif %}
+
+{% if language == 'python' %}
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
-
-# C extensions
-*.so
-
-# Distribution / packaging
-dist/
-build/
 *.egg-info/
-
-# Unit test / coverage reports
-htmlcov/
-coverage/
-.coverage
-.coverage.*
 .pytest_cache/
+{% endif %}
 
-# Environments
+{% if language == 'java' %}
+# Java
+target/
+*.class
+*.jar
+*.war
+{% endif %}
+
+# Environment
 .env
 .env.*
 !.env.example
 !.env.sample
+
+# Coverage
+coverage/
+.coverage
+.coverage.*
+htmlcov/
 
 # IDE
 .vscode/
@@ -33,13 +50,6 @@ coverage/
 # OS
 .DS_Store
 Thumbs.db
-
-# Dependencies
-node_modules/
-{% if language == 'python' %}.venv/
-{% endif %}
-{% if language == 'rust' %}target/
-{% endif %}
 
 # Logs
 *.log

@@ -13,7 +13,7 @@ from typing import Any
 import yaml
 
 from ._shared.path_utils import is_path_under_any_root
-from .config_types import DEFAULT_EXCLUDE, TEMPLATES_ROOT, Question, Task
+from .config_types import DEFAULT_EXCLUDE, TEMPLATES_ROOT, Question, Task, TemplateConfig
 from .errors import ConfigFileError, ConfigLoaderSecurityError
 
 _logger = logging.getLogger(__name__)
@@ -21,7 +21,7 @@ _logger = logging.getLogger(__name__)
 
 def load_template_config(
     project_type: str, sandbox_roots: list[str] | None = None
-) -> TemplateConfig:  # noqa: F821
+) -> TemplateConfig:
     """加载并解析 ae-template.yml，返回 TemplateConfig 实例。
 
     完整流程：
@@ -37,8 +37,6 @@ def load_template_config(
         sandbox_roots: 可选的 sandbox 根目录列表。若非空, !include 路径必须
             在这些根目录下 (realpath 归一化防 symlink 穿越)。
     """
-    from .config_types import TemplateConfig
-
     config_path = TEMPLATES_ROOT / project_type / "ae-template.yml"
     if not config_path.exists():
         raise ConfigFileError(f"模板配置文件不存在: {config_path}")

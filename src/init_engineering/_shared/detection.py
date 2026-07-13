@@ -52,6 +52,10 @@ def detect_package_manager(target_dir: Path) -> str | None:
                 return pm.split("@")[0]
         except (json.JSONDecodeError, OSError):
             _logger.debug("无法解析 package.json: %s", pkg_json, exc_info=True)
+    if (target_dir / "pom.xml").exists():
+        return "mvn"
+    if (target_dir / "build.gradle").exists() or (target_dir / "build.gradle.kts").exists():
+        return "gradle"
     return None
 
 
@@ -79,6 +83,8 @@ def detect_test_runner(target_dir: Path, language: str | None = None) -> str | N
         return "go test"
     if language == "rust":
         return "cargo test"
+    if language == "java":
+        return "junit"
     return None
 
 
