@@ -206,11 +206,11 @@ class InteractivePrompt:
             for attempt in range(max_retries):
                 try:
                     raw_value = prompt_fn(q, context)
-                except UserAbort:
+                except UserAbort as e:
                     raise ValidationError(
                         "非 TTY 环境无法交互，请使用 --defaults 非交互模式",
                         field_name=q.var_name,
-                    ) from None
+                    ) from e
                 if isinstance(raw_value, tuple):
                     raw_value = "\n".join(f"- {v}" for v in raw_value)
                 try:
@@ -308,11 +308,11 @@ def prompt_for_project_type(
                 type=None,
                 show_default=False,
             )
-        except UserAbort:
+        except UserAbort as e:
             raise ValidationError(
                 "非 TTY 环境无法交互选择项目类型，请使用 --type 指定",
                 field_name="project_type",
-            ) from None
+            ) from e
         if choice in available_types:
             return choice
         be.echo(f"  ✗ 无效类型: {choice}，有效类型: {types_list}", err=True)
@@ -334,9 +334,9 @@ def prompt_for_nested_template(
         if preferred and preferred in nested:
             return nested[preferred].get("path")
         if preferred:
-            raise ValueError(
-                f"非交互模式下 preferred template '{preferred}' 不在 nested 选项 "
-                f"({', '.join(nested.keys())}) 中，无法自动选择。"
+            _logger.warning(
+                "非交互模式下 preferred template '%s' 不在 nested 选项 (%s) 中，回退到第一个",
+                preferred, ", ".join(nested.keys()),
             )
         first_key = next(iter(nested.keys()))
         return nested[first_key].get("path")
@@ -350,11 +350,11 @@ def prompt_for_nested_template(
             default=next(iter(choices.keys())),
             show_default=True,
         )
-    except UserAbort:
+    except UserAbort as e:
         raise ValidationError(
             "非 TTY 环境无法交互选择模板变体，请使用 --defaults 或 --language 指定",
             field_name="nested_template",
-        ) from None
+        ) from e
     if choice not in nested:
         # 如果 prompt 返回不在 nested 中的值，尝试 fallback
         for key, cfg in nested.items():

@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import contextlib
 import logging
 from pathlib import Path
 
@@ -58,15 +57,16 @@ def phase_detect(
                         " 使用 --type 指定类型后重试，或 --force 进行完整初始化。"
                     )
                 if project_type:
-                    _logger.warning(
-                        "目录非空但缺少 .ae-answers.yml 基线文件，增量模式可能遗漏文件。"
-                        " 建议: 先 ae init --type %s --defaults --force 完整初始化。",
-                        project_type,
+                    raise TargetDirectoryError(
+                        f"目录非空但缺少 .ae-answers.yml 基线文件，增量模式无法判断哪些文件已存在。"
+                        f" 请先 ae init --type {project_type} --defaults --force 完整初始化，"
+                        f"或使用 --analyze 查看检测结果。"
                     )
                 else:
-                    _logger.warning(
-                        "目录非空但缺少 .ae-answers.yml 基线文件，增量模式可能遗漏文件。"
-                        " 建议: 先 ae init --type <type> --defaults --force 完整初始化。"
+                    raise TargetDirectoryError(
+                        "目录非空但缺少 .ae-answers.yml 基线文件，增量模式无法判断哪些文件已存在。"
+                        " 请先 ae init --type <type> --defaults --force 完整初始化，"
+                        "或使用 --analyze 查看检测结果。"
                     )
         elif not force:
             _raise_nonempty(dst_path)
@@ -78,19 +78,13 @@ def phase_detect(
     # Acquire concurrent lock (after non-empty check, before project detection)
     # B1: 必须把锁对象返回给 worker,否则 fd 立刻 GC → 锁瞬间释放,两个 init 进程会
     # 同时进入渲染/合并阶段并破坏目标目录。
+    # acquire_for 内部处理目录创建（锁保护下），避免 TOCTOU 竞态。
     lock: InitLock | None = None
     if not pretend:
-        created_dst = False
-        if not dst_path.exists():
-            dst_path.mkdir(parents=True, exist_ok=True)
-            created_dst = True
         try:
             lock = InitLock.acquire_for(dst_path)
         except (OSError, TargetDirectoryError):
             _logger.exception("获取 InitLock 失败 (dst=%s)", dst_path)
-            if created_dst and dst_path.exists() and not any(dst_path.iterdir()):
-                with contextlib.suppress(OSError):
-                    dst_path.rmdir()
             raise
 
     # 始终运行检测分析 — 即使用户已提供 project_type，

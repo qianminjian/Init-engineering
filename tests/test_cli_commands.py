@@ -103,16 +103,19 @@ class TestCmdAnalyze:
         """P1: 多候选时 --type 可消歧义，显示 '使用 --type 指定类型'."""
         project = tmp_path / "multi"
         project.mkdir()
-        # 同时触发 spec-doc 和 plugin — detector 无法唯一确定
-        (project / "design").mkdir()
-        (project / "design" / "BEACON.md").write_text("# beacon")
-        (project / "pyproject.toml").write_text("[project]\nname = 'test'")
+        # pom.xml 同时匹配 library 和 app-service — detector 无法唯一确定
+        (project / "pom.xml").write_text(
+            "<project><modelVersion>4.0.0</modelVersion>"
+            "<groupId>com.example</groupId>"
+            "<artifactId>test</artifactId>"
+            "<version>1.0</version></project>"
+        )
 
         from init_engineering.init.detector import ProjectDetector
 
-        cmd_analyze(project, ProjectDetector, project_type="spec-doc")
+        cmd_analyze(project, ProjectDetector, project_type="library")
         captured = capsys.readouterr()
-        assert "使用 --type 指定类型: spec-doc" in captured.out
+        assert "使用 --type 指定类型: library" in captured.out
 
 
 class TestCmdInitEarlyReturn:

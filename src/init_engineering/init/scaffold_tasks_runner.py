@@ -81,7 +81,7 @@ def _build_jinja_env(dst_path: Path) -> SandboxedEnvironment:
                 timeout=10,  # PE-AUDIT-P0-1: local read, clamp to 10s
             )
         except subprocess.TimeoutExpired:
-            _logger.warning("git status --porcelain timed out after 10s, assuming dirty repo")
+            _logger.warning("git status --porcelain timed out after 10s, assuming dirty repo", exc_info=True)
             return False  # 安全选择: 超时视为非空,模板作者应排查仓库状态
         return result.stdout.strip() == ""
 

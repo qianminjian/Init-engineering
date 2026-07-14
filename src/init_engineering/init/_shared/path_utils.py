@@ -8,8 +8,11 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
+
+_logger = logging.getLogger(__name__)
 
 
 def is_path_under_any_root(file_path: Path, roots: list[Path] | list[str]) -> bool:
@@ -23,6 +26,7 @@ def is_path_under_any_root(file_path: Path, roots: list[Path] | list[str]) -> bo
         else:
             target = str(file_path.resolve())
     except (OSError, RuntimeError):
+        _logger.debug("realpath/resolve failed for %s", file_path, exc_info=True)
         return False
 
     for root in roots:
@@ -30,6 +34,7 @@ def is_path_under_any_root(file_path: Path, roots: list[Path] | list[str]) -> bo
         try:
             root_real = os.path.realpath(root_path)
         except OSError:
+            _logger.debug("realpath failed for root %s", root_path, exc_info=True)
             continue
         root_prefix = root_real if root_real.endswith(os.sep) else root_real + os.sep
         if target == root_real or target.startswith(root_prefix):

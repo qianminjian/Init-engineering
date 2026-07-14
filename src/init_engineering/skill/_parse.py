@@ -51,21 +51,27 @@ def _parse_prompt(prompt: str) -> tuple[str, str | None, dict]:
         # --analyze 特殊处理: 将 init --analyze <path> 路由到分析模式
         if "--analyze" in parts:
             idx = parts.index("--analyze")
-            project_path = parts[idx + 1] if idx + 1 < len(parts) else "."
+            if idx + 1 < len(parts) and not parts[idx + 1].startswith("--"):
+                project_path = parts[idx + 1]
+            else:
+                project_path = "."
             return ("analyze", project_path, options)
 
-        # 解析选项: --key val → options[key] = val, 同时标记 consumed_indices
+        # 解析选项: --key val 或 --key=val → options[key] = val, 同时标记 consumed_indices
         i = 0
         while i < len(parts):
             if parts[i].startswith("--"):
-                key = parts[i][2:]  # strip leading --
+                token = parts[i][2:]  # strip leading --
                 consumed_indices.add(i)
-                if i + 1 < len(parts) and not parts[i + 1].startswith("--"):
-                    options[key] = parts[i + 1]
+                if "=" in token:
+                    key, val = token.split("=", 1)
+                    options[key] = val
+                elif i + 1 < len(parts) and not parts[i + 1].startswith("--"):
+                    options[token] = parts[i + 1]
                     consumed_indices.add(i + 1)
                     i += 1
                 else:
-                    options[key] = "true"
+                    options[token] = "true"
             i += 1
 
         # 取第一个未消费的非 -- token 为 project_path

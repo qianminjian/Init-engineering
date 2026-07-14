@@ -110,6 +110,7 @@ def is_binary(path: str) -> bool:
         with open(path, "rb") as f:
             chunk = f.read(8192)
     except OSError:
+        _logger.debug("is_binary: read failed for %s", path, exc_info=True)
         return False
     if not chunk:
         return False
@@ -132,4 +133,5 @@ def detect_newline(file_path: Path) -> str | None:
                 newline = max(newline, key=len)
             return newline
     except (OSError, UnicodeDecodeError):
+        _logger.debug("detect_newline failed for %s", file_path, exc_info=True)
         return None

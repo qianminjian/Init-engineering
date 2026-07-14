@@ -169,7 +169,7 @@ def _ensure_git_config(project_dir: Path) -> None:
                 cwd=project_dir, timeout=10,
             )
         except subprocess.TimeoutExpired:
-            _logger.debug("git config %s timed out, using global defaults", key)
+            _logger.debug("git config %s timed out, using global defaults", key, exc_info=True)
             continue
         if result.returncode != 0 or not result.stdout.strip():
             try:
@@ -178,7 +178,7 @@ def _ensure_git_config(project_dir: Path) -> None:
                     cwd=project_dir, timeout=10,
                 )
             except subprocess.TimeoutExpired:
-                _logger.debug("git config %s (set default) timed out, using global defaults", key)
+                _logger.debug("git config %s (set default) timed out, using global defaults", key, exc_info=True)
                 continue
 
 
@@ -191,6 +191,7 @@ def _git_init(tmpdir: Path, _fail) -> bool:
             cwd=tmpdir, timeout=15,
         )
     except subprocess.TimeoutExpired:
+        _logger.debug("git init timed out after 15s", exc_info=True)
         _fail("git init", -1, "git init timed out after 15s")
         return False
     if not _subprocess_ok(result):
@@ -200,6 +201,7 @@ def _git_init(tmpdir: Path, _fail) -> bool:
                     ["git", "init"], cwd=tmpdir, timeout=15,
                 )
             except subprocess.TimeoutExpired:
+                _logger.debug("git init (fallback) timed out after 15s", exc_info=True)
                 _fail("git init", -1, "git init timed out after 15s")
                 return False
         if not _subprocess_ok(result):
@@ -275,6 +277,7 @@ def _git_add_commit_step(tmpdir: Path, git_ok: bool, _fail) -> bool:
                 cmd, cwd=tmpdir, timeout=tmout,
             )
         except subprocess.TimeoutExpired:
+            _logger.debug("%s timed out after %ds", label, tmout, exc_info=True)
             _fail(label, -1, f"{label} timed out after {tmout}s")
             git_ok = False
             continue
@@ -315,6 +318,7 @@ def run_builtin_hooks(
                 ["lefthook", "install"], cwd=tmpdir, timeout=60,
             )
         except subprocess.TimeoutExpired:
+            _logger.debug("lefthook install timed out after 60s", exc_info=True)
             _fail("lefthook install", -1, "lefthook install timed out after 60s")
             result = None
         if result is not None and not _subprocess_ok(result):

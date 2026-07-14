@@ -56,7 +56,8 @@ def check_language_tools(language: str | None, skip_tasks: bool) -> None:
     if shutil.which(cmd) is None:
         raise UnsatisfiedPrerequisiteError(
             f"未找到 {name} ({cmd})，但项目语言为 {language}。"
-            f" 使用 --skip-tasks 跳过构建步骤，或安装后重试。"
+            f" 使用 --skip-tasks 跳过构建步骤，或安装后重试。",
+            missing_tool=name,
         )
 
 
@@ -70,5 +71,6 @@ def check_basic_tools() -> None:
             found = shutil.which("python") or _sys.executable
         if found is None:
             raise UnsatisfiedPrerequisiteError(
-                f"未找到 {name}。请先安装（例如: brew install {cmd} 或检查 PATH）。"
+                f"未找到 {name}。请先安装（例如: brew install {cmd} 或检查 PATH）。",
+                missing_tool=name,
             )

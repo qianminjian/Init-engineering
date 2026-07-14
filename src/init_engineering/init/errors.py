@@ -40,7 +40,13 @@ class UnsatisfiedPrerequisiteError(InitError):
     """git/node/python 等必需工具未安装。"""
 
     exit_code = 3
-    recovery_hint = "安装缺失的工具后重试，或检查 PATH 环境变量"
+
+    def __init__(self, message: str, *, missing_tool: str = ""):
+        if missing_tool:
+            self.recovery_hint = f"安装 {missing_tool} 后重试，或检查 PATH 环境变量"
+        else:
+            self.recovery_hint = "安装缺失的工具后重试，或检查 PATH 环境变量"
+        super().__init__(message)
 
 
 class TargetDirectoryError(InitError):

@@ -142,11 +142,21 @@ def _atomic_copytree(src: Path, dst: Path) -> None:
         shutil.copytree(src, partial, ignore=_ignore_build_artifacts)
         # 第 1 步:将 partial 重命名为 .new (单次 rename 原子)
         partial.replace(new_marker)
-        # 第 2 步:移除旧 dst (如存在)
+        # 第 2 步:旧 dst 先 rename 到备份，再 replace .new → dst，失败时可恢复
+        old_backup = dst.with_name(f"{dst.name}.old-{int(_time.time() * 1000)}")
         if dst.exists():
-            shutil.rmtree(dst)
-        # 第 3 步:.new 原子替换为 dst
-        new_marker.replace(dst)
+            dst.replace(old_backup)
+        try:
+            new_marker.replace(dst)
+        except (OSError, shutil.Error):
+            # replace 失败 → 恢复旧 dst 备份
+            if old_backup.exists():
+                old_backup.replace(dst)
+            raise
+        else:
+            # replace 成功 → 清理备份
+            if old_backup.exists():
+                shutil.rmtree(old_backup, ignore_errors=True)
     except (OSError, shutil.Error):
         # 失败清理:partial 和 .new 都尝试回收
         shutil.rmtree(partial, ignore_errors=True)

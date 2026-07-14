@@ -66,9 +66,15 @@ java_group_id:
   default: com.example
   when: "{{ language == 'java' }}"
 
+java_version:
+  type: str
+  help: Java 版本（用于 maven.compiler.source/target）
+  default: "21"
+  when: "{{ language == 'java' }}"
+
 java_modules:
   type: str
-  help: Maven module 路径（逗号分隔）
+  help: Maven module 路径（逗号分隔，留空跳过根 POM 聚合）
   default: "module1,module2"
   when: "{{ language == 'java' }}"
 

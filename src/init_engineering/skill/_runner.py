@@ -128,6 +128,10 @@ def _run_init(
             "strict": "strict",
             "verbose": "verbose",
             "include-hidden": "include_hidden",
+            # 正向布尔标志（--use-typescript 等同 --no-typescript 的反向）
+            "use-typescript": "use_typescript",
+            "use-lefthook": "use_lefthook",
+            "use-docker": "use_docker",
             **NEGATED_FLAG_MAP,
         }
         if key in param_map:

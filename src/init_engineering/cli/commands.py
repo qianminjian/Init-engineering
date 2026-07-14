@@ -143,6 +143,13 @@ def cmd_init(
 
     _configure_logging(verbose=verbose)
 
+    # 非 TTY 环境自动启用 --defaults，避免 BasicPromptBackend.input() 等待不可用的 stdin
+    import sys as _sys
+    if not _sys.stdin.isatty() and not defaults:
+        if not quiet:
+            click.echo("非 TTY 环境，自动启用 --defaults 模式", err=True)
+        defaults = True
+
     _worker_kwargs = _build_init_worker_kwargs(
         dst_path=dst_path, project_type=project_type, language=language,
         package_manager=package_manager, ci_platform=ci_platform,

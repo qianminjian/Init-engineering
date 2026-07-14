@@ -45,7 +45,7 @@ def _apply_when(q: Question, answers: AnswersMap, env: SandboxedEnvironment, con
             if not result or result.strip().lower() in ("false", "no", "0", ""):
                 answers.defaults.pop(q.var_name, None)
         except jinja2.TemplateError as e:
-            _logger.debug("when 条件渲染失败, 保留 question: %s → %s", q.when, e)
+            _logger.debug("when 条件渲染失败, 保留 question: %s → %s", q.when, e, exc_info=True)
     elif q.when is False:
         answers.defaults.pop(q.var_name, None)
 
@@ -60,4 +60,4 @@ def _render_default_to_answers(
                 rendered = rendered.strip().lower() in ("true", "yes", "1")
             answers.defaults[q.var_name] = rendered
         except jinja2.TemplateError as e:
-            _logger.debug("default 渲染失败, 保留原始值: %s → %s", q.default, e)
+            _logger.debug("default 渲染失败, 保留原始值: %s → %s", q.default, e, exc_info=True)

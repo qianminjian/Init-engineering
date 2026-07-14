@@ -71,6 +71,16 @@ class ProjectDetector:
                     lambda deps: "@modelcontextprotocol/sdk" in str(deps),
                 ):
                     continue
+                # spec-doc 与 app-service/library 消歧义：当 design/ 目录与构建文件
+                # 共存时，优先按代码项目（app-service/library）处理
+                if ptype == "spec-doc" and any(
+                    (self.dst_path / f).exists()
+                    for f in (
+                        "package.json", "pyproject.toml", "pom.xml",
+                        "build.gradle", "build.gradle.kts", "go.mod", "Cargo.toml",
+                    )
+                ):
+                    continue
                 matches.append(ptype)
         return matches
 

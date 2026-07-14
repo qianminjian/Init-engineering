@@ -14,6 +14,8 @@ from typing import Any
 
 import click
 
+from init_engineering.init._shared.prompt_backend import UserAbort
+
 
 class ClickPromptBackend:
     """PromptBackend 的 click 实现 — 提供颜色、choice 类型、Abort 处理。"""
@@ -38,22 +40,16 @@ class ClickPromptBackend:
         try:
             return click.prompt(text, **kwargs)
         except click.exceptions.Abort:
-            from init_engineering.init._shared.prompt_backend import UserAbort
-
             raise UserAbort() from None
 
     def hide_input(self, text: str, *, default: str = "") -> str:
         try:
             return click.prompt(text, default=default, hide_input=True)
         except click.exceptions.Abort:
-            from init_engineering.init._shared.prompt_backend import UserAbort
-
             raise UserAbort() from None
 
     def confirm(self, text: str, *, default: bool = False) -> bool:
         try:
             return click.confirm(text, default=default)
         except click.exceptions.Abort:
-            from init_engineering.init._shared.prompt_backend import UserAbort
-
             raise UserAbort() from None

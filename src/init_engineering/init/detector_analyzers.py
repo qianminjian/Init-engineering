@@ -26,7 +26,7 @@ from .detector_constants import (  # noqa: E402
 )
 
 
-def analyze_node(pkg_path: Path, dst_path: Path, result: DetectionResult) -> DetectionResult:
+def analyze_node(pkg_path: Path, project_dir: Path, result: DetectionResult) -> DetectionResult:
     """分析 Node.js 项目 — package.json + tsconfig。
 
     ⚠ 原地修改 result 并返回，调用方应使用返回值。
@@ -47,7 +47,7 @@ def analyze_node(pkg_path: Path, dst_path: Path, result: DetectionResult) -> Det
         ) and framework not in result.frameworks:
             result.frameworks.append(framework)
 
-    tsconfig = dst_path / "tsconfig.json"
+    tsconfig = project_dir / "tsconfig.json"
     deps_str = str(all_deps)
     if not tsconfig.exists() and "typescript" not in deps_str:
         result.language = "javascript"
@@ -67,7 +67,7 @@ def analyze_python(py_path: Path, result: DetectionResult) -> DetectionResult:
     result.language = "python"
     try:
         data = tomllib.loads(py_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError, tomllib.TOMLDecodeError):
+    except (OSError, tomllib.TOMLDecodeError):
         _logger.debug("无法解析 pyproject.toml: %s", py_path, exc_info=True)
         return result
 
@@ -133,7 +133,7 @@ def analyze_java(pom_path: Path, result: DetectionResult) -> DetectionResult:
     """
     result.language = "java"
     result.package_manager = "mvn"
-    result.test_runner = result.test_runner or "junit"
+    result.test_runner = result.test_runner or "mvn test"
 
     try:
         tree = ET.parse(pom_path)
@@ -264,7 +264,7 @@ def analyze_gradle(gradle_path: Path, result: DetectionResult) -> DetectionResul
     """
     result.language = "java"
     result.package_manager = "gradle"
-    result.test_runner = result.test_runner or "junit"
+    result.test_runner = result.test_runner or "gradle test"
     try:
         content = gradle_path.read_text(encoding="utf-8")
     except OSError:

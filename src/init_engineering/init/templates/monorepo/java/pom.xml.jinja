@@ -11,15 +11,21 @@
 
     <name>{{ repo_name }}</name>
     <description>{{ repo_description }}</description>
-
+{%- if java_modules and java_modules | trim %}
+    <!--
+    ⚠ 注意：此 <modules> 假定统一 reactor POM 聚合所有子模块。
+    如果子目录已有独立 pom.xml 且通过 parent POM 引用（而非 reactor 聚合），
+    请手动调整或删除此 <modules> 段，改为在子模块 pom.xml 中添加 <parent> 引用。
+    -->
     <modules>
 {% for module in java_modules.split(",") | map("trim") | list %}
         <module>{{ module }}</module>
 {% endfor %}
     </modules>
+{%- endif %}
 
     <properties>
-        <java.version>21</java.version>
+        <java.version>{{ java_version }}</java.version>
         <maven.compiler.source>${java.version}</maven.compiler.source>
         <maven.compiler.target>${java.version}</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>

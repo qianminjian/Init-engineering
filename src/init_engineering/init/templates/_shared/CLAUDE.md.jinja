@@ -38,6 +38,9 @@
 {%- elif language == 'rust' %}
 - Lint: `cargo clippy`
 - Format: `cargo fmt`
+{%- elif language == 'java' %}
+- Lint: `mvn checkstyle:check`
+- Format: `mvn spotless:apply`
 {%- endif %}
 
 ## Tech Stack

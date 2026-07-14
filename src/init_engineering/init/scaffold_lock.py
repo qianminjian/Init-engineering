@@ -191,7 +191,11 @@ class InitLock:
         """便捷 API — 直接拿到锁对象（手动管理 release）。
 
         推荐使用 `with` 语句（见 __enter__/__exit__）。
+
+        若 dst_path 不存在则先创建目录再获取锁，避免 TOCTOU 竞态。
         """
+        if not dst_path.exists():
+            dst_path.mkdir(parents=True, exist_ok=True)
         lock = cls(dst_path)
         lock.acquire()
         return lock

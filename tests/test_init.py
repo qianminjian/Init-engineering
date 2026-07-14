@@ -759,7 +759,7 @@ class TestInitIncrementalMode:
         assert (target / "LICENSE").exists()
 
     def test_incremental_skips_git_dir(self):
-        """RED: 增量模式下 .git/ 始终跳过（已有仓库不被覆盖）."""
+        """增量模式下 .git/ 始终跳过（已有仓库不被覆盖）."""
 
         tmp = Path(tempfile.mkdtemp())
         target = tmp / "git-target"
@@ -770,6 +770,9 @@ class TestInitIncrementalMode:
         # 写一个 commit 对象验证 .git/HEAD 等文件
         head_file = target / ".git" / "HEAD"
         original_head = head_file.read_text() if head_file.exists() else ""
+
+        # 增量模式需要 .ae-answers.yml 基线文件
+        (target / ".ae-answers.yml").write_text("project_type: app-service\nlanguage: typescript\n")
 
         # 跑 --incremental
         result = run_ae(
@@ -869,6 +872,8 @@ class TestPhaseDetectWithProjectType:
         project.mkdir()
         (project / ".claude-plugin").mkdir()
         (project / "pyproject.toml").write_text("[project]\nname = 'test'\n")
+        # 增量模式需要基线文件
+        (project / ".ae-answers.yml").write_text("project_type: plugin\nlanguage: python\n")
 
         ptype, mode, analysis, lock = phase_detect(
             project_type="plugin",
@@ -913,6 +918,8 @@ class TestScaffoldNonEmptyDir:
         existing = tmp_path / "existing"
         existing.mkdir()
         (existing / "file.txt").write_text("data")
+        # 增量模式需要基线文件
+        (existing / ".ae-answers.yml").write_text("project_type: library\nlanguage: typescript\n")
 
         worker = InitWorker(
             dst_path=existing,
@@ -922,6 +929,24 @@ class TestScaffoldNonEmptyDir:
         )
         worker._phase_detect()
         assert worker._mode == "incremental"
+
+    def test_incremental_without_baseline_raises(self, tmp_path):
+        """增量模式缺 .ae-answers.yml 基线时必须报错退出，而非警告后继续."""
+        from init_engineering.init.errors import TargetDirectoryError
+        from init_engineering.init.scaffold_phases import InitWorker
+
+        existing = tmp_path / "existing"
+        existing.mkdir()
+        (existing / "file.txt").write_text("data")
+
+        worker = InitWorker(
+            dst_path=existing,
+            project_type="library",
+            defaults=True,
+            incremental=True,
+        )
+        with pytest.raises(TargetDirectoryError, match=".ae-answers.yml"):
+            worker._phase_detect()
 
     def test_empty_dir_sets_fresh_mode(self, tmp_path):
         from init_engineering.init.scaffold_phases import InitWorker
@@ -1006,6 +1031,8 @@ class TestScaffoldCleanupOnError:
         dst.mkdir()
         user_file = dst / "user-data.txt"
         user_file.write_text("user content — must survive")
+        # 增量模式需要基线文件
+        (dst / ".ae-answers.yml").write_text("project_type: library\nlanguage: typescript\n")
 
         worker = InitWorker(
             dst_path=dst,
