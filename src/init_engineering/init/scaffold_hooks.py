@@ -114,6 +114,9 @@ def has_package_file(tmpdir: Path, pm: str) -> bool:
         "bun": "package.json",
         "uv": "pyproject.toml",
         "poetry": "pyproject.toml",
+        "pip": "pyproject.toml",
+        "mvn": "pom.xml",
+        "gradle": "build.gradle",
     }
     expected = pm_file_map.get(pm, "package.json")
     return (tmpdir / expected).exists()

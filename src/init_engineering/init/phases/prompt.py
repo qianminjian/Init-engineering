@@ -41,10 +41,15 @@ def phase_prompt(
     template = load_template_config(project_type or "")
     if template.nested_templates:
         # 选择 nested template 策略:
-        # 1. 若 language 在 nested_templates 键中 → 直接选它（CLI 透传 language）
-        # 2. defaults 模式自动选第一个
-        # 3. 非 defaults 模式交互式询问用户
-        preferred = language if language in template.nested_templates else None
+        # 1. CLI --language → 直接选对应键（最高优先级）
+        # 2. detection.language → 存量项目自动检测（无 CLI --language 时）
+        # 3. defaults 模式 → 自动选第一个
+        # 4. 非 defaults 模式 → 交互式询问用户
+        preferred = language if (language and language in template.nested_templates) else None
+        if preferred is None and detection is not None:
+            det_lang = detection.language
+            if det_lang and det_lang in template.nested_templates:
+                preferred = det_lang
         chosen = prompt_for_nested_template(
             template.nested_templates,
             no_input=defaults,

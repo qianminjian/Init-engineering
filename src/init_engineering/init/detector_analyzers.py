@@ -114,6 +114,8 @@ def analyze_java(pom_path: Path, result: DetectionResult) -> None:
     detected frameworks, packaging type, multi-module detection.
     """
     result.language = "java"
+    result.package_manager = "mvn"
+    result.test_runner = result.test_runner or "junit"
 
     try:
         tree = ET.parse(pom_path)
@@ -240,6 +242,8 @@ def analyze_java(pom_path: Path, result: DetectionResult) -> None:
 def analyze_gradle(gradle_path: Path, result: DetectionResult) -> None:
     """分析 Java/Gradle 项目 — build.gradle / build.gradle.kts (basic detection)."""
     result.language = "java"
+    result.package_manager = "gradle"
+    result.test_runner = result.test_runner or "junit"
     try:
         content = gradle_path.read_text(encoding="utf-8")
     except OSError:
@@ -264,5 +268,3 @@ def analyze_gradle(gradle_path: Path, result: DetectionResult) -> None:
 
     if not result.project_name:
         result.project_name = gradle_path.parent.resolve().name
-
-    return result
