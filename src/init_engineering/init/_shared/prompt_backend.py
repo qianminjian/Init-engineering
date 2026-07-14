@@ -83,9 +83,13 @@ class BasicPromptBackend:
             raw = str(default)
         if type is not None and raw:
             try:
-                return type(raw)
+                raw = type(raw)
             except (ValueError, TypeError):
-                pass
+                raise ValueError(
+                    f"无法将输入值转换为 {type.__name__}: {raw!r}"
+                ) from None
+        if value_proc is not None and raw:
+            raw = value_proc(raw)
         return raw
 
     def hide_input(self, text: str, *, default: str = "") -> str:

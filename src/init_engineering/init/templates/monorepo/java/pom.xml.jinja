@@ -13,7 +13,9 @@
     <description>{{ repo_description }}</description>
 
     <modules>
-        <module>packages/shared</module>
+{% for module in java_modules.split(",") | map("trim") | list %}
+        <module>{{ module }}</module>
+{% endfor %}
     </modules>
 
     <properties>

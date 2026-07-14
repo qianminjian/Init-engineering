@@ -124,11 +124,13 @@ class ProjectDetector:
                         pom = d / sig
                         try:
                             import xml.etree.ElementTree as ET
+
+                            from .detector_helpers import strip_xml_ns
+
                             tree = ET.parse(pom)
                             root = tree.getroot()
-                            def tag(el):
-                                return el.tag.rsplit("}", 1)[-1] if "}" in el.tag else el.tag
-                            has_modules = any(tag(c) == "modules" for c in root)
+
+                            has_modules = any(strip_xml_ns(c.tag) == "modules" for c in root)
                             if has_modules:
                                 best_dir = d
                                 break

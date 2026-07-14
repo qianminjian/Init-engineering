@@ -37,7 +37,12 @@ def phase_prompt(
     dst_path: Path | None = None,
     prompt_backend: PromptBackend | None = None,
 ) -> tuple[TemplateConfig, AnswersMap]:
-    """加载 TemplateConfig + 应用 CLI overrides + 评估 question + 交互 prompt."""
+    """加载 TemplateConfig + 应用 CLI overrides + 评估 question + 交互 prompt。
+
+    ⚠ 副作用:
+    - template.template_dir: nested template 选择时可能被修改（追加语言子目录）
+    - answers.defaults: detection 结果覆盖模板默认值（language/package_manager/test_runner 等）
+    """
     template = load_template_config(project_type or "")
     if template.nested_templates:
         # 选择 nested template 策略:
@@ -83,6 +88,7 @@ def phase_prompt(
     )
     answers.builtins["project_type"] = project_type or ""
     if detection is not None:
+        # ⚠ 副作用: detection 结果写入 answers.defaults，覆盖模板默认值
         for k, v in detection.as_answers().items():
             # 只将真正从项目文件检测到的字段放入 defaults（覆盖模板默认值）
             # project_name 始终为目录名，不是检测结果，不覆盖模板默认
@@ -106,7 +112,7 @@ def phase_prompt(
 
     # PM 可用性检查：默认 PM 不可用时自动降级（仅 defaults 层，CLI 显式指定不覆盖）
     # 必须在 evaluate_question_defaults 之后，确保 Jinja2 模板默认值已渲染
-    _check_pm_availability(answers)
+    _ensure_pm_availability(answers)
 
     if not defaults:
         prompt = InteractivePrompt(template.questions, answers, backend=prompt_backend)
@@ -119,7 +125,7 @@ def phase_prompt(
     return template, answers
 
 
-def _check_pm_availability(answers: AnswersMap) -> None:
+def _ensure_pm_availability(answers: AnswersMap) -> None:
     """检测包管理器 CLI 可用性，不可用时自动降级。
 
     仅当 package_manager 来自 defaults 层（非 CLI/interactive 显式指定）时才检查。

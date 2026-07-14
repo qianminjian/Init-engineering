@@ -763,7 +763,7 @@ class TestInitErrorHierarchy:
         err = TaskExecutionError(command="ls", returncode=1, stderr="oops")
         assert err.exit_code == 6
         assert err.command == "ls"
-        assert err.process_exit_code == 1
+        assert err.subprocess_returncode == 1
         assert err.stderr == "oops"
         assert "ls" in str(err)
 
@@ -814,7 +814,7 @@ class TestTaskRunnerExtended:
         r = TaskRunner(tmp_path)
         with pytest.raises(TaskExecutionError) as exc_info:
             r.run([t], {})
-        assert exc_info.value.process_exit_code != 0
+        assert exc_info.value.subprocess_returncode != 0
 
     def test_working_directory(self, tmp_path: Path):
         sub = tmp_path / "sub"

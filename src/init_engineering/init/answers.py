@@ -39,21 +39,6 @@ BUILTIN_VARS: MappingProxyType = MappingProxyType({
 })
 
 
-def _current_year_builtin() -> str:
-    """动态计算 current_year — 避免 import 时 frozen 跨年任务."""
-    return str(datetime.now().year)
-
-
-def _current_month_builtin() -> str:
-    """动态计算 current_month — 零填充两位，用于模板日期."""
-    return f"{datetime.now().month:02d}"
-
-
-def _current_day_builtin() -> str:
-    """动态计算 current_day — 零填充两位，用于模板日期."""
-    return f"{datetime.now().day:02d}"
-
-
 def _python_executable_builtin() -> str:
     """P2-2: 动态取 sys.executable — 避免 import 时冻结.
 
@@ -230,13 +215,12 @@ class AnswersMap:
         _write_answers_file(self.to_answers_file(), dst)
 
     def __getitem__(self, key: str) -> Any:
-        value = self.get(key)
-        if value is None and key not in self:
+        if key not in self:
             raise KeyError(
                 f"'{key}' 不在 answers 中。请确认该变量已在 ae-template.yml 的 questions "
                 f"中定义，或在 CLI 中通过对应 flag 提供。"
             ) from None
-        return value
+        return self.get(key)
 
     def __contains__(self, key: str) -> bool:
         """检查 key 是否在任一优先级层中。
@@ -273,9 +257,14 @@ def _load_external_file(
         )
     if not file_path.exists():
         return None
+    try:
+        raw = file_path.read_text(encoding="utf-8")
+    except (UnicodeDecodeError, OSError) as e:
+        _logger.debug("无法读取 external_data 文件 %s: %s", file_path, e, exc_info=True)
+        return None
     if file_path.suffix == ".json":
-        return json.loads(file_path.read_text(encoding="utf-8"))
-    return yaml.safe_load(file_path.read_text(encoding="utf-8"))
+        return json.loads(raw)
+    return yaml.safe_load(raw)
 
 
 class _LazyExternalDict:
@@ -300,8 +289,25 @@ class _LazyExternalDict:
         ]
         self._cache: dict[str, Any] = {}
 
+    def get(self, key: str, default: Any = None) -> Any:
+        """dict.get() 风格 — 懒加载文件内容，key 不存在时返回 default。"""
+        if key not in self._external_map:
+            return default
+        if key not in self._cache:
+            self._cache[key] = _load_external_file(
+                Path(self._external_map[key]),
+                effective_roots=self._sandbox_roots,
+                var_key=key,
+            )
+        return self._cache[key]
+
     def __getitem__(self, key: str) -> Any:
         if key not in self._cache:
+            if key not in self._external_map:
+                raise KeyError(
+                    f"external_data key '{key}' 不存在。"
+                    f"已配置的 external_data: {sorted(self._external_map.keys())}"
+                )
             self._cache[key] = _load_external_file(
                 Path(self._external_map[key]),
                 effective_roots=self._sandbox_roots,

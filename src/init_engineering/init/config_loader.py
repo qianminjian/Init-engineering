@@ -225,8 +225,15 @@ def _parse_tasks(tasks_raw: list[dict[str, Any]], config_kwargs: dict[str, Any])
     """
     before: list[Task] = []
     after: list[Task] = []
-    for raw_task in tasks_raw:
+    for i, raw_task in enumerate(tasks_raw):
         task_kwargs = {k: v for k, v in raw_task.items() if k in Task.__dataclass_fields__}
+        if "cmd" not in task_kwargs:
+            raise ConfigFileError(
+                f"_tasks[{i}] 缺少必填字段 'cmd'。"
+                f"有效字段: {sorted(Task.__dataclass_fields__.keys())}。"
+                f"当前字段: {sorted(raw_task.keys())}",
+                config_path="ae-template.yml",
+            )
         task = Task(**task_kwargs)
         stage = raw_task.get("stage", "after")
         if stage == "before":

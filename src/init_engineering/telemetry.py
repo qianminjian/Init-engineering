@@ -88,15 +88,25 @@ def has_consent() -> bool:
     return (Path.home() / _TELEMETRY_CONSENT_FILE).exists()
 
 
-def request_and_persist_consent() -> bool:
+def request_and_persist_consent(
+    *, _echo: "Callable[[str], None] | None" = None, _confirm: "Callable[[str, bool], bool] | None" = None
+) -> bool:
     """首次开启 telemetry 时打印数据收集声明, 强制用户 y/n 确认, 持久化到文件.
+
+    Args:
+        _echo: 输出函数 (默认 click.echo)。CLI 层注入 ClickPromptBackend.echo 解耦。
+        _confirm: 确认函数 (默认 click.confirm)。CLI 层注入 ClickPromptBackend.confirm 解耦。
 
     Returns: 用户最终选择 (True=同意, False=拒绝)
     Side effect: 写 consent 文件记录已询问 (避免每次都询问)
     """
-    import click
+    if _echo is None or _confirm is None:
+        import click  # pragma: no cover — CLI 层始终注入 backend
 
-    click.echo(
+        _echo = lambda msg, **kw: click.echo(msg, err=kw.get("err", False))  # type: ignore[assignment]
+        _confirm = click.confirm  # type: ignore[assignment]
+
+    _echo(
         "\n📊 ae 遥测数据收集声明:\n"
         "  • 仅收集匿名使用数据 (版本/命令/项目类型/语言/Python版本/OS)\n"
         "  • 不收集项目名/路径/文件内容/环境变量值\n"
@@ -104,7 +114,7 @@ def request_and_persist_consent() -> bool:
         "  • endpoint: " + DEFAULT_TELEMETRY_ENDPOINT + "\n",
         err=False,
     )
-    choice = click.confirm("是否启用遥测?", default=False)
+    choice = _confirm("是否启用遥测?", default=False)
     consent_path = Path.home() / _TELEMETRY_CONSENT_FILE
     try:
         consent_path.write_text("yes" if choice else "no", encoding="utf-8")

@@ -109,7 +109,7 @@ def _load_answers_file(path: Path) -> dict:
                     f"主版本变化时 answers 字段可能不兼容, 拒绝加载以防误用。"
                     f"如确认来源可信, 请删除 _meta.ae_version 后重试。"
                 )
-        except (IndexError, AttributeError):
+        except AttributeError:
             _logger.debug(
                 "version check skipped: __version__ or meta_version parse failed",
                 exc_info=True,

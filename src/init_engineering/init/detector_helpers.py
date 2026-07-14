@@ -18,6 +18,11 @@ from pathlib import Path
 _logger = logging.getLogger(__name__)
 
 
+def strip_xml_ns(tag: str) -> str:
+    """剥离 XML 命名空间前缀 — 如 {http://maven.apache.org/POM/4.0.0}groupId → groupId."""
+    return tag.rsplit("}", 1)[-1] if "}" in tag else tag
+
+
 def check_pkg_dep(dst_path: Path, check_fn: Callable[[dict], bool]) -> bool:
     """Check package.json dependencies.
 

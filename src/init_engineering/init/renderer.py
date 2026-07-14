@@ -60,6 +60,7 @@ def resolve_symlink(
         try:
             raw_target = os.readlink(src_file)
         except OSError:
+            _logger.debug("readlink failed for %s", src_file, exc_info=True)
             return True, "unreadable"
         if ".." in raw_target:
             raise TemplateRenderError(
@@ -69,6 +70,7 @@ def resolve_symlink(
         try:
             dst_file.symlink_to(target)
         except OSError:
+            _logger.debug("symlink_to failed for %s -> %s", dst_file, target, exc_info=True)
             return True, "symlink_failed"
         return True, None
     if not target.exists():
@@ -77,7 +79,10 @@ def resolve_symlink(
         atomic_write_binary(dst_file, target)
     else:
         newline = detect_newline(target)
-        atomic_write_text(dst_file, target.read_text(encoding="utf-8"), newline=newline)
+        try:
+            atomic_write_text(dst_file, target.read_text(encoding="utf-8"), newline=newline)
+        except UnicodeDecodeError as e:
+            raise TemplateRenderError(str(src_file), e) from e
     try:
         shutil.copymode(src_file, dst_file)
     except OSError:
@@ -192,6 +197,7 @@ class TemplateRenderer:
                     _logger.info(
                         "copymode failed for %s — file permissions may be incorrect",
                         dst_file,
+                        exc_info=True,
                     )
                 generated[rendered_rel] = dst_file
 
@@ -203,7 +209,10 @@ class TemplateRenderer:
             atomic_write_binary(dst_file, src_file)
         else:
             newline = detect_newline(src_file)
-            atomic_write_text(dst_file, src_file.read_text(encoding="utf-8"), newline=newline)
+            try:
+                atomic_write_text(dst_file, src_file.read_text(encoding="utf-8"), newline=newline)
+            except UnicodeDecodeError as e:
+                raise TemplateRenderError(str(src_file), e) from e
 
     def _write_rendered(
         self, src_file: Path, dst_file: Path, src_dir: Path, *, is_template: bool
@@ -212,7 +221,7 @@ class TemplateRenderer:
         if is_template:
             try:
                 content = self._render(src_file.read_text(encoding="utf-8"))
-            except jinja2.TemplateError as e:
+            except (jinja2.TemplateError, UnicodeDecodeError) as e:
                 raise TemplateRenderError(str(src_file.relative_to(src_dir)), e) from e
             newline = detect_newline(src_file)
             atomic_write_text(dst_file, content, newline=newline)

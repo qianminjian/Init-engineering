@@ -18,16 +18,19 @@ from pathlib import Path
 _logger = logging.getLogger(__name__)
 
 from .detector_constants import (  # noqa: E402
-    _GO_FRAMEWORKS,
-    _JAVA_FRAMEWORKS,
-    _NODE_FRAMEWORKS,
-    _PYTHON_FRAMEWORKS,
+    GO_FRAMEWORKS,
+    JAVA_FRAMEWORKS,
+    NODE_FRAMEWORKS,
+    PYTHON_FRAMEWORKS,
     DetectionResult,
 )
 
 
 def analyze_node(pkg_path: Path, dst_path: Path, result: DetectionResult) -> None:
-    """分析 Node.js 项目 — package.json + tsconfig。Modifies result in place."""
+    """分析 Node.js 项目 — package.json + tsconfig。
+
+    ⚠ 副作用: 原地修改 result (result.language, result.frameworks, result.package_manager)。
+    """
     result.language = "typescript"
     try:
         data = json.loads(pkg_path.read_text(encoding="utf-8"))
@@ -38,7 +41,7 @@ def analyze_node(pkg_path: Path, dst_path: Path, result: DetectionResult) -> Non
     result.project_description = data.get("description", "")
 
     all_deps = {**data.get("dependencies", {}), **data.get("devDependencies", {})}
-    for name, framework in _NODE_FRAMEWORKS:
+    for name, framework in NODE_FRAMEWORKS:
         if (
             name in all_deps or any(k.startswith(name + "/") for k in all_deps)
         ) and framework not in result.frameworks:
@@ -55,7 +58,11 @@ def analyze_node(pkg_path: Path, dst_path: Path, result: DetectionResult) -> Non
 
 
 def analyze_python(py_path: Path, result: DetectionResult) -> None:
-    """分析 Python 项目 — pyproject.toml (PEP 621)。Modifies result in place."""
+    """分析 Python 项目 — pyproject.toml (PEP 621)。
+
+    ⚠ 副作用: 原地修改 result
+    (result.language, result.project_description, result.frameworks, result.package_manager)。
+    """
     result.language = "python"
     try:
         data = tomllib.loads(py_path.read_text(encoding="utf-8"))
@@ -73,7 +80,7 @@ def analyze_python(py_path: Path, result: DetectionResult) -> None:
             if isinstance(extra_deps, list):
                 deps_list.extend(extra_deps)
     deps_str = " ".join(deps_list)
-    for name, framework in _PYTHON_FRAMEWORKS:
+    for name, framework in PYTHON_FRAMEWORKS:
         if name in deps_str:
             result.frameworks.append(framework)
 
@@ -88,7 +95,10 @@ def analyze_python(py_path: Path, result: DetectionResult) -> None:
 
 
 def analyze_go(go_path: Path, result: DetectionResult) -> None:
-    """分析 Go 项目 — go.mod。Modifies result in place."""
+    """分析 Go 项目 — go.mod。
+
+    ⚠ 副作用: 原地修改 result (result.language, result.project_name, result.frameworks)。
+    """
     result.language = "go"
     try:
         content = go_path.read_text(encoding="utf-8")
@@ -101,7 +111,7 @@ def analyze_go(go_path: Path, result: DetectionResult) -> None:
         mod_path = m.group(1).strip()
         result.project_name = mod_path.rsplit("/", 1)[-1]
 
-    for name, framework in _GO_FRAMEWORKS:
+    for name, framework in GO_FRAMEWORKS:
         if re.search(rf"github\.com/.*/{name}\b", content):
             result.frameworks.append(framework)
 
@@ -109,6 +119,9 @@ def analyze_go(go_path: Path, result: DetectionResult) -> None:
 
 def analyze_java(pom_path: Path, result: DetectionResult) -> None:
     """分析 Java/Maven 项目 — pom.xml (Maven) 或 build.gradle (Gradle).
+
+    ⚠ 副作用: 原地修改 result (result.language, result.package_manager, result.test_runner,
+    result.project_name, result.frameworks, result.candidates, result._java_info 等)。
 
     Extracts: Java version, groupId/artifactId, Spring Boot version,
     detected frameworks, packaging type, multi-module detection.
@@ -124,11 +137,9 @@ def analyze_java(pom_path: Path, result: DetectionResult) -> None:
         _logger.debug("无法解析 pom.xml: %s", pom_path, exc_info=True)
         return
 
-    # Extract Maven coordinates
-    # Strip namespace from tag for easier matching
-    def tag(el):
-        return el.tag.rsplit("}", 1)[-1] if "}" in el.tag else el.tag
+    from .detector_helpers import strip_xml_ns as tag
 
+    # Extract Maven coordinates — strip namespace from tag for easier matching
     group_id = None
     artifact_id = None
     version = None
@@ -191,7 +202,7 @@ def analyze_java(pom_path: Path, result: DetectionResult) -> None:
 
     # Detect frameworks from dependencies
     deps_str = " ".join(dependencies)
-    for name, framework in _JAVA_FRAMEWORKS:
+    for name, framework in JAVA_FRAMEWORKS:
         if name in deps_str:
             result.frameworks.append(framework)
 
@@ -240,7 +251,11 @@ def analyze_java(pom_path: Path, result: DetectionResult) -> None:
 
 
 def analyze_gradle(gradle_path: Path, result: DetectionResult) -> None:
-    """分析 Java/Gradle 项目 — build.gradle / build.gradle.kts (basic detection)."""
+    """分析 Java/Gradle 项目 — build.gradle / build.gradle.kts (basic detection).
+
+    ⚠ 副作用: 原地修改 result (result.language, result.package_manager, result.test_runner,
+    result.frameworks, result.project_name, result._java_info)。
+    """
     result.language = "java"
     result.package_manager = "gradle"
     result.test_runner = result.test_runner or "junit"

@@ -33,6 +33,11 @@ def phase_detect(
 ) -> tuple[str, str, DetectionResult | None, InitLock | None]:
     """Phase detect: 增量/全量模式判定 + 类型检测 + 锁.
 
+    ⚠ 副作用:
+    - 非空目录无 --force --incremental 时抛出 TargetDirectoryError
+    - 获取 InitLock (写入 .ae-init.lock)，返回给调用方释放
+    - 调用 ProjectDetector.analyze() 读取磁盘文件
+
     Returns:
         (project_type, mode, detection, lock) tuple。
         lock 为 None 当 pretend=True（dry-run 不持有锁）。

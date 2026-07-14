@@ -32,7 +32,14 @@ def phase_finalize(
     quiet: bool,
     generated: list[Path] | None = None,
 ) -> tuple[bool, int]:
-    """写入 .ae-answers.yml + 增量/全量 copytree。
+    """Phase finalize: 写入 .ae-answers.yml + 增量/全量 copytree。
+
+    ⚠ 副作用:
+    - 写入 .ae-answers.yml 到 tmpdir
+    - 写入 init-manifest.json 到 .ae-state/
+    - 写入 replay 文件到 ~/.ae-replays/
+    - 原子 copytree (tmpdir → dst_path): 全量模式先清空 dst_path 再复制
+    - 增量模式: merge_incremental 补充缺失文件，跳过已存在文件
 
     Returns:
         (did_create_dst, skipped_count): 本次是否创建了目标目录，增量模式跳过的文件数。
@@ -157,6 +164,10 @@ def phase_post_install(
 ) -> None:
     """PE-P0-4: 在 dst_path (而非 tmpdir) 重新执行依赖安装。
 
+    ⚠ 副作用:
+    - 执行包管理器 install 命令 (网络 I/O)，修改 dst_path 下的依赖文件
+    - strict=True 时安装失败抛 HookExecutionError
+
     run_builtin_hooks 在 tmpdir 跑 uv sync 创建的 .venv,
     复制到 dst 后 shebang 指向已清理的 tmpdir 路径 → venv 失效。
     此函数在 dst 重新安装依赖,生成正确 shebang 的 .venv。
@@ -169,7 +180,7 @@ def phase_post_install(
     """
     from ..scaffold_hooks import (
         DEFAULT_SUBPROCESS_TIMEOUT,
-        _run_pm_install_and_report,
+        run_pm_install_and_report,
     )
 
     effective_timeout = timeout if timeout is not None else DEFAULT_SUBPROCESS_TIMEOUT
@@ -177,11 +188,11 @@ def phase_post_install(
     if strict:
         def _fail(cmd: str, rc: int, stderr: str) -> bool:
             from ..errors import HookExecutionError
-            raise HookExecutionError(command=cmd, process_exit_code=rc, stderr=stderr)
+            raise HookExecutionError(command=cmd, subprocess_returncode=rc, stderr=stderr)
     else:
         _fail = None
 
-    _run_pm_install_and_report(
+    run_pm_install_and_report(
         answers, dst_path, timeout=effective_timeout, quiet=quiet,
         no_install=no_install, _fail=_fail,
     )

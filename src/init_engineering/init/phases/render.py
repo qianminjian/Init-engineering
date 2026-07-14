@@ -22,9 +22,13 @@ def phase_render(
     templates_suffix: str | None,
     preserve_symlinks: bool | None,
     template_dir_override: Path | None,
-    strict: bool,
 ) -> list[Path]:
-    """渲染到 tmpdir."""
+    """渲染到 tmpdir。
+
+    ⚠ 副作用:
+    - 遍历模板目录树，写入渲染后文件到 tmpdir
+    - 生成的路径列表供后续 phase_finalize 使用
+    """
     templates_suffix, preserve_symlinks = template.resolve_render_opts(
         templates_suffix, preserve_symlinks
     )

@@ -62,7 +62,7 @@ class DetectionResult:
 
 # ─── 框架识别 ────────────────────────────────────────────────────────
 
-_NODE_FRAMEWORKS: list[tuple[str, str]] = [
+NODE_FRAMEWORKS: list[tuple[str, str]] = [
     ("next", "Next.js"),
     ("express", "Express"),
     ("fastify", "Fastify"),
@@ -78,7 +78,7 @@ _NODE_FRAMEWORKS: list[tuple[str, str]] = [
     ("hono", "Hono"),
 ]
 
-_PYTHON_FRAMEWORKS: list[tuple[str, str]] = [
+PYTHON_FRAMEWORKS: list[tuple[str, str]] = [
     ("fastapi", "FastAPI"),
     ("flask", "Flask"),
     ("django", "Django"),
@@ -90,7 +90,7 @@ _PYTHON_FRAMEWORKS: list[tuple[str, str]] = [
     ("pyramid", "Pyramid"),
 ]
 
-_GO_FRAMEWORKS: list[tuple[str, str]] = [
+GO_FRAMEWORKS: list[tuple[str, str]] = [
     ("gin", "Gin"),
     ("echo", "Echo"),
     ("chi", "Chi"),
@@ -99,7 +99,7 @@ _GO_FRAMEWORKS: list[tuple[str, str]] = [
     ("beego", "Beego"),
 ]
 
-_JAVA_FRAMEWORKS: list[tuple[str, str]] = [
+JAVA_FRAMEWORKS: list[tuple[str, str]] = [
     ("spring-boot-starter", "Spring Boot"),
     ("spring-cloud-starter", "Spring Cloud"),
     ("quarkus", "Quarkus"),

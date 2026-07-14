@@ -85,9 +85,10 @@ class TaskExecutionError(InitError):
 
     def __init__(self, command: str, returncode: int, stderr: str):
         self.command = command
-        self.process_exit_code = returncode
-        self.stderr = stderr
-        super().__init__(f"Task '{command}' failed (exit={returncode}): {stderr}")
+        self.subprocess_returncode = returncode
+        self.stderr = stderr or ""
+        preview = self.stderr[:500] + "..." if len(self.stderr) > 500 else self.stderr
+        super().__init__(f"Task '{command}' failed (exit={returncode}): {preview}")
 
 
 class TemplateRenderError(InitError):
@@ -133,11 +134,12 @@ class HookExecutionError(InitError):
         "检查钩子命令是否正确。去掉 --strict 可让非关键钩子失败时降级为 warning 而非终止"
     )
 
-    def __init__(self, command: str, process_exit_code: int = 1, stderr: str = ""):
+    def __init__(self, command: str, subprocess_returncode: int = 1, stderr: str = ""):
         self.command = command
-        self.process_exit_code = process_exit_code
-        self.stderr = stderr
-        super().__init__(f"Hook '{command}' failed (exit={process_exit_code}): {stderr}")
+        self.subprocess_returncode = subprocess_returncode
+        self.stderr = stderr or ""
+        preview = self.stderr[:500] + "..." if len(self.stderr) > 500 else self.stderr
+        super().__init__(f"Hook '{command}' failed (exit={subprocess_returncode}): {preview}")
 
 
 class PathTraversalError(InitError):

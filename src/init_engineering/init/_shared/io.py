@@ -30,7 +30,7 @@ _TMP_COUNTER = itertools.count(1)
 _TMP_COUNTER_LOCK = threading.Lock()
 
 
-def _next_tmp_suffix() -> str:
+def next_tmp_suffix() -> str:
     """生成唯一的 .tmp 后缀 (pid-ts-counter)."""
     with _TMP_COUNTER_LOCK:
         counter = next(_TMP_COUNTER)
@@ -66,7 +66,7 @@ def _atomic_write_impl(
 
 def atomic_write_text(dst: Path, content: str, newline: str | None = None) -> None:
     """流式原子写文本文件。"""
-    partial = dst.with_name(f"{dst.name}.tmp-{_next_tmp_suffix()}")
+    partial = dst.with_name(f"{dst.name}.tmp-{next_tmp_suffix()}")
 
     def _write() -> None:
         with open(partial, "w", encoding="utf-8", newline=newline) as f:
@@ -77,7 +77,7 @@ def atomic_write_text(dst: Path, content: str, newline: str | None = None) -> No
 
 def atomic_write_binary(dst: Path, src: Path) -> None:
     """流式原子写二进制文件 — 分块 64KB read+write。"""
-    partial = dst.with_name(f"{dst.name}.tmp-{_next_tmp_suffix()}")
+    partial = dst.with_name(f"{dst.name}.tmp-{next_tmp_suffix()}")
 
     def _write_chunks() -> None:
         with open(src, "rb") as f_in, open(partial, "wb") as f_out:

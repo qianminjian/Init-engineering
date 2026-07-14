@@ -170,6 +170,7 @@ def _run_analyze(
     try:
         target = resolve_user_path(project_path, cwd)
     except ValueError as e:
+        _logger.debug("路径解析失败: %s", e, exc_info=True)
         return SkillResult(success=False, message=str(e), action="analyze")
 
     if not target.exists():
@@ -297,6 +298,17 @@ def _run_init(
         return SkillResult(
             success=False,
             message=f"初始化失败: {e}{hint}",
+            action="init",
+            project_path=str(dst_path),
+        )
+    except Exception as e:
+        _logger.exception("InitWorker 执行失败 (未预期异常): %s", e)
+        return SkillResult(
+            success=False,
+            message=(
+                f"初始化失败 (内部错误): {e}。"
+                "请用 --verbose 查看详细日志，或提交 issue 附带 traceback"
+            ),
             action="init",
             project_path=str(dst_path),
         )

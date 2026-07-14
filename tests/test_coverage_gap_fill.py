@@ -378,10 +378,10 @@ class TestInteractivePromptRunSimplePass:
 
 
 class TestPromptForNestedTemplate:
-    def test_empty_nested_returns_empty(self):
+    def test_empty_nested_returns_none(self):
         from init_engineering.init.prompts import prompt_for_nested_template
 
-        assert prompt_for_nested_template({}) == ""
+        assert prompt_for_nested_template({}) is None
 
     def test_no_input_with_preferred(self):
         from init_engineering.init.prompts import prompt_for_nested_template

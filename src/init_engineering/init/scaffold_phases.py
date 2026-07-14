@@ -257,7 +257,6 @@ class InitWorker:
             templates_suffix=self.templates_suffix,
             preserve_symlinks=self.preserve_symlinks,
             template_dir_override=self.template_dir_override,
-            strict=self.strict,
         )
 
     def _phase_tasks(self, tmpdir: Path) -> None:

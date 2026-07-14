@@ -39,7 +39,7 @@
 | 3 | **存量项目：代码分析驱动自动初始化** | 减少人工配置成本，通过分析现有代码推断正确配置 | 2026-06-30 | ✅ |
 | 4 | **新项目：向导式询问确认方向** | 新项目方向不明确，需要交互式确认 | 2026-06-30 | ✅ |
 | 5 | **统一版本号：__version__ = _ae_version = "1.0.0"** | 消除 v0.1.0/1.0.0/5.0.0 三元不一致；设计文档 v5.0.0 笔误已修正 | 2026-07-02 | ✅ |
-| 6 | **monorepo 支持 4 语言（typescript/python/go/rust）** | 通过 _nested_templates 切换子目录，每个语言对应独立 workspace 模板 | 2026-07-02 | ✅ |
+| 6 | **monorepo 支持 5 语言（typescript/python/go/rust/java）** | 通过 _nested_templates 切换子目录，每个语言对应独立 workspace 模板 | 2026-07-02 | ✅ |
 | 7 | **InitWorker 拆分为 5 阶段函数（scaffold_phase_funcs.py）** | scaffold_phases.py 501→285 行，满足 300 行硬约束 | 2026-07-02 | ✅ |
 | 8 | **detector 拆分为 constants/analyzers/helpers** | detector.py 382→82 行；解除 detector ↔ analyzer 循环依赖 | 2026-07-02 | ✅ |
 | 9 | **run_update() 实现** | 类比 Copier `copier update`；支持 skip/overwrite/prompt 冲突策略 | 2026-07-02 | ✅ |

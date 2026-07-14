@@ -11,12 +11,15 @@ from __future__ import annotations
 
 import functools
 import json
+import logging
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from ._shared.io import _next_tmp_suffix  # 线程安全的临时文件后缀，见 _shared/io.py
+from ._shared.io import next_tmp_suffix  # 线程安全的临时文件后缀，见 _shared/io.py
 from .answers import AnswersMap
+
+_logger = logging.getLogger(__name__)
 
 # ── Language → tool derivation maps ──────────────────────────
 
@@ -62,7 +65,7 @@ def _derive_build_cmd(language: str, package_manager: str | None) -> str | None:
     return None
 
 
-def _derive_source_root(answers: AnswersMap, project_type: str) -> str:
+def _derive_source_root(answers: AnswersMap) -> str:
     """Derive source_root from answers or sensible default per language."""
     src_root = answers.get("source_root", default=None)
     if src_root:
@@ -84,9 +87,14 @@ def _load_schema() -> dict:
     try:
         return json.loads(schema_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as e:
-        raise RuntimeError(
+        err = RuntimeError(
             f"Failed to load manifest schema from {schema_path}: {e}"
-        ) from e
+        )
+        err.recovery_hint = (
+            "确认 init-manifest.schema.json 存在且格式正确，"
+            "或重新安装 init_engineering 包"
+        )
+        raise err from e
 
 
 # ── Manifest validation ──────────────────────────────────────
@@ -205,7 +213,7 @@ def build_manifest(
     test_runner = answers.get("test_runner", default="unknown")
     ci_platform = answers.get("ci_platform", default=None) or "none"
     framework = answers.get("framework", default=None)
-    source_root = _derive_source_root(answers, project_type)
+    source_root = _derive_source_root(answers)
 
     conventions: dict[str, Any] = {
         "linter": _derive_linter(language),
@@ -272,12 +280,14 @@ def write_manifest(manifest: dict, target_dir: Path) -> Path:
     content = json.dumps(manifest, indent=2, ensure_ascii=False, default=str)
 
     # Atomic write via temp file then rename
-    tmp = ae_state / f".tmp-init-manifest-{_next_tmp_suffix()}.json"
+    tmp = ae_state / f".tmp-init-manifest-{next_tmp_suffix()}.json"
     try:
         tmp.write_text(content, encoding="utf-8")
         tmp.replace(dest)
     except OSError:
-        # Cleanup temp file on failure
+        _logger.debug("Failed to write manifest", exc_info=True)
+        # best-effort cleanup: tmp file may be left behind on failure, but missing_ok=True
+        # prevents cleanup error from masking the original exception
         if tmp.exists():
             tmp.unlink(missing_ok=True)
         raise

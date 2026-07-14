@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 
 from .answers import AnswersMap
 from .hooks import TaskRunner
-from .scaffold_hooks import run_builtin_hooks
+from .scaffold_hooks import subprocess_run, run_builtin_hooks
 
 _logger = logging.getLogger(__name__)
 
@@ -75,11 +75,9 @@ def _build_jinja_env(dst_path: Path) -> SandboxedEnvironment:
 
     def _git_status_clean() -> bool:
         try:
-            result = subprocess.run(
+            result = subprocess_run(
                 ["git", "status", "--porcelain"],
                 cwd=dst_path,
-                capture_output=True,
-                text=True,
                 timeout=10,  # PE-AUDIT-P0-1: local read, clamp to 10s
             )
         except subprocess.TimeoutExpired:

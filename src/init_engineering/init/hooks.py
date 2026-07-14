@@ -10,7 +10,6 @@ from __future__ import annotations
 import logging
 import os
 import shlex
-import subprocess
 from pathlib import Path
 
 import jinja2
@@ -18,6 +17,7 @@ from jinja2.sandbox import SandboxedEnvironment
 
 from .config_types import Task
 from .errors import PathTraversalError, TaskExecutionError
+from .scaffold_hooks import subprocess_run
 
 _logger = logging.getLogger(__name__)
 
@@ -75,6 +75,7 @@ class TaskRunner:
                         task.when,
                         task.cmd,
                         e,
+                        exc_info=True,
                     )
                     should_run = False
             else:
@@ -146,16 +147,12 @@ class TaskRunner:
             effective_timeout = (
                 task.timeout if task.timeout is not None else self._default_timeout
             )
-            result = subprocess.run(
+            result = subprocess_run(
                 cmd,
-                shell=use_shell,
-                cwd=str(wd),
-                capture_output=True,
-                text=True,
+                cwd=Path(wd),
                 timeout=effective_timeout,
-                encoding="utf-8",
-                errors="replace",
                 env=env,
+                shell=use_shell,
             )
             if result.returncode != 0:
                 raise TaskExecutionError(

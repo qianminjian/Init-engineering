@@ -70,6 +70,10 @@ def cmd_init(
 
     纯函数,接收已 click-解析的所有参数,执行 init 主体逻辑.
     调用方 (init click 装饰函数) 只负责参数收集和转发.
+
+    Returns:
+        InitResult: 正常 init 流程完成时返回。
+        None: --list-types / --list-templates / --analyze 早返回分支时返回。
     """
     from init_engineering.init import InitWorker
     from init_engineering.init.config_types import TEMPLATES_ROOT
@@ -127,7 +131,12 @@ def cmd_init(
     # --telemetry: 首次开启强制引导用户同意 (避免静默收集)
     if telemetry:
         from init_engineering.telemetry import has_consent, request_and_persist_consent
-        if not has_consent() and not request_and_persist_consent():
+        from init_engineering.cli._click_backend import ClickPromptBackend
+
+        _be = ClickPromptBackend()
+        if not has_consent() and not request_and_persist_consent(
+            _echo=_be.echo, _confirm=_be.confirm
+        ):
             click.echo("已禁用 telemetry (本次 init 不发送数据)", err=False)
             telemetry = False
 

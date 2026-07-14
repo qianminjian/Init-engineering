@@ -219,6 +219,7 @@ class InteractivePrompt:
                     _logger.debug(
                         "cast_answer TypeError (var=%s, raw=%r): %s",
                         q.var_name, raw_value, e,
+                        exc_info=True,
                     )
                     if attempt == max_retries - 1:
                         raise ValidationError(
@@ -291,17 +292,30 @@ def prompt_for_project_type(
     be = backend or BasicPromptBackend()
     if _input_fn is None:
         _input_fn = be.prompt
-    try:
-        return _input_fn(
-            "请选择项目类型",
-            type=None,  # choice 验证由 _input_fn 处理
-            show_default=False,
-        )
-    except UserAbort:
-        raise ValidationError(
-            "非 TTY 环境无法交互选择项目类型，请使用 --type 指定",
-            field_name="project_type",
-        ) from None
+    types_list = ", ".join(available_types)
+    max_retries = 5
+    attempts = 0
+    while True:
+        attempts += 1
+        if attempts > max_retries:
+            raise ValidationError(
+                f"超过最大重试次数 ({max_retries})，请使用 --type 指定项目类型",
+                field_name="project_type",
+            )
+        try:
+            choice = _input_fn(
+                f"请选择项目类型 (可选: {types_list})",
+                type=None,
+                show_default=False,
+            )
+        except UserAbort:
+            raise ValidationError(
+                "非 TTY 环境无法交互选择项目类型，请使用 --type 指定",
+                field_name="project_type",
+            ) from None
+        if choice in available_types:
+            return choice
+        be.echo(f"  ✗ 无效类型: {choice}，有效类型: {types_list}", err=True)
 
 
 def prompt_for_nested_template(
@@ -314,7 +328,7 @@ def prompt_for_nested_template(
 ) -> str | None:
     """交互式选择嵌套模板变体。"""
     if not nested:
-        return ""
+        return None
     choices = {label: cfg.get("title", label) for label, cfg in nested.items()}
     if no_input:
         if preferred and preferred in nested:
@@ -327,7 +341,7 @@ def prompt_for_nested_template(
         first_key = next(iter(nested.keys()))
         return nested[first_key].get("path")
     if preferred and preferred in nested:
-        return nested[preferred].get("path", "")
+        return nested[preferred].get("path")
     be = backend or BasicPromptBackend()
     prompt_fn = _input_fn if _input_fn is not None else be.prompt
     try:
@@ -345,6 +359,6 @@ def prompt_for_nested_template(
         # 如果 prompt 返回不在 nested 中的值，尝试 fallback
         for key, cfg in nested.items():
             if cfg.get("title", key) == choice:
-                return cfg.get("path", "")
+                return cfg.get("path")
         return None
-    return nested.get(choice, {}).get("path", "")
+    return nested.get(choice, {}).get("path")

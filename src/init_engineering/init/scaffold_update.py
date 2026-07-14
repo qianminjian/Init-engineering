@@ -185,7 +185,7 @@ def run_update(
                 continue
             dst_file = dst_path / rel
             action = _classify_file(
-                src_file, dst_file, conflict_strategy, dst_path, dry_run, result,
+                src_file, dst_file, conflict_strategy, dst_path, dry_run,
                 backend=backend,
             )
             if action:
@@ -225,7 +225,6 @@ def _classify_file(
     strategy: ConflictStrategy,
     dst_root: Path,
     dry_run: bool,
-    result: UpdateResult,
     backend: PromptBackend | None = None,
 ) -> str | None:
     """决定每个文件的处理动作 — 返回 "add"|"update"|"skip"|"conflict"|None。
@@ -260,8 +259,24 @@ def _classify_file(
             return "skip"
         return "skip"
 
-    src_content = src.read_text(encoding="utf-8")
-    dst_content = dst.read_text(encoding="utf-8")
+    try:
+        src_content = src.read_text(encoding="utf-8")
+        dst_content = dst.read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        # 文件看似文本但包含不可解码字节 — 当作二进制冲突处理
+        if strategy == ConflictStrategy.SKIP:
+            return "skip"
+        if strategy == ConflictStrategy.OVERWRITE:
+            return "update"
+        if strategy == ConflictStrategy.PROMPT:
+            if dry_run:
+                return "conflict"
+            be = backend or BasicPromptBackend()
+            be.echo(f"\n冲突 (二进制): {dst.relative_to(dst_root)}")
+            if be.confirm("应用新版本?", default=False):
+                return "update"
+            return "skip"
+        return "skip"
     diff = "".join(
         difflib.unified_diff(
             dst_content.splitlines(keepends=True),
@@ -293,7 +308,11 @@ def _file_content_equal(src: Path, dst: Path) -> bool:
 
 
 def _sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    try:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    except OSError:
+        # 权限拒绝或文件不可读 — 返回空哈希触发"内容不同"逻辑
+        return ""
 
 
 def _update_answers_meta(answers_file: Path, project_type: str) -> None:
