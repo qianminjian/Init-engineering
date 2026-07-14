@@ -108,6 +108,13 @@ def main():
     default=False,
     help="强制使用非白名单 --template-dir (默认会被拒绝, 仅此 flag 可绕过)",
 )
+@click.option(
+    "--include-hidden",
+    "include_hidden",
+    is_flag=True,
+    default=False,
+    help="检测阶段扫描隐藏目录（.qoder/.claude/ 等），消费反向工程资产",
+)
 def init(
     project: str | None,
     project_type: str | None,
@@ -138,6 +145,7 @@ def init(
     template_dir_override: str | None,
     hook_timeout: int | None,
     force_unsafe_template: bool,
+    include_hidden: bool,
 ):
     """项目环境初始化."""
     # P2-12: 函数体拆到 cli/commands.py::cmd_init —
@@ -176,6 +184,7 @@ def init(
         template_dir_override=template_dir_override,
         hook_timeout=hook_timeout,
         force_unsafe_template=force_unsafe_template,
+        include_hidden=include_hidden,
     )
 
 

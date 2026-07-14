@@ -18,5 +18,5 @@
 | 4 | 2026-07-12 R2 | P2 | `_load_schema()` 硬编码 schema 路径 | manifest.py:83 | 路径相对 `__file__`，任何部署下都正确，注入无实际收益 | 需要支持外部 schema 路径时再加 |
 | 5 | 2026-07-12 R2 | P2 | `_LazyExternalDict` 两处 `Path.cwd()` — 长生命周期进程 cwd 可能变化 | answers.py:181,295 | 调用点仅在 init 过程内，cwd 不会变化；即使变化也只是 sandbox fallback 路径 | 出现长生命周期守护进程场景时加注入 |
 | 6 | 2026-07-12 R2 | P2 | `render_to()` 18 个参数 — 调用成本高 | scaffold_render.py:138 | 提取 `RenderOptions` dataclass 改 10+ 调用点，纯机械重构 | 修改 render 逻辑时顺手提取 |
-| 7 | 2026-07-12 R2 | P2 | 4 文件接近 300 行 — answers.py(323) prompts.py(~345) scaffold_phases.py(303) scaffold_update.py(301) | 4 文件 | 行数只是 smell check，这些文件职责单一、拆散后反而增加阅读跳转成本 | 接近 400 行或职责开始混杂时拆分 |
+| 7 | 2026-07-12 R2 | P2 | 4 文件接近 300 行 — answers.py(~360) prompts.py(~345) scaffold_phases.py(303) scaffold_update.py(301) | 4 文件 | 行数只是 smell check，这些文件职责单一、拆散后反而增加阅读跳转成本。skill.py 已拆（P1-3），其余暂不拆 | 接近 400 行或职责开始混杂时拆分 |
 | 8 | 2026-07-14 R6 | - | **误报**: `_LazyExternalDict.__iter__/__len__/keys/items` 被标记为未使用 → 删除后 8 个测试失败 → 已回退。方法有测试覆盖，是 dict 协议的必要部分 | answers.py:299-310 | - | 审计 agent 再次报告同名方法为未使用时忽略 |

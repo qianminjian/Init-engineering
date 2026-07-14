@@ -64,6 +64,7 @@ def cmd_init(
     template_dir_override: str | None,
     hook_timeout: int | None,
     force_unsafe_template: bool,
+    include_hidden: bool = False,
     prompt_backend: PromptBackend | None = None,
 ) -> InitResult | None:
     """P2-12: init 命令实现 — 从 cli/__init__.py 拆分以满足 ≤ 300 行约束.
@@ -91,7 +92,7 @@ def cmd_init(
     dst_path = (Path(project) if project else Path.cwd()).resolve()
 
     if analyze_only:
-        cmd_analyze(dst_path, ProjectDetector, project_type=project_type or None)
+        cmd_analyze(dst_path, ProjectDetector, project_type=project_type or None, include_hidden=include_hidden)
         return
 
     # --from-answers: 从 .ae-answers.yml 恢复 + 隐式非交互
@@ -155,6 +156,7 @@ def cmd_init(
         templates_suffix=templates_suffix,
         preserve_symlinks=preserve_symlinks, hook_timeout=hook_timeout,
         prompt_backend=prompt_backend,
+        include_hidden=include_hidden,
     )
 
     # B1: 必须用 with 块 — __exit__ → _cleanup() 释放 InitLock,
@@ -220,6 +222,7 @@ def _build_init_worker_kwargs(
     preserve_symlinks: bool | None,
     hook_timeout: int | None,
     prompt_backend: PromptBackend | None = None,
+    include_hidden: bool = False,
 ) -> dict[str, Any]:
     """构建 InitWorker 构造参数 — 从 cmd_init 提取以减小函数体."""
     return {
@@ -247,6 +250,7 @@ def _build_init_worker_kwargs(
         "preserve_symlinks": preserve_symlinks,
         "hook_timeout": hook_timeout,
         "prompt_backend": prompt_backend,
+        "include_hidden": include_hidden,
     }
 
 

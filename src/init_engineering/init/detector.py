@@ -44,8 +44,9 @@ _logger = logging.getLogger(__name__)
 class ProjectDetector:
     """扫描目标目录，推断项目类型与配置。"""
 
-    def __init__(self, dst_path: Path):
+    def __init__(self, dst_path: Path, *, include_hidden: bool = False):
         self.dst_path = dst_path
+        self.include_hidden = include_hidden
 
     def _detect(self) -> str | None:
         """返回唯一匹配的项目类型，0 或多于 1 个匹配返回 None。"""
@@ -62,7 +63,7 @@ class ProjectDetector:
         """
         matches = []
         for ptype, signatures in FRAMEWORK_SIGNATURES:
-            if any(_signature_matches(self.dst_path, sig, max_depth=2 if recursive else 0)
+            if any(_signature_matches(self.dst_path, sig, max_depth=2 if recursive else 0, include_hidden=self.include_hidden)
                    for sig in signatures):
                 # mcp-server 与 app-service 共享 package.json 签名，需额外消歧义
                 if ptype == "mcp-server" and not check_pkg_dep(
@@ -113,7 +114,8 @@ class ProjectDetector:
             # Root has no build files — try recursive scan for Java projects
             # (common in workspace aggregator dirs: parent dir → subdirs with pom.xml)
             java_sigs = find_signatures_in_tree(
-                self.dst_path, ["pom.xml", "build.gradle", "build.gradle.kts"], max_depth=1
+                self.dst_path, ["pom.xml", "build.gradle", "build.gradle.kts"], max_depth=1,
+                include_hidden=self.include_hidden,
             )
             if java_sigs:
                 for sig, dirs in java_sigs.items():

@@ -41,12 +41,13 @@ def check_pkg_dep(dst_path: Path, check_fn: Callable[[dict], bool]) -> bool:
         return False
 
 
-def signature_matches(dst_path: Path, sig: str, *, max_depth: int = 0) -> bool:
+def signature_matches(dst_path: Path, sig: str, *, max_depth: int = 0, include_hidden: bool = False) -> bool:
     """Check if a signature matches — supports glob wildcards + optional shallow recursion.
 
     max_depth=0: only check dst_path (default, backward compat)
     max_depth=1: check dst_path + immediate subdirectories
     max_depth=2: check dst_path + 2 levels of subdirectories
+    include_hidden: include .dot directories (default skip per Unix convention)
     """
     if _check_sig_at(dst_path, sig):
         return True
@@ -54,14 +55,18 @@ def signature_matches(dst_path: Path, sig: str, *, max_depth: int = 0) -> bool:
         return False
     try:
         for child in dst_path.iterdir():
-            if child.is_dir() and not child.name.startswith("."):
+            if child.is_dir() and not include_hidden and child.name.startswith("."):
+                continue
+            if child.is_dir():
                 if _check_sig_at(child, sig):
                     return True
                 if max_depth >= 2:
                     for grandchild in child.iterdir():
                         if (grandchild.is_dir()
-                                and not grandchild.name.startswith(".")
-                                and _check_sig_at(grandchild, sig)):
+                                and not include_hidden
+                                and grandchild.name.startswith(".")):
+                            continue
+                        if grandchild.is_dir() and _check_sig_at(grandchild, sig):
                             return True
     except OSError:
         _logger.debug("递归扫描 %s 失败", dst_path, exc_info=True)
@@ -89,6 +94,7 @@ def _check_sig_at(base: Path, sig: str) -> bool:
 
 def find_signatures_in_tree(
     dst_path: Path, signatures: list[str], max_depth: int = 2,
+    *, include_hidden: bool = False,
 ) -> dict[str, list[Path]]:
     """Find which subdirectories match which signatures — for workspace/monorepo detection.
 
@@ -100,7 +106,7 @@ def find_signatures_in_tree(
         with contextlib.suppress(OSError):
             dirs_to_check += [
                 child for child in dst_path.iterdir()
-                if child.is_dir() and not child.name.startswith(".")
+                if child.is_dir() and (include_hidden or not child.name.startswith("."))
             ]
     for d in dirs_to_check:
         for sig in signatures:

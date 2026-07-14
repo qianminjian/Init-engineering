@@ -30,6 +30,8 @@ def phase_detect(
     force: bool,
     pretend: bool,
     defaults: bool,
+    *,
+    include_hidden: bool = False,
 ) -> tuple[str, str, DetectionResult | None, InitLock | None]:
     """Phase detect: 增量/全量模式判定 + 类型检测 + 锁.
 
@@ -93,7 +95,7 @@ def phase_detect(
 
     # 始终运行检测分析 — 即使用户已提供 project_type，
     # 仍需要 language/package_manager/test_runner 等自动检测结果
-    detector = ProjectDetector(dst_path)
+    detector = ProjectDetector(dst_path, include_hidden=include_hidden)
     analysis = detector.analyze()
     if not project_type:
         project_type = analysis.project_type

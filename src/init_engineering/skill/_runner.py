@@ -20,6 +20,7 @@ def _run_analyze(
     cwd: Path,
     *,
     _detector_cls: type | None = None,
+    options: dict | None = None,
 ) -> "SkillResult":
     """运行存量项目分析。
 
@@ -27,12 +28,14 @@ def _run_analyze(
         project_path: 目标路径
         cwd: 当前工作目录
         _detector_cls: 测试注入点 — 替换 ProjectDetector 类
+        options: 解析出的选项字典（如 {"include-hidden": "true"}）
     """
     from init_engineering.init.detector import ProjectDetector
 
     from ._types import SkillResult
 
     detector_cls = _detector_cls if _detector_cls is not None else ProjectDetector
+    opts = options or {}
 
     try:
         target = resolve_user_path(project_path, cwd)
@@ -47,7 +50,7 @@ def _run_analyze(
             action="analyze",
         )
 
-    detector = detector_cls(target)
+    detector = detector_cls(target, include_hidden=opts.get("include-hidden") == "true")
     result = detector.analyze()
 
     if result.candidates:
@@ -124,6 +127,7 @@ def _run_init(
             "incremental": "incremental",
             "strict": "strict",
             "verbose": "verbose",
+            "include-hidden": "include_hidden",
             **NEGATED_FLAG_MAP,
         }
         if key in param_map:
@@ -180,8 +184,8 @@ def _run_init(
         )
 
 
-def _run_detect(project_path: str | None, cwd: Path) -> "SkillResult":
+def _run_detect(project_path: str | None, cwd: Path, *, options: dict | None = None) -> "SkillResult":
     """运行项目类型检测（不初始化）。"""
-    result = _run_analyze(project_path, cwd)
+    result = _run_analyze(project_path, cwd, options=options)
     result.action = "detect"
     return result

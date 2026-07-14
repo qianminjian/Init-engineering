@@ -81,6 +81,8 @@ class InitWorker:
     strict: bool = False
     # PE-P0-1: --no-install CLI flag — 跳过 package_manager install 阶段
     no_install: bool = False
+    # --include-hidden: 检测阶段扫描隐藏目录（.qoder/.claude/ 等反向工程资产）
+    include_hidden: bool = False
     templates_suffix: str | None = None
     preserve_symlinks: bool | None = None
     template_dir_override: Path | None = None
@@ -226,6 +228,7 @@ class InitWorker:
             force=self.force,
             pretend=self.pretend,
             defaults=self.defaults,
+            include_hidden=self.include_hidden,
         )
 
     def _phase_prompt(self) -> None:

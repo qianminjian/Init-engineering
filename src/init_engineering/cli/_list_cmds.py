@@ -45,6 +45,8 @@ def cmd_analyze(
     dst_path: Path,
     detector_cls: type[ProjectDetector],
     project_type: str | None = None,
+    *,
+    include_hidden: bool = False,
 ) -> None:
     """--analyze: 只运行代码分析, 不初始化.
 
@@ -52,8 +54,9 @@ def cmd_analyze(
         dst_path: 目标目录
         detector_cls: ProjectDetector 类 (可替换用于测试注入)
         project_type: 用户通过 --type 指定的项目类型（消歧义时覆盖自动检测）
+        include_hidden: 是否扫描隐藏目录（.qoder/.claude/ 等）
     """
-    detector = detector_cls(dst_path)
+    detector = detector_cls(dst_path, include_hidden=include_hidden)
     result = detector.analyze()
     click.echo(f"分析目录: {dst_path}")
     click.echo(f"项目名称: {result.project_name}")

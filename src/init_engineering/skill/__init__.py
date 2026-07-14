@@ -50,11 +50,11 @@ def skill(command_str: str, cwd: Path | None = None) -> SkillResult:
     action, project_path, options = _parse_prompt(command_str)
 
     if action == "analyze":
-        return _run_analyze(project_path, cwd)
+        return _run_analyze(project_path, cwd, options=options)
     elif action == "init":
         return _run_init(project_path, options, cwd)
     elif action == "detect":
-        return _run_detect(project_path, cwd)
+        return _run_detect(project_path, cwd, options=options)
     else:
         return SkillResult(
             success=False,
