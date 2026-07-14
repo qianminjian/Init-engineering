@@ -12,6 +12,65 @@ argument-hint: "<project> [--type <type>] [options] | --analyze <path> | update 
 
 Project environment initialization for Claude Code agent workflows.
 
+> 🛑 **MUST_READ — 本文件 §Pipeline 是所有 init 操作的硬性前提。**
+> 调用 `/ae-init` 时，**必须先读 Pipeline 章节**，对照 5 阶段逐项执行。
+> **禁止手动模拟 init 流程**——必须通过 `skill()` 程序入口（`src/init_engineering/skill.py`）
+> 调用 `InitWorker.execute()`，由代码强制流水线保证完整性和可恢复性。
+
+---
+
+## Pipeline（5 阶段流水线 — 必须使用程序入口）
+
+ae-init 的 5 阶段流水线定义在 `src/init_engineering/init/scaffold_phases.py:InitWorker.execute()`，
+经 `src/init_engineering/skill.py:skill()` 统一调用。**调用方不能跳过或手动模拟任何阶段。**
+
+| Phase | 名称 | 职责 | 关键产出 | 代码位置 |
+|-------|------|------|---------|---------|
+| 1 | **detect** | 项目类型检测 + fcntl 并发锁 | `project_type` 确定 + `InitLock` | `phases/detect.py` |
+| 2 | **prompt** | 加载 `ae-template.yml` + 交互问答 | `AnswersMap` (6 层 ChainMap) | `phases/prompt.py` |
+| 3 | **render** | Jinja2 渲染到 tmpdir（多层模板目录合并） | 完整文件树（`_shared/` + `_features/` + type 模板） | `phases/render.py` |
+| 4 | **tasks** | 执行 pre/post 钩子（git init, pm install, lefthook） | git repo + 依赖安装 + CI 配置 | `scaffold_tasks_runner.py` |
+| 5 | **finalize** | 原子 copytree 到目标目录 + 写入 `.ae-answers.yml` + manifest | 最终项目目录 + `.ae-state/init-manifest.json` | `phases/finalize.py` |
+
+### 正确调用方式
+
+```python
+# Skill 模式 — 唯一正确的调用路径
+from init_engineering.skill import skill
+
+# 存量项目分析
+result = skill("init . --analyze")
+
+# 新项目初始化（向导式）
+result = skill("init my-app --type app-service")
+
+# 非交互模式（CI / Claude Code agent）
+result = skill("init my-lib --type library --defaults")
+```
+
+CLI 等效命令：`ae init <project> --type <type> [options]`
+
+### 禁止的错误方式（红线）
+
+| # | 禁止行为 | 后果 | 正确做法 |
+|---|---------|------|---------|
+| 1 | **手动创建文件模拟 init** | 只产出 3-4 个文件，遗漏 5+ 个模板文件 + `_features/` | 使用 `skill()` 入口 |
+| 2 | 只读几个模板文件选择性写入 | 遗漏 `.editorconfig` / `design/INDEX.md` / `.ae-answers.yml` 等 | 让 `TemplateRenderer` 遍历全部模板目录 |
+| 3 | 跳过 `skill()` 直接调用 `TemplateRenderer` | 跳过 detect + prompt + tasks + finalize，缺 `.ae-answers.yml` + manifest | 走完整 `InitWorker.execute()` |
+| 4 | 用"理解→执行"替代"读 Pipeline → 调 skill()" | pipeline 代码约束被完全绕过 | 先读本文件 §Pipeline，再调 `skill()` |
+
+### 执行前自检清单
+
+调用 `/ae-init` 时，agent 必须先确认：
+
+- [ ] 已读取 SKILL.md §Pipeline（本章节）
+- [ ] 确认使用 `skill()` 入口，而非手动模拟
+- [ ] 已知目标项目类型和语言
+- [ ] 已知将产出的文件清单（对照 §Init Stage Contract 的 11 项产出物）
+- [ ] 执行后逐项验证 11 项产出物是否齐全
+
+---
+
 ## Usage
 
 ```

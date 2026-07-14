@@ -54,10 +54,10 @@ class TestErrorsReExport:
         assert UnsatisfiedPrerequisiteError is not None
         assert ValidationError is not None
 
-    def test_init_module_all_has_16_entries(self):
+    def test_init_module_all_has_13_entries(self):
         from init_engineering.init import __all__ as init_all
 
-        assert len(init_all) == 7
+        assert len(init_all) == 13
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

@@ -34,7 +34,18 @@ DEFAULT_EXCLUDE = [
     ".svn",
 ]
 
+# 模板文件后缀的 3 层配置路径：
+#   L1 config_types.DEFAULT_TEMPLATES_SUFFIX  — 模块级默认（SSOT）
+#   L2 TemplateConfig.templates_suffix          — ae-template.yml 可覆盖
+#   L3 TemplateRenderer(templates_suffix=...)   — 构造函数注入（测试/自定义）
 DEFAULT_TEMPLATES_SUFFIX = ".jinja"
+
+# --no-* → positive key 映射: skill.py 字符串解析和 CLI 文档均引用此 SSOT
+NEGATED_FLAG_MAP: dict[str, str] = {
+    "no-typescript": "use_typescript",
+    "no-lefthook": "use_lefthook",
+    "no-docker": "use_docker",
+}
 
 
 def coerce_bool(val: str | bool | None) -> bool:
@@ -225,6 +236,8 @@ class TemplateConfig:
     external_data: dict[str, str] = field(default_factory=dict)
     message_before: str = ""
     message_after: str = ""
+    # P1: _required_outputs — 该类型项目的强制产出文件清单,供 AI/agent 执行后自检
+    required_outputs: list[str] = field(default_factory=list)
 
     def resolve_render_opts(
         self,

@@ -88,12 +88,18 @@ def load_template_config(
                 config_kwargs["message_before"] = str(value)
             elif config_key == "message_after":
                 config_kwargs["message_after"] = str(value)
+            elif config_key == "required_outputs":
+                if not isinstance(value, list):
+                    raise ConfigFileError(
+                        f"_required_outputs 必须是 list, 实际是 {type(value).__name__}"
+                    )
+                config_kwargs["required_outputs"] = [str(v) for v in value]
             else:
                 _logger.warning(
                     "未知的 _ 前缀配置键: _%s (值=%s) — 拼写错误? 将被忽略。"
                     "已知键: tasks/exclude/skip_if_exists/envops/no_render/"
                     "external_data/nested_templates/subdirectory/templates_suffix/"
-                    "exclude_callback/min_ae_version/message_before/message_after",
+                    "exclude_callback/min_ae_version/message_before/message_after/required_outputs",
                     config_key, value,
                 )
                 config_kwargs[config_key] = value

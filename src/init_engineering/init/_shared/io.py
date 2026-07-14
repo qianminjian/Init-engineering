@@ -55,7 +55,7 @@ def _atomic_write_impl(
         with contextlib.suppress(OSError):
             partial.unlink()
         raise
-    except Exception:
+    except OSError:
         _logger.debug("%s failed: %s", label, partial, exc_info=True)
         try:
             partial.unlink()

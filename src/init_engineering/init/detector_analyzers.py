@@ -26,17 +26,17 @@ from .detector_constants import (  # noqa: E402
 )
 
 
-def analyze_node(pkg_path: Path, dst_path: Path, result: DetectionResult) -> None:
+def analyze_node(pkg_path: Path, dst_path: Path, result: DetectionResult) -> DetectionResult:
     """分析 Node.js 项目 — package.json + tsconfig。
 
-    ⚠ 副作用: 原地修改 result (result.language, result.frameworks, result.package_manager)。
+    ⚠ 原地修改 result 并返回，调用方应使用返回值。
     """
     result.language = "typescript"
     try:
         data = json.loads(pkg_path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         _logger.debug("无法解析 package.json: %s", pkg_path, exc_info=True)
-        return
+        return result
 
     result.project_description = data.get("description", "")
 
@@ -54,10 +54,11 @@ def analyze_node(pkg_path: Path, dst_path: Path, result: DetectionResult) -> Non
 
     if "pnpm" in str(data.get("scripts", {})):
         result.package_manager = "pnpm"
+    return result
 
 
 
-def analyze_python(py_path: Path, result: DetectionResult) -> None:
+def analyze_python(py_path: Path, result: DetectionResult) -> DetectionResult:
     """分析 Python 项目 — pyproject.toml (PEP 621)。
 
     ⚠ 副作用: 原地修改 result
@@ -68,7 +69,7 @@ def analyze_python(py_path: Path, result: DetectionResult) -> None:
         data = tomllib.loads(py_path.read_text(encoding="utf-8"))
     except (OSError, ValueError, tomllib.TOMLDecodeError):
         _logger.debug("无法解析 pyproject.toml: %s", py_path, exc_info=True)
-        return
+        return result
 
     project = data.get("project", {})
     result.project_description = project.get("description", "")
@@ -92,9 +93,11 @@ def analyze_python(py_path: Path, result: DetectionResult) -> None:
     elif "uv" in build_backend or "uv" in str(data.get("tool", {})):
         result.package_manager = "uv"
 
+    return result
 
 
-def analyze_go(go_path: Path, result: DetectionResult) -> None:
+
+def analyze_go(go_path: Path, result: DetectionResult) -> DetectionResult:
     """分析 Go 项目 — go.mod。
 
     ⚠ 副作用: 原地修改 result (result.language, result.project_name, result.frameworks)。
@@ -104,7 +107,7 @@ def analyze_go(go_path: Path, result: DetectionResult) -> None:
         content = go_path.read_text(encoding="utf-8")
     except OSError:
         _logger.debug("无法读取 go.mod: %s", go_path, exc_info=True)
-        return
+        return result
 
     m = re.search(r"^module\s+(.+)$", content, re.MULTILINE)
     if m:
@@ -115,9 +118,11 @@ def analyze_go(go_path: Path, result: DetectionResult) -> None:
         if re.search(rf"github\.com/.*/{name}\b", content):
             result.frameworks.append(framework)
 
+    return result
 
 
-def analyze_java(pom_path: Path, result: DetectionResult) -> None:
+
+def analyze_java(pom_path: Path, result: DetectionResult) -> DetectionResult:
     """分析 Java/Maven 项目 — pom.xml (Maven) 或 build.gradle (Gradle).
 
     ⚠ 副作用: 原地修改 result (result.language, result.package_manager, result.test_runner,
@@ -135,7 +140,7 @@ def analyze_java(pom_path: Path, result: DetectionResult) -> None:
         root = tree.getroot()
     except (ET.ParseError, OSError):
         _logger.debug("无法解析 pom.xml: %s", pom_path, exc_info=True)
-        return
+        return result
 
     from .detector_helpers import strip_xml_ns as tag
 
@@ -248,13 +253,14 @@ def analyze_java(pom_path: Path, result: DetectionResult) -> None:
         "build_tool": "maven",
     })
 
+    return result
 
 
-def analyze_gradle(gradle_path: Path, result: DetectionResult) -> None:
+
+def analyze_gradle(gradle_path: Path, result: DetectionResult) -> DetectionResult:
     """分析 Java/Gradle 项目 — build.gradle / build.gradle.kts (basic detection).
 
-    ⚠ 副作用: 原地修改 result (result.language, result.package_manager, result.test_runner,
-    result.frameworks, result.project_name, result._java_info)。
+    原地修改 result 并返回，调用方应使用返回值。
     """
     result.language = "java"
     result.package_manager = "gradle"
@@ -263,7 +269,7 @@ def analyze_gradle(gradle_path: Path, result: DetectionResult) -> None:
         content = gradle_path.read_text(encoding="utf-8")
     except OSError:
         _logger.debug("无法读取 %s", gradle_path, exc_info=True)
-        return
+        return result
 
     # Detect Spring Boot via plugin
     if "spring-boot" in content or "org.springframework.boot" in content:
@@ -283,3 +289,5 @@ def analyze_gradle(gradle_path: Path, result: DetectionResult) -> None:
 
     if not result.project_name:
         result.project_name = gradle_path.parent.resolve().name
+
+    return result

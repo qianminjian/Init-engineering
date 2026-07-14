@@ -87,14 +87,12 @@ def _load_schema() -> dict:
     try:
         return json.loads(schema_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as e:
-        err = RuntimeError(
-            f"Failed to load manifest schema from {schema_path}: {e}"
-        )
-        err.recovery_hint = (
+        msg = (
+            f"Failed to load manifest schema from {schema_path}: {e}. "
             "确认 init-manifest.schema.json 存在且格式正确，"
             "或重新安装 init_engineering 包"
         )
-        raise err from e
+        raise RuntimeError(msg) from e
 
 
 # ── Manifest validation ──────────────────────────────────────

@@ -13,7 +13,12 @@ import yaml
 
 @dataclass
 class ProjectEnvironment:
-    """项目工程环境。由 init 写入,其他工具按需读取。"""
+    """项目工程环境。由 init 写入, 其他工具按需读取。
+
+    use_typescript / use_lefthook / has_git 是检测结果的持久化快照,
+    同时被 init 流水线 (scaffold_render / scaffold_hooks) 和 ae status 命令消费,
+    不是 status-only 属性。
+    """
 
     project_name: str = ""
     project_description: str = ""

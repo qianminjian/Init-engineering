@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os as _os
 import sys
 import tempfile
@@ -29,6 +30,8 @@ from ._answers_io import (
     _write_answers_file,
 )
 from ._shared.path_utils import is_path_under_any_root
+
+_logger = logging.getLogger(__name__)
 
 BUILTIN_VARS: MappingProxyType = MappingProxyType({
     "_folder_name": "",
@@ -99,7 +102,9 @@ class AnswersMap:
                     val = layer[key]
                     if val is not None:
                         return val
-                    # key 存在但值为 None: 返回 None, 不继续查低优先级层
+                    # key 存在但值为 None: 返回 None, 不继续查低优先级层。
+                    # 注意: 这与标准 dict.get() 语义不同 — dict.get() 返回存储值
+                    # (包括 None), 本实现将 None 视为"已找到,停在这里"的信号。
                     return None
             if key in self.external:
                 return self._load_external(key)
@@ -328,6 +333,7 @@ class _LazyExternalDict:
         return self._external_map.keys()
 
     def items(self):
+        """⚠ 隐式 I/O: 每次迭代触发 _load_external_file() 磁盘读取 YAML/JSON。"""
         for k in self._external_map:
             yield (k, self[k])
 

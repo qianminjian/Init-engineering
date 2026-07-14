@@ -263,6 +263,7 @@ def _classify_file(
         src_content = src.read_text(encoding="utf-8")
         dst_content = dst.read_text(encoding="utf-8")
     except UnicodeDecodeError:
+        _logger.debug("UnicodeDecodeError on %s, treating as binary conflict", src, exc_info=True)
         # 文件看似文本但包含不可解码字节 — 当作二进制冲突处理
         if strategy == ConflictStrategy.SKIP:
             return "skip"
@@ -311,7 +312,7 @@ def _sha256(path: Path) -> str:
     try:
         return hashlib.sha256(path.read_bytes()).hexdigest()
     except OSError:
-        # 权限拒绝或文件不可读 — 返回空哈希触发"内容不同"逻辑
+        _logger.debug("sha256 failed for %s, treating as different", path, exc_info=True)
         return ""
 
 

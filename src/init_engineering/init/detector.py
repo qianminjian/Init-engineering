@@ -96,19 +96,19 @@ class ProjectDetector:
         build_gradle_kts = self.dst_path / "build.gradle.kts"
 
         if pkg_json.exists():
-            analyze_node(pkg_json, self.dst_path, result)
+            result = analyze_node(pkg_json, self.dst_path, result)
         if pyproject.exists():
-            analyze_python(pyproject, result)
+            result = analyze_python(pyproject, result)
         if go_mod.exists():
-            analyze_go(go_mod, result)
+            result = analyze_go(go_mod, result)
         if cargo_toml.exists():
             result.language = "rust"
         if pom_xml.exists():
-            analyze_java(pom_xml, result)
+            result = analyze_java(pom_xml, result)
         elif build_gradle_kts.exists():
-            analyze_gradle(build_gradle_kts, result)
+            result = analyze_gradle(build_gradle_kts, result)
         elif build_gradle.exists():
-            analyze_gradle(build_gradle, result)
+            result = analyze_gradle(build_gradle, result)
         elif not result.language:
             # Root has no build files — try recursive scan for Java projects
             # (common in workspace aggregator dirs: parent dir → subdirs with pom.xml)
@@ -139,9 +139,9 @@ class ProjectDetector:
                                 "无法解析 %s, 跳过", pom, exc_info=True,
                             )
                     if sig == "pom.xml":
-                        analyze_java(best_dir / "pom.xml", result)
+                        result = analyze_java(best_dir / "pom.xml", result)
                     else:
-                        analyze_gradle(best_dir / sig, result)
+                        result = analyze_gradle(best_dir / sig, result)
                     if result.language == "java":
                         break
 
