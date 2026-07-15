@@ -6,7 +6,7 @@
 
     <groupId>{{ java_group_id }}</groupId>
     <artifactId>{{ repo_name }}</artifactId>
-    <version>0.1.0</version>
+    <version>{{ java_version_num | default('0.1.0') }}</version>
     <packaging>pom</packaging>
 
     <name>{{ repo_name }}</name>
@@ -25,20 +25,32 @@
 {%- endif %}
 
     <properties>
-        <java.version>{{ java_version }}</java.version>
+        <java.version>{{ detected_java_version | default(java_version) }}</java.version>
         <maven.compiler.source>${java.version}</maven.compiler.source>
         <maven.compiler.target>${java.version}</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
 
+{%- set _djv = detected_java_version | default('') -%}
+{%- set _dsbv = detected_spring_boot_version | default('') -%}
+{%- set is_java8 = (_djv and (_djv == '8' or _djv == '1.8')) or (_dsbv and _dsbv[:2] == '2.') -%}
     <dependencyManagement>
         <dependencies>
+{% if is_java8 %}
+            <dependency>
+                <groupId>junit</groupId>
+                <artifactId>junit</artifactId>
+                <version>4.13.2</version>
+                <scope>test</scope>
+            </dependency>
+{% else %}
             <dependency>
                 <groupId>org.junit.jupiter</groupId>
                 <artifactId>junit-jupiter</artifactId>
                 <version>5.12.0</version>
                 <scope>test</scope>
             </dependency>
+{% endif %}
         </dependencies>
     </dependencyManagement>
 

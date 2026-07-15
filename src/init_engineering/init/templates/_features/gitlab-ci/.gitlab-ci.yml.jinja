@@ -66,4 +66,15 @@ lint:
   script:
     - cargo fmt --check
     - cargo clippy -- -D warnings
+{% elif language == 'java' %}
+test:
+  image: maven:3-eclipse-temurin-{{ detected_java_version | default(java_version) }}
+  stage: test
+  script:
+    - mvn test --batch-mode
+lint:
+  image: maven:3-eclipse-temurin-{{ detected_java_version | default(java_version) }}
+  stage: lint
+  script:
+    - mvn checkstyle:check --batch-mode
 {% endif %}

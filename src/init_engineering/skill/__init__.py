@@ -24,7 +24,7 @@ from pathlib import Path
 import click
 
 from ._parse import _parse_prompt
-from ._runner import _run_analyze, _run_detect, _run_init
+from ._runner import _run_analyze, _run_detect, _run_init, _run_list_templates, _run_list_types
 from ._types import SkillResult
 
 _logger = logging.getLogger(__name__)
@@ -55,13 +55,18 @@ def skill(command_str: str, cwd: Path | None = None) -> SkillResult:
         return _run_init(project_path, options, cwd)
     elif action == "detect":
         return _run_detect(project_path, cwd, options=options)
+    elif action == "list-types":
+        return _run_list_types()
+    elif action == "list-templates":
+        return _run_list_templates(options.get("type"))
     else:
         return SkillResult(
             success=False,
             message=(
                 f"未知指令动词 '{action}'。"
                 f"支持: init <project> [--type <type>] [options], "
-                f"analyze <path>, detect <path>"
+                f"analyze <path>, detect <path>, "
+                f"list-types, list-templates [--type <type>]"
             ),
             action="parse",
         )

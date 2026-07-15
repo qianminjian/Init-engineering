@@ -1,23 +1,22 @@
-"""CLI commands 单元测试 (P1-12).
+"""CLI commands 单元测试.
 
-覆盖 commands.py 和 subcommands.py 的纯函数路径：
-- cmd_list_types / cmd_list_templates
-- cmd_analyze
-- cmd_init 早返回分支 (--list-types / --list-templates / --analyze)
+覆盖:
+- cmd_list_types / cmd_list_templates (v5.5: 提升为独立命令)
+- cmd_analyze (v5.5: 提升为独立命令 ae analyze)
 - ConflictStrategy enum
 """
 
 from pathlib import Path
 
 import pytest
+from click.testing import CliRunner
 
 from init_engineering.cli._list_cmds import cmd_analyze, cmd_list_templates, cmd_list_types
-from init_engineering.cli.commands import cmd_init
 from init_engineering.init.scaffold_update import ConflictStrategy
 
 
 class TestListTypes:
-    """cmd_list_types — --list-types 分支."""
+    """cmd_list_types — ae list-types 命令."""
 
     def test_lists_available_types(self, tmp_path: Path, capsys):
         """列出 templates/ 下所有非 _ 开头的目录."""
@@ -31,9 +30,17 @@ class TestListTypes:
         assert "cli-tool" in captured.out
         assert "_shared" not in captured.out
 
+    def test_cli_list_types_command(self):
+        """ae list-types CLI 命令正常执行."""
+        runner = CliRunner()
+        from init_engineering.cli import main
+        result = runner.invoke(main, ["list-types"])
+        assert result.exit_code == 0
+        assert "app-service" in result.output or "cli-tool" in result.output
+
 
 class TestListTemplates:
-    """cmd_list_templates — --list-templates 分支."""
+    """cmd_list_templates — ae list-templates 命令."""
 
     def test_lists_files_by_type(self, tmp_path: Path, capsys):
         """列出每个类型的模板文件."""
@@ -58,9 +65,16 @@ class TestListTemplates:
         assert "main.py.jinja" in captured.out
         assert ".hidden" not in captured.out
 
+    def test_cli_list_templates_command(self):
+        """ae list-templates CLI 命令正常执行."""
+        runner = CliRunner()
+        from init_engineering.cli import main
+        result = runner.invoke(main, ["list-templates"])
+        assert result.exit_code == 0
+
 
 class TestCmdAnalyze:
-    """cmd_analyze — --analyze 分支."""
+    """cmd_analyze — ae analyze 命令."""
 
     def test_analyze_empty_dir(self, tmp_path: Path, capsys):
         """空目录分析."""
@@ -84,11 +98,10 @@ class TestCmdAnalyze:
         cmd_analyze(project, ProjectDetector)
         captured = capsys.readouterr()
         assert "分析目录" in captured.out
-        # Should detect language or package manager
         assert "Python" in captured.out or "python" in captured.out or "语言" in captured.out
 
     def test_analyze_with_type_override(self, tmp_path: Path, capsys):
-        """P1: --type 与 --analyze 同用时传参不崩溃."""
+        """P1: --type 与 analyze 同用时传参不崩溃."""
         project = tmp_path / "simple"
         project.mkdir()
         (project / ".claude-plugin").mkdir()
@@ -103,7 +116,6 @@ class TestCmdAnalyze:
         """P1: 多候选时 --type 可消歧义，显示 '使用 --type 指定类型'."""
         project = tmp_path / "multi"
         project.mkdir()
-        # pom.xml 同时匹配 library 和 app-service — detector 无法唯一确定
         (project / "pom.xml").write_text(
             "<project><modelVersion>4.0.0</modelVersion>"
             "<groupId>com.example</groupId>"
@@ -117,86 +129,46 @@ class TestCmdAnalyze:
         captured = capsys.readouterr()
         assert "使用 --type 指定类型: library" in captured.out
 
-
-class TestCmdInitEarlyReturn:
-    """cmd_init 早返回分支."""
-
-    def test_list_types_early_return(self, tmp_path: Path):
-        """--list-types 应该早返回不执行 init."""
-        (tmp_path / "templates" / "app-service").mkdir(parents=True)
-
-        from init_engineering.init.config_types import TEMPLATES_ROOT
-
-        result = cmd_init(
-            project=None,
-            project_type=None,
-            defaults=False,
-            force=False,
-            answers_file=None,
-            language=None,
-            package_manager=None,
-            ci_platform=None,
-            test_runner=None,
-            use_typescript=None,
-            use_lefthook=None,
-            use_docker=None,
-            pretend=False,
-            skip_tasks=False,
-            no_install=False,
-            cleanup_on_error=True,
-            quiet=True,
-            verbose=False,
-            incremental=False,
-            strict=False,
-            analyze_only=False,
-            telemetry=False,
-            list_types=True,
-            list_templates=False,
-            templates_suffix=None,
-            preserve_symlinks=None,
-            template_dir_override=None,
-            hook_timeout=None,
-            force_unsafe_template=False,
-        )
-        assert result is None  # early return
-
-    def test_analyze_only_early_return(self, tmp_path: Path):
-        """--analyze 应该早返回不执行 init."""
+    def test_cli_analyze_command(self, tmp_path: Path):
+        """ae analyze CLI 命令正常执行."""
         project = tmp_path / "proj"
         project.mkdir()
+        (project / "pyproject.toml").write_text("[project]\nname = 'test'")
 
-        result = cmd_init(
-            project=str(project),
-            project_type=None,
-            defaults=False,
-            force=False,
-            answers_file=None,
-            language=None,
-            package_manager=None,
-            ci_platform=None,
-            test_runner=None,
-            use_typescript=None,
-            use_lefthook=None,
-            use_docker=None,
-            pretend=False,
-            skip_tasks=False,
-            no_install=False,
-            cleanup_on_error=True,
-            quiet=True,
-            verbose=False,
-            incremental=False,
-            strict=False,
-            analyze_only=True,
-            telemetry=False,
-            list_types=False,
-            list_templates=False,
-            templates_suffix=None,
-            preserve_symlinks=None,
-            template_dir_override=None,
-            hook_timeout=None,
-            force_unsafe_template=False,
-        )
-        assert result is None  # early return
+        runner = CliRunner()
+        from init_engineering.cli import main
+        result = runner.invoke(main, ["analyze", str(project)])
+        assert result.exit_code == 0
+        assert "分析目录" in result.output
+
+    def test_cli_analyze_nonexistent_dir(self):
+        """ae analyze 不存在的目录报错."""
+        runner = CliRunner()
+        from init_engineering.cli import main
+        result = runner.invoke(main, ["analyze", "/nonexistent/path/xyz"])
+        assert result.exit_code != 0
+
+
+class TestLegacyBackwardCompat:
+    """v5.5: 向后兼容 — init 上的 --list-types/--list-templates/--analyze 仍可用但会 warning."""
+
+    def test_legacy_list_types_on_init(self, tmp_path: Path):
+        """ae init --list-types 仍然可用（deprecated warning）."""
+        runner = CliRunner()
+        from init_engineering.cli import main
+        result = runner.invoke(main, ["init", "--list-types"])
+        assert result.exit_code == 0
+        assert "已废弃" in result.output
+
+    def test_legacy_analyze_on_init(self, tmp_path: Path):
+        """ae init --analyze <path> 仍然可用（deprecated warning）."""
+        project = tmp_path / "proj"
+        project.mkdir()
+        runner = CliRunner()
+        from init_engineering.cli import main
+        result = runner.invoke(main, ["init", "--analyze", str(project)])
+        assert result.exit_code == 0
+        assert "已废弃" in result.output
 
 
 class TestConflictStrategy:

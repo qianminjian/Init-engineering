@@ -26,12 +26,18 @@ def cmd_list_types(templates_root: Path) -> None:
         click.echo(f"  {t}")
 
 
-def cmd_list_templates(templates_root: Path) -> None:
-    """--list-templates: 列出每个类型的模板文件."""
+def cmd_list_templates(templates_root: Path, *, filter_type: str | None = None) -> None:
+    """--list-templates: 列出每个类型的模板文件。可选的 --type 过滤。"""
     types = sorted(
         d.name for d in templates_root.iterdir()
         if d.is_dir() and not d.name.startswith("_")
     )
+    if filter_type:
+        if filter_type not in types:
+            click.echo(f"✗ 未知项目类型: {filter_type}")
+            click.echo(f"  可用类型: {', '.join(types)}")
+            return
+        types = [filter_type]
     for t in types:
         click.echo(f"\n[{t}]")
         type_dir = templates_root / t
@@ -80,3 +86,14 @@ def cmd_analyze(
         click.echo(f"CI 平台: {result.ci_platform}")
     if result.frameworks:
         click.echo(f"框架: {', '.join(result.frameworks)}")
+    if result.project_description:
+        desc = result.project_description
+        if len(desc) > 120:
+            desc = desc[:120] + "..."
+        click.echo(f"项目描述: {desc}")
+    if result._qoder_info:
+        qi = result._qoder_info
+        if qi.get("project_title"):
+            click.echo(f"Qoder 项目标题: {qi['project_title']}")
+        if qi.get("module_count"):
+            click.echo(f"Qoder 模块数: {qi['module_count']}")

@@ -48,10 +48,15 @@ def phase_prompt(
     if template.nested_templates:
         # 选择 nested template 策略:
         # 1. CLI --language → 直接选对应键（最高优先级）
-        # 2. detection.language → 存量项目自动检测（无 CLI --language 时）
-        # 3. defaults 模式 → 自动选第一个
-        # 4. 非 defaults 模式 → 交互式询问用户
+        # 2. previous_answers → --from-answers 恢复（无 CLI --language 时）
+        # 3. detection.language → 存量项目自动检测
+        # 4. defaults 模式 → 自动选第一个
+        # 5. 非 defaults 模式 → 交互式询问用户
         preferred = language if (language and language in template.nested_templates) else None
+        if preferred is None and previous_answers is not None:
+            prev_lang = previous_answers.get("language")
+            if prev_lang and prev_lang in template.nested_templates:
+                preferred = prev_lang
         if preferred is None and detection is not None:
             det_lang = detection.language
             if det_lang and det_lang in template.nested_templates:
@@ -89,13 +94,26 @@ def phase_prompt(
     )
     answers.builtins["project_type"] = project_type or ""
     if detection is not None:
-        # ⚠ 副作用: detection 结果写入 answers.defaults，覆盖模板默认值
+        # ⚠ 副作用: detection 结果全量写入 answers.defaults，覆盖模板默认值
+        # v5.3: 移除白名单过滤 — 检测到的 java_version/spring_boot_version/
+        # is_multi_module/project_type 等信息全部进入 AnswersMap，驱动模板渲染
         for k, v in detection.as_answers().items():
-            # 只将真正从项目文件检测到的字段放入 defaults（覆盖模板默认值）
-            # project_name 始终为目录名，不是检测结果，不覆盖模板默认
-            if k in ("language", "package_manager", "test_runner", "ci_platform",
-                       "use_lefthook", "use_docker"):
-                answers.defaults[k] = v
+            answers.defaults[k] = v
+
+    # v5.5: 检测键 → 模板问题键映射 — 不同模板类型用不同的变量名
+    # detection.as_answers() 使用规范键 project_name，但 monorepo 模板定义 repo_name。
+    # 仅当用户未通过 CLI/interactive 显式指定时才用检测值覆盖模板默认值。
+    _DETECTION_KEY_MAP = {
+        "project_name": "repo_name",
+    }
+    for det_key, tmpl_key in _DETECTION_KEY_MAP.items():
+        if det_key in answers.defaults:
+            user_set = (
+                tmpl_key in answers.cli_overrides
+                or tmpl_key in answers.interactive
+            )
+            if not user_set:
+                answers.defaults[tmpl_key] = answers.defaults[det_key]
 
     # 检查 var 单个字符串,不是 list in AnswersMap (会触发 __contains__ 内部迭代 ChainMap)
     for var in ["project_description", "language", "package_manager",

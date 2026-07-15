@@ -27,6 +27,18 @@ def _parse_prompt(prompt: str) -> tuple[str, str | None, dict]:
     """
     prompt = prompt.strip()
 
+    # list-types (no args)
+    if re.match(r"^list-types$", prompt):
+        return ("list-types", None, {})
+
+    # list-templates [--type <type>]
+    lt_match = re.match(r"^list-templates(?:\s+--type\s+(\S+))?$", prompt)
+    if lt_match:
+        opts = {}
+        if lt_match.group(1):
+            opts["type"] = lt_match.group(1)
+        return ("list-templates", None, opts)
+
     # detect
     detect_match = re.match(r"^detect\s+(.+)$", prompt)
     if detect_match:

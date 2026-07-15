@@ -12,6 +12,12 @@
 
 ## 核心命令
 
+{% if language == 'java' %}
+- 构建: `mvn install`
+- 运行测试: `mvn test`
+- Lint: `mvn checkstyle:check`
+- Format: `mvn spotless:apply`
+{% else %}
 {% if package_manager %}
 - 安装依赖: `{{ package_manager }} install`
 {% endif %}
@@ -31,6 +37,36 @@
 - Lint: `cargo clippy`
 - Format: `cargo fmt`
 {% endif %}
+{% endif %}
+
+{%- if frameworks is defined and frameworks %}
+## 框架
+{% for f in frameworks %}
+- {{ f }}
+{%- endfor %}
+{%- endif %}
+{%- if java_modules is defined and java_modules | trim %}
+## 模块
+{% for m in java_modules.split(",") | map("trim") | list %}
+- {{ m }}
+{%- endfor %}
+{%- endif %}
+{%- if java_dependencies is defined and java_dependencies %}
+## 关键依赖
+{% for d in java_dependencies.split(",") | map("trim") | list %}{% if not d.startswith("module:") %}
+- {{ d }}
+{%- endif %}{%- endfor %}
+{%- endif %}
+{%- if python_dependencies is defined and python_dependencies %}
+## 关键依赖
+{% for d in python_dependencies %}
+- {{ d }}
+{%- endfor %}
+{%- endif %}
+{%- if _external_data is defined and _external_data %}
+{{ _external_data.architecture or '' }}
+{{ _external_data.conventions or '' }}
+{%- endif %}
 
 ## 管理约束
 {% if language == 'python' %}

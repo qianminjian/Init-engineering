@@ -3,7 +3,7 @@
 从 cli/__init__.py 拆分 (2026-07-03 深度审计 P2-A):
 原 __init__.py 427 行超 300 行约束, 拆出:
 - cmd_init (init 命令实现)
-- --list-types / --list-templates / --analyze 分支拆到 cli/_list_cmds.py (2026-07-13 P0-1)
+- --list-types / --list-templates / --analyze 已提升为独立命令 (2026-07-15 v5.5)
 - update / status 命令拆到 cli/subcommands.py
 """
 
@@ -23,7 +23,6 @@ from init_engineering.cli._helpers import (
 from init_engineering.cli._helpers import (
     sanitize_error as _sanitize_error,
 )
-from init_engineering.cli._list_cmds import cmd_analyze, cmd_list_templates, cmd_list_types
 from init_engineering.init import InitResult
 
 if TYPE_CHECKING:
@@ -32,6 +31,7 @@ if TYPE_CHECKING:
     from init_engineering.init._shared.prompt_backend import PromptBackend
 
 _logger = logging.getLogger(__name__)
+
 
 def cmd_init(
     *,
@@ -55,45 +55,23 @@ def cmd_init(
     verbose: bool,
     incremental: bool,
     strict: bool,
-    analyze_only: bool,
-    telemetry: bool,
-    list_types: bool,
-    list_templates: bool,
-    templates_suffix: str | None,
-    preserve_symlinks: bool | None,
     template_dir_override: str | None,
-    hook_timeout: int | None,
-    force_unsafe_template: bool,
     include_hidden: bool = False,
     prompt_backend: PromptBackend | None = None,
 ) -> InitResult | None:
-    """P2-12: init 命令实现 — 从 cli/__init__.py 拆分以满足 ≤ 300 行约束.
+    """init 命令实现 — 纯函数,接收已 click-解析的所有参数.
 
-    纯函数,接收已 click-解析的所有参数,执行 init 主体逻辑.
-    调用方 (init click 装饰函数) 只负责参数收集和转发.
+    v5.5: 移除 templates_suffix / preserve_symlinks / hook_timeout /
+    force_unsafe_template / telemetry CLI 选项（内部 API 仍保留默认值）。
+    --list-types / --list-templates / --analyze 已提升为独立命令。
 
     Returns:
         InitResult: 正常 init 流程完成时返回。
-        None: --list-types / --list-templates / --analyze 早返回分支时返回。
     """
     from init_engineering.init import InitWorker
-    from init_engineering.init.config_types import TEMPLATES_ROOT
-    from init_engineering.init.detector import ProjectDetector
     from init_engineering.init.errors import InitError
 
-    # --list-types / --list-templates / --analyze 早返回分支
-    if list_types:
-        cmd_list_types(TEMPLATES_ROOT)
-        return
-    if list_templates:
-        cmd_list_templates(TEMPLATES_ROOT)
-        return
-
     dst_path = (Path(project) if project else Path.cwd()).resolve()
-
-    if analyze_only:
-        cmd_analyze(dst_path, ProjectDetector, project_type=project_type or None, include_hidden=include_hidden)
-        return
 
     # --from-answers: 从 .ae-answers.yml 恢复 + 隐式非交互
     if answers_file:
@@ -104,11 +82,13 @@ def cmd_init(
             click.echo(f"从 {answers_file} 恢复答案")
         if not project_type:
             project_type = answers.get("project_type", default="") or ""
+        if not language:
+            language = answers.get("language", default="") or "" or None
         defaults = True
     else:
         answers = None
 
-    # PR#4 P1-4: --template-dir 白名单硬阻断 + --force-unsafe-template 显式绕过
+    # --template-dir 白名单检查
     if template_dir_override:
         td = Path(template_dir_override).resolve()
         safe_roots = [Path.cwd(), Path.home() / ".ae-templates", Path("/tmp")]
@@ -116,38 +96,22 @@ def cmd_init(
             str(td).startswith(str(r.resolve()) + "/") or td == r.resolve()
             for r in safe_roots if r.exists()
         )
-        if not is_safe and not force_unsafe_template:
+        if not is_safe:
             raise click.UsageError(
-                f"❌ --template-dir {td} 不在常用安全路径内 "
+                f"❌ --template-dir {td} 不在安全路径内 "
                 f"({[str(r) for r in safe_roots if r.exists()]})。\n"
-                f"使用不明来源的外部模板可能在您的机器上执行恶意代码。\n"
-                f"如确认模板来源可信, 加 --force-unsafe-template 显式绕过。"
+                f"请将模板放入 ~/.ae-templates/ 或当前项目目录下。"
             )
-        if not is_safe and verbose:
-            click.echo(
-                f"⚠ 已用 --force-unsafe-template 绕过白名单检查: {td}",
-                err=True,
-            )
-
-    # --telemetry: 首次开启强制引导用户同意 (避免静默收集)
-    if telemetry:
-        from init_engineering.telemetry import has_consent, request_and_persist_consent
-        from init_engineering.cli._click_backend import ClickPromptBackend
-
-        _be = ClickPromptBackend()
-        if not has_consent() and not request_and_persist_consent(
-            _echo=_be.echo, _confirm=_be.confirm
-        ):
-            click.echo("已禁用 telemetry (本次 init 不发送数据)", err=False)
-            telemetry = False
 
     _configure_logging(verbose=verbose)
 
     # 非 TTY 环境自动启用 --defaults，避免 BasicPromptBackend.input() 等待不可用的 stdin
+    # --incremental 模式也自动启用 --defaults（增量模式不应弹交互提示）
     import sys as _sys
-    if not _sys.stdin.isatty() and not defaults:
+    if (not _sys.stdin.isatty() or incremental) and not defaults:
         if not quiet:
-            click.echo("非 TTY 环境，自动启用 --defaults 模式", err=True)
+            click.echo("非 TTY 环境，自动启用 --defaults 模式" if not _sys.stdin.isatty()
+                       else "--incremental 模式自动启用 --defaults", err=True)
         defaults = True
 
     _worker_kwargs = _build_init_worker_kwargs(
@@ -160,8 +124,6 @@ def cmd_init(
         cleanup_on_error=cleanup_on_error, quiet=quiet,
         verbose=verbose, incremental=incremental, strict=strict,
         template_dir_override=template_dir_override,
-        templates_suffix=templates_suffix,
-        preserve_symlinks=preserve_symlinks, hook_timeout=hook_timeout,
         prompt_backend=prompt_backend,
         include_hidden=include_hidden,
     )
@@ -194,13 +156,6 @@ def cmd_init(
             safe_msg = _sanitize_error(str(e))
             click.echo(f"✗ 初始化失败: {safe_msg}", err=True)
             raise SystemExit(1) from e
-        finally:
-            elapsed_ms = int((_time.monotonic() - _start_ts) * 1000)
-            _emit_telemetry(
-                telemetry, project_type=project_type or "", language=language,
-                success=_telemetry_error is None, elapsed_ms=elapsed_ms,
-                error_type=_telemetry_error,
-            )
 
 
 def _build_init_worker_kwargs(
@@ -225,13 +180,10 @@ def _build_init_worker_kwargs(
     incremental: bool,
     strict: bool,
     template_dir_override: str | None,
-    templates_suffix: str | None,
-    preserve_symlinks: bool | None,
-    hook_timeout: int | None,
     prompt_backend: PromptBackend | None = None,
     include_hidden: bool = False,
 ) -> dict[str, Any]:
-    """构建 InitWorker 构造参数 — 从 cmd_init 提取以减小函数体."""
+    """构建 InitWorker 构造参数."""
     return {
         "dst_path": dst_path,
         "project_type": project_type,
@@ -253,9 +205,6 @@ def _build_init_worker_kwargs(
         "incremental": incremental,
         "strict": strict,
         "template_dir_override": Path(template_dir_override) if template_dir_override else None,
-        "templates_suffix": templates_suffix,
-        "preserve_symlinks": preserve_symlinks,
-        "hook_timeout": hook_timeout,
         "prompt_backend": prompt_backend,
         "include_hidden": include_hidden,
     }
@@ -303,28 +252,3 @@ def _print_completion_report(result: InitResult) -> None:
 
     for line in lines:
         click.echo(line)
-
-
-def _emit_telemetry(
-    enabled: bool,
-    *,
-    project_type: str,
-    language: str | None,
-    success: bool,
-    elapsed_ms: int,
-    error_type: str | None = None,
-) -> None:
-    """P2-12: 提取 init 成功/失败两条 telemetry send 分支 — 消除 11 行重复."""
-    if not enabled:
-        return
-    from init_engineering.telemetry import TelemetryEvent
-    from init_engineering.telemetry import send as _send_telemetry
-    _send_telemetry(TelemetryEvent(
-        ae_version=__version__,
-        command="init",
-        project_type=project_type,
-        language=language or "",
-        success=success,
-        duration_ms=elapsed_ms,
-        error_type=error_type,
-    ))

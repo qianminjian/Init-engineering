@@ -54,6 +54,12 @@ def analyze_node(pkg_path: Path, project_dir: Path, result: DetectionResult) -> 
 
     if "pnpm" in str(data.get("scripts", {})):
         result.package_manager = "pnpm"
+
+    result._node_info = {
+        "package_name": data.get("name", ""),
+        "package_version": data.get("version", ""),
+    }
+
     return result
 
 
@@ -93,6 +99,11 @@ def analyze_python(py_path: Path, result: DetectionResult) -> DetectionResult:
     elif "uv" in build_backend or "uv" in str(data.get("tool", {})):
         result.package_manager = "uv"
 
+    result._python_info = {
+        "build_backend": build_backend,
+        "dependencies": deps_list,
+    }
+
     return result
 
 
@@ -109,14 +120,19 @@ def analyze_go(go_path: Path, result: DetectionResult) -> DetectionResult:
         _logger.debug("无法读取 go.mod: %s", go_path, exc_info=True)
         return result
 
+    module_path = ""
     m = re.search(r"^module\s+(.+)$", content, re.MULTILINE)
     if m:
-        mod_path = m.group(1).strip()
-        result.project_name = mod_path.rsplit("/", 1)[-1]
+        module_path = m.group(1).strip()
+        result.project_name = module_path.rsplit("/", 1)[-1]
 
     for name, framework in GO_FRAMEWORKS:
         if re.search(rf"github\.com/.*/{name}\b", content):
             result.frameworks.append(framework)
+
+    result._go_info = {
+        "module_path": module_path,
+    }
 
     return result
 
@@ -154,9 +170,10 @@ def analyze_java(pom_path: Path, result: DetectionResult) -> DetectionResult:
     has_spring_boot_starter = False
     is_multi_module = False
     dependencies: list[str] = []
+    modules: list[str] = []
 
     for child in root:
-        t = tag(child)
+        t = tag(child.tag)
         text = (child.text or "").strip()
         if t == "groupId":
             group_id = text
@@ -169,11 +186,13 @@ def analyze_java(pom_path: Path, result: DetectionResult) -> DetectionResult:
         elif t == "modules":
             is_multi_module = True
             for mod in child:
-                if tag(mod) == "module" and mod.text:
-                    dependencies.append(f"module:{mod.text.strip()}")
+                if tag(mod.tag) == "module" and mod.text:
+                    mod_name = mod.text.strip()
+                    modules.append(mod_name)
+                    dependencies.append(f"module:{mod_name}")
         elif t == "properties":
             for prop in child:
-                ptag = tag(prop)
+                ptag = tag(prop.tag)
                 ptext = (prop.text or "").strip()
                 if ptag.endswith("java.version") or ptag == "maven.compiler.source":
                     java_version = ptext
@@ -181,10 +200,10 @@ def analyze_java(pom_path: Path, result: DetectionResult) -> DetectionResult:
                     spring_boot_version = ptext
         elif t == "dependencyManagement" or t == "dependencies":
             for dep_elem in child:
-                if tag(dep_elem) == "dependency":
+                if tag(dep_elem.tag) == "dependency":
                     gid = aid = vid = ""
                     for dep_child in dep_elem:
-                        dt = tag(dep_child)
+                        dt = tag(dep_child.tag)
                         dtext = (dep_child.text or "").strip()
                         if dt == "groupId":
                             gid = dtext
@@ -214,9 +233,9 @@ def analyze_java(pom_path: Path, result: DetectionResult) -> DetectionResult:
     # Detect Spring Boot version from parent
     if not spring_boot_version:
         for child in root:
-            if tag(child) == "parent":
+            if tag(child.tag) == "parent":
                 for pc in child:
-                    pct = tag(pc)
+                    pct = tag(pc.tag)
                     pctext = (pc.text or "").strip()
                     if pct == "artifactId" and "spring-boot-starter-parent" in pctext:
                         has_spring_boot_starter = True
@@ -251,6 +270,8 @@ def analyze_java(pom_path: Path, result: DetectionResult) -> DetectionResult:
         "packaging": packaging,
         "is_multi_module": is_multi_module,
         "build_tool": "maven",
+        "dependencies": dependencies,
+        "modules": modules,
     })
 
     return result

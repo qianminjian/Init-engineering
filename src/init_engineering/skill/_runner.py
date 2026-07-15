@@ -193,3 +193,59 @@ def _run_detect(project_path: str | None, cwd: Path, *, options: dict | None = N
     result = _run_analyze(project_path, cwd, options=options)
     result.action = "detect"
     return result
+
+
+def _run_list_types() -> "SkillResult":
+    """列出所有可用的项目类型。"""
+    from init_engineering.init.config_types import TEMPLATES_ROOT
+
+    from ._types import SkillResult
+
+    types = sorted(
+        d.name for d in TEMPLATES_ROOT.iterdir()
+        if d.is_dir() and not d.name.startswith("_")
+    )
+    return SkillResult(
+        success=True,
+        message=f"可用项目类型 ({len(types)}): {', '.join(types)}",
+        action="list-types",
+        details={"types": types},
+    )
+
+
+def _run_list_templates(filter_type: str | None = None) -> "SkillResult":
+    """列出模板文件。"""
+    from init_engineering.init.config_types import TEMPLATES_ROOT
+
+    from ._types import SkillResult
+
+    types = sorted(
+        d.name for d in TEMPLATES_ROOT.iterdir()
+        if d.is_dir() and not d.name.startswith("_")
+    )
+    if filter_type:
+        if filter_type not in types:
+            return SkillResult(
+                success=False,
+                message=f"未知项目类型: {filter_type}。可用: {', '.join(types)}",
+                action="list-templates",
+            )
+        types = [filter_type]
+
+    result: dict[str, list[str]] = {}
+    for t in types:
+        type_dir = TEMPLATES_ROOT / t
+        files = [
+            str(f.relative_to(type_dir))
+            for f in sorted(type_dir.rglob("*"))
+            if f.is_file() and not f.name.startswith(".")
+        ]
+        result[t] = files
+
+    total = sum(len(v) for v in result.values())
+    return SkillResult(
+        success=True,
+        message=f"模板文件 ({total} 个, {len(result)} 类型)",
+        action="list-templates",
+        details={"templates": result},
+    )

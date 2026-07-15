@@ -304,7 +304,7 @@ class TestSkillEdgeCases:
         target = tmp_path / "multi"
         result = skill(
             f"init {target} --type cli-tool --language go --ci gitlab "
-            f"--strict --verbose --telemetry --defaults --skip-tasks --pretend",
+            f"--strict --verbose --defaults --skip-tasks --pretend",
             cwd=tmp_path,
         )
         assert result.action == "init"

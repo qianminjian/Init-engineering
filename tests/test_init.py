@@ -24,29 +24,36 @@ class TestInitHelp:
         assert "--force" in result.stdout
         assert "--pretend" in result.stdout
         assert "--skip-tasks" in result.stdout
-        assert "--no-cleanup" in result.stdout
+        assert "--incremental" in result.stdout
 
     def test_all_flags_present(self):
-        """Verify all 14 flags appear in help."""
+        """Verify core flags appear in help (hidden/advanced excluded)."""
         result = run_ae(["init", "--help"])
         flags = [
             "--type",
+            "--language",
             "--defaults",
             "--force",
-            "--from-answers",
+            "--incremental",
+            "--pretend",
             "--package-manager",
             "--ci",
             "--test-runner",
             "--no-typescript",
             "--no-lefthook",
-            "--pretend",
+            "--no-docker",
+            "--no-install",
             "--skip-tasks",
-            "--no-cleanup",
             "--quiet",
-            "--incremental",
+            "--verbose",
+            "--strict",
         ]
         for flag in flags:
             assert flag in result.stdout, f"Missing flag: {flag}"
+        # Hidden/advanced flags should NOT appear in normal --help
+        assert "--no-cleanup" not in result.stdout
+        assert "--from-answers" not in result.stdout
+        assert "--include-hidden" not in result.stdout
 
 
 class TestInitPretend:

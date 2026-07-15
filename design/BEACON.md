@@ -1,13 +1,16 @@
-> 创建：2026-06-24 | 更新：2026-07-14 | 阶段：--include-hidden 扫描设计
+> 创建：2026-06-24 | 更新：2026-07-15 | 阶段：v5.5 CLI 命令重组 + 帮助系统
+
+# BEACON.md — Init Engineering 设计基线
 
 ## 目标与成功标准
 
 1. **Agent Skill 模式运行**：`ae init` 作为 Claude Code Skill 在 agent 里调用，为 agent 工作流提供项目环境初始化能力
-2. **存量项目自动初始化**：通过代码分析自动识别项目类型、依赖、配置，生成正确的初始化配置
+2. **存量项目自动初始化**：通过代码分析自动识别项目类型、依赖、配置，检测结果**完整**驱动模板渲染，不修改 `src/` 任何已有文件
 3. **新项目向导初始化**：交互式询问确认项目方向、技术栈、目录结构，生成定制化项目骨架
-4. **模板组合引擎**：9 类型 × 5 语言（含 plugin 多 Skill 插件模板）
-5. **Pipeline 绕过阻断**：SKILL.md MUST_READ 门禁 + _required_outputs 自检，防止 AI 跳过 5 阶段流水线
-6. **隐藏目录可扫描**：`--include-hidden` 将 .qoder/.claude/ 等隐藏目录纳入检测输入，消费反向工程资产
+4. **模板组合引擎**：9 类型 × 6 语言（含 plugin 多 Skill 插件模板）
+5. **Pipeline 绕过阻断**：SKILL.md MUST_READ 门禁 + `_required_outputs` 自检，防止 AI 跳过 5 阶段流水线
+6. **隐藏目录可扫描**：`--include-hidden` 将 .qoder/.claude/ 等隐藏目录纳入检测输入
+7. **CLAUDE.md 有确定性内容**：模块列表、依赖概要、技术栈从检测数据渲染，不存在纯占位文本（Agent 深度扫描通过 `_external_data` 桥补充非确定性内容）
 
 ## 范围边界
 
@@ -15,12 +18,134 @@
 - Agent Skill 模式：5 阶段流水线（detect → prompt → render → tasks → finalize）
 - 存量项目初始化：代码分析 → 自动识别 → 自动化配置（含隐藏目录资产）
 - 新项目向导：交互式询问 → 确认方向 → 生成骨架
-- 9 类型 × 5 语言模板 + 13 exports 公共 API
+- 9 类型 × 6 语言模板 + 13 exports 公共 API
 - `--include-hidden`：检测阶段扫描隐藏目录（默认关闭，显式 opt-in）
+- `run_update()`：增量更新已有项目（skip/overwrite/prompt 三种冲突策略）
+- **v5.4**：analyze_* 采集的全部结构化数据存入 _*_info，as_answers() 全量暴露，模板消费检测数据生成确定性内容
 
 **不做：**
-- 知识库格式适配器 — 隐藏目录内容由现有 analyze_* 函数统一处理，不做特殊解析
+- 知识库格式适配器 — 隐藏目录内容由现有 analyze_* 函数统一处理
 - dev-loop 开发循环 / 多 LLM Provider / Web UI / 远程模板
+- Agent 深度代码扫描 LLM 能力 — 非 init 核心职责（但通过 `_external_data` 桥提供注入点）
+- 模板自适应生成（非填充）— 架构级变更，需独立设计
+
+## 架构总览
+
+### 5 阶段流水线
+
+```
+Phase 1: detect — ProjectDetector.detect(target_dir)
+  └─ list_candidates() → FRAMEWORK_SIGNATURES 9 类型匹配
+  └─ analyze_java()    → _java_info:    {group_id, artifact_id, version, java_version,
+                                          spring_boot_version, packaging, is_multi_module,
+                                          build_tool, dependencies[], modules[]}
+  └─ analyze_python()  → _python_info:  {build_backend, dependencies[]}
+  └─ analyze_go()      → _go_info:      {module_path}
+  └─ analyze_node()    → _node_info:    {package_name, package_version}
+  └─ analyze_gradle()  → _java_info:    {build_tool="gradle"}
+  └─ 输出 DetectionResult（含完整 _*_info，禁止采集后丢弃）
+
+Phase 2: prompt — InteractivePrompt + AnswersMap（6 层 ChainMap）
+  └─ 优先级: cli_overrides > interactive > previous > defaults > builtins > external
+  └─ detection.as_answers() → answers.defaults 层（全量通过）
+  └─ as_answers() 暴露 30+ 字段：框架列表、依赖列表、模块列表、项目描述等
+
+Phase 3: render — TemplateRenderer.render_to(tmpdir)
+  └─ 遍历多层 template_dirs: _shared → _features → type → monorepo 子模板
+  └─ CLAUDE.md 模板消费 frameworks/dependencies/modules/project_description
+  └─ _external_data 条件渲染段：Agent 扫描结果注入点
+  └─ Jinja2 SandboxedEnvironment，双层渲染（文件名 + 内容）
+
+Phase 4: tasks — TaskRunner.run(tasks_before, tasks_after)
+Phase 5: finalize — shutil.copytree(tmpdir → dst_dir)
+  └─ 写入 .ae-answers.yml + init-manifest.json
+```
+
+### 模块映射
+
+| 模块 | 文件 | 职责 |
+|------|------|------|
+| InitWorker | `scaffold_phases.py` | 5 阶段编排器，状态机（fresh/incremental） |
+| ProjectDetector | `detector.py` | 项目类型签名匹配（~75 行） |
+| 深度分析器 | `detector_analyzers.py` | 5 个 analyze_* 函数，提取全部结构化数据存 _*_info |
+| 检测常量 | `detector_constants.py` | DetectionResult + as_answers() 全量暴露逻辑 + FRAMEWORK_SIGNATURES |
+| AnswersMap | `answers.py` | 6 层 ChainMap + _LazyExternalDict |
+| TemplateRenderer | `renderer.py` | Jinja2 渲染引擎，路径穿越防护 |
+| 渲染调度 | `scaffold_render.py` | render_to() 多模板目录遍历 |
+| 配置加载 | `config_loader.py` + `config_types.py` | YAML 配置解析，!include 安全校验 |
+| 错误体系 | `errors.py` | 8 种错误类 + exit_code + recovery_hint |
+| CLI 入口 | `cli/commands.py` | Click 命令组 |
+| Skill 入口 | `skill/` | Agent Skill 入口 |
+
+### 检测 → 模板 完整数据流（v5.4）
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│ Phase 1: detect                                                      │
+│                                                                       │
+│ analyze_java(pom.xml):                                                │
+│   解析: <java.version>8</java.version>                                │
+│         <spring-boot.version>2.3.5</spring-boot.version>              │
+│         <packaging>pom</packaging>                                    │
+│         <modules><module>tmp</module><module>tmp-manage</module>...   │
+│         <dependency>org.springframework.boot:spring-boot-starter...   │
+│         <groupId>com.wrcb</groupId>                                   │
+│         <artifactId>tmp-parent</artifactId>                           │
+│         <version>1.0.0-SNAPSHOT</version>                             │
+│   存储: result._java_info = {                                         │
+│     group_id, artifact_id, version, java_version,                     │
+│     spring_boot_version, packaging, is_multi_module,                  │
+│     build_tool="maven",                                               │
+│     dependencies: ["org.springframework.boot:spring-boot-starter:…",  │
+│                    "module:tmp", "module:tmp-manage", ...],           │
+│     modules: ["tmp", "tmp-manage", "tmp-window", ...]                 │
+│   }                                                                   │
+│                                                                       │
+│ analyze_python(pyproject.toml):                                       │
+│   存储: result._python_info = {build_backend, dependencies[]}         │
+│                                                                       │
+│ analyze_go(go.mod):                                                   │
+│   存储: result._go_info = {module_path}                               │
+│                                                                       │
+│ analyze_node(package.json):                                           │
+│   存储: result._node_info = {package_name, package_version}           │
+│                                                                       │
+│ 公共字段: result.frameworks, result.project_description, ...          │
+│                                                                       │
+├──────────────────────────────────────────────────────────────────────┤
+│ Phase 2: prompt                                                       │
+│                                                                       │
+│ as_answers() 全量暴露（无白名单，无丢弃）:                             │
+│   DetectionResult 公共字段:                                            │
+│     project_type, language, package_manager, test_runner,             │
+│     ci_platform, project_name, project_description,                   │
+│     frameworks, use_lefthook, use_docker                              │
+│   _java_info 展平:                                                    │
+│     java_group_id, java_artifact_id, java_version_num,                │
+│     detected_java_version, detected_spring_boot_version,              │
+│     java_packaging, java_build_tool, is_multi_module,                 │
+│     java_dependencies, java_modules                                   │
+│   _python_info 展平:                                                  │
+│     python_build_backend, python_dependencies                         │
+│   _go_info 展平:                                                      │
+│     go_module_path                                                    │
+│   _node_info 展平:                                                    │
+│     node_package_name, node_package_version                           │
+│                                                                       │
+├──────────────────────────────────────────────────────────────────────┤
+│ Phase 3: render                                                       │
+│                                                                       │
+│ CLAUDE.md.jinja 消费:                                                 │
+│   {% if frameworks %}## 框架{% for f in frameworks %}- {{ f }}{% endfor %}{% endif %}  │
+│   {% if java_modules %}## 模块{% for m in java_modules %}- {{ m }}{% endfor %}{% endif %}│
+│   {% if _external_data %}{{ _external_data.architecture }}{% endif %} │
+│                                                                       │
+│ pom.xml.jinja 消费:                                                   │
+│   <java.version>{{ detected_java_version or java_version }}</...>     │
+│   <parent><version>{{ detected_spring_boot_version or '3.5.5' }}...   │
+│                                                                       │
+└──────────────────────────────────────────────────────────────────────┘
+```
 
 ## 设计决策
 
@@ -31,21 +156,54 @@
 | 8 | **detector 拆分为 constants/analyzers/helpers** | detector.py 382→82 行 | 2026-07-02 | ✅ |
 | 9 | **run_update() 实现** | 类比 Copier copier update | 2026-07-02 | ✅ |
 | 10 | **AnswerMap 6 层 ChainMap 简化** | 来源 Copier 8 层 | 2026-07-01 | ✅ |
-| 11 | **2 类渲染生命周期钩子** | tasks_before/after，移除 before_renderer 等 | 2026-07-01 | ✅ |
+| 11 | **2 类渲染生命周期钩子** | tasks_before/after | 2026-07-01 | ✅ |
 | 12 | **CLI 单版本透传 templates_suffix/preserve_symlinks** | TemplateConfig 默认值可被 CLI 覆盖 | 2026-07-01 | ✅ |
-| 13 | **SKILL.md MUST_READ 门禁 + _required_outputs** | pipeline 绕过阻断：AI 不再手动模拟 init 流程 | 2026-07-14 | ✅ |
-| 14 | **skill.py 拆为 skill/ 子包** | 337 行 → 4 文件（_types/_parse/_runner/__init__） | 2026-07-14 | ✅ |
-| 15 | **NEGATED_FLAG_MAP 提取到 config_types.py** | --no-* 标志映射 SSOT，skill 和 CLI 文档共享 | 2026-07-14 | ✅ |
-| 16 | **analyze_* 返回 DetectionResult 不静默 mutate** | 5 个分析函数签名从 -> None 改为 -> DetectionResult | 2026-07-14 | ✅ |
-| 17 | **`--include-hidden` 扫描隐藏目录** | 将 .qoder/.claude/ 等隐藏目录纳入检测输入，不区分知识库格式 | 2026-07-14 | ✅ |
+| 13 | **SKILL.md MUST_READ 门禁 + _required_outputs** | pipeline 绕过阻断 | 2026-07-14 | ✅ |
+| 14 | **skill.py 拆为 skill/ 子包** | 337 行 → 4 文件 | 2026-07-14 | ✅ |
+| 15 | **NEGATED_FLAG_MAP 提取到 config_types.py** | --no-* 标志映射 SSOT | 2026-07-14 | ✅ |
+| 16 | **analyze_* 返回 DetectionResult 不静默 mutate** | 5 个分析函数签名统一 | 2026-07-14 | ✅ |
+| 17 | **`--include-hidden` 扫描隐藏目录** | .qoder/.claude/ 等纳入检测输入 | 2026-07-14 | ✅ |
+| 18 | **phase_prompt() 不做白名单过滤** | detection.as_answers() 全量进入 AnswersMap | 2026-07-14 | ✅ |
+| 19 | **检测值优先于模板默认值** | `{{ detected_java_version or java_version }}` 级联回退 | 2026-07-14 | ✅ |
+| 20 | **多模块项目跳过根级 src/** | is_multi_module=True 时排除 src/** | 2026-07-14 | ✅ |
+| 21 | **Spring Boot 版本从检测值驱动** | `{{ detected_spring_boot_version or '3.5.5' }}` | 2026-07-14 | ✅ |
+| 22 | **JUnit 版本按 Java/Spring Boot 自适应** | Java 8 / SB 2.x → JUnit 4；否则 JUnit 5 | 2026-07-14 | ✅ |
+| 23 | **--incremental 自动启用 --defaults** | 增量模式不弹交互 | 2026-07-14 | ✅ |
+| 24 | **analyze_* 采集数据全量存储 _*_info** | dependencies/modules/build_backend/module_path 全部存入，禁止采后丢弃 | 2026-07-14 | ✅ |
+| 25 | **as_answers() 全量暴露检测字段** | DetectionResult 公共字段 + _*_info 展平，30+ 变量进入模板上下文 | 2026-07-14 | ✅ |
+| 26 | **CLAUDE.md 模板消费检测数据** | frameworks/modules/dependencies/project_description 渲染确定性内容 | 2026-07-14 | ✅ |
+| 27 | **_external_data 模板消费桥** | CLAUDE.md 增加 `{% if _external_data %}` 条件渲染段，Agent 注入点可工作 | 2026-07-14 | ✅ |
+| 28 | **pom.xml 模板消费 project_version** | `{{ java_version_num or '0.1.0' }}` 替代硬编码 `0.1.0` | 2026-07-14 | ✅ |
+| 29 | **P1-12 回退 + 规范检测器职责** | 检测器报告所有候选，不静默消歧义；消歧义由上层（CLI --type / 交互）完成 | 2026-07-14 | ✅ |
+| 30 | **v5.5 CLI 命令重组** | analyze/list-types/list-templates 提升为独立命令；移除 5 个无用选项（templates_suffix/preserve_symlinks/hook_timeout/force_unsafe_template/telemetry）；init 选项分层（核心/配置/流程/高级）；每个命令有使用示例 epilog | 2026-07-15 | ✅ |
+| 31 | **修复 pom.xml 命名空间解析** | `analyze_java()` 中 `tag(element)` → `tag(element.tag)`，7 处调用传了 Element 对象而非 tag 字符串，导致所有带 xmlns 的 pom.xml 解析失败 | 2026-07-15 | ✅ |
+| 32 | **Jinja2 `or` → `\| default()`** | Jinja2 的 `or` 对 undefined 变量仍抛 UndefinedError；`\| default()` 才安全处理变量缺失。修复 8 处模板（pom.xml ×4 + CI ×2 + is_java8 ×2）| 2026-07-15 | ✅ |
+| 33 | **app-service/library ae-template.yml 补充 java_version** | `_features/java/pom.xml.jinja` 引用 `java_version` 但仅 monorepo 定义；新增到 app-service/library 配置 | 2026-07-15 | ✅ |
+| 34 | **--from-answers 恢复时语言丢失** | `cmd_init` 从 answers 提取 `project_type` 但不提取 `language`；`phase_prompt` 的 nested 模板选择未查 `previous_answers`，导致空目录 `--from-answers` 回退到第一个嵌套模板（typescript），输出混合 Java+TypeScript | 2026-07-15 | ✅ |
+| 35 | **CLAUDE.md Tech Stack 格式断裂** | `{%- if %}` 的 `-` 静默吞掉换行符（条件为 False 时仍生效），导致 `## Tech Stack- Language: java- CI: github`。改为 `{% if %}...\n{% endif %}{% if %}` 流式模板避免空白吞食 | 2026-07-15 | ✅ |
+
+## Init → Loop 契约（Manifest）
+
+Init 完成初始化时写入 `.ae-state/init-manifest.json`（schema 1.1），Loop 启动时读取。
+
+**必需字段**：`schema_version`, `project_type`（9 枚举）, `language`（6 枚举）, `conventions`（linter/type_checker/test_runner）, `structure`（source_root/test_root）
+
+**v5.6 新增**：`conventions.ci_platform`（github/gitlab/none）, `structure.design_root`
+
+**契约 SSOT**：`init-manifest.schema.json`（JSON Schema draft 2020-12），Loop 仓库持有权威副本，Init 侧复制 + pin 版本。Init 生成 manifest 后依 schema 自校验通过才写盘。
 
 ## 当前状态
 
-**阶段：** --include-hidden 已实现，R8 审计修复完成
+**阶段：** v5.5 CLI 命令重组 + 帮助系统 — 已完成
 
-**最近动作：** 2026-07-14 — 实现 `--include-hidden`：detector_helpers（signature_matches + find_signatures_in_tree）→ detector.py → scaffold_phases.py → phases/detect.py → CLI + Skill 全链路透传，8 文件，~40 行改动，0 新文件。639 测试通过。
+**最近动作：** 2026-07-15 — E2E 测试 + 修复 5 个 Bug。
+- E2E 测试：TMP-for-init 为存量项目测试 ae analyze + ae init 各场景；新建项目测试 monorepo/app-service/library Java 类型
+- Bug 修复 1-3（前一轮）：pom.xml 命名空间解析 + Jinja2 `| default()` 替代 `or` + ae-template.yml 补充 java_version
+- Bug 修复 4：--from-answers 恢复时语言丢失 → 混合模板输出（28 文件含 TS+Java，pom.xml 错误）。cmd_init 从 answers 提取 language；phase_prompt 检查 previous_answers 为 nested 模板偏好
+- Bug 修复 5：CLAUDE.md "## Tech Stack" 格式断裂（`{%- if %}` 吞换行符）→ 改为流式 `{% if %}...\n{% endif %}{% if %}` 模板
+- 验证：ae analyze 正确检测 monorepo；ae init monorepo/app-service/library Java 类型均生成正确输出；--from-answers 恢复正确（24 文件纯 Java）；655 tests pass
 
-**下一步：** 待用户确认
+**下一步：** TASKS.md §1 活跃任务（TemplateRenderer 参数透传 + AnswersMap 版本语义 + run_update()）
 
 **阻塞项：** 无
 
@@ -53,25 +211,29 @@
 
 | 日期 | 变更 | 原因 |
 |------|------|------|
-| 2026-07-14 | 设计 --include-hidden 扫描隐藏目录 | .qoder 等反向工程资产在隐藏目录下，原来被 detector_helpers 系统性跳过 |
-| 2026-07-14 | R8 审计 16 项修复 + pipeline 绕过阻断 | P0 _logger 回归修复 / P1 API 扩展+skill 拆分+analyze 签名 / P2 日志+文档+命名 / SKILL.md 门禁 |
-| 2026-07-14 | ae-init pipeline 绕过事故复盘 | AI 手动模拟 init 写 3 个文件而非调用 5 阶段流水线，根因 SKILL.md 缺 Pipeline 定义 |
-| 2026-07-08 | 深度审计 9 轮 (R1-R8) | 错误处理/测试质量/类型安全/架构/性能/并发/模板/文档 8 维度扫描 |
-| 2026-07-02 | v1.0 投产就绪 7 项 | 统一版本号 / monorepo 4 语言 / InitWorker 拆分 / detector 拆分 / run_update |
-| 2026-07-01 | 第三轮深度修复 3 项 | lefthook 条件门控 + ProjectDetector 深度分析 + hook 多语言 |
-| 2026-07-01 | 第二轮优化 5 项 | CI 条件渲染 + --language CLI + 共享模板泛化 |
-| 2026-07-01 | 全面投产修复 7 项 | P0: builtin hooks 非阻塞 + Skill 注册 / P1: 6 类型模板 |
+| 2026-07-15 | E2E 测试 + 2 追加 Bug 修复 | --from-answers 语言丢失（混合模板）+ CLAUDE.md 格式断裂（Jinja2 空白吞食）
+| 2026-07-15 | v5.5 CLI 重组 + 帮助系统 | 6 命令 + 选项分层 + 移除 5 无用选项 + 使用示例 epilog + 向后兼容 |
+| 2026-07-15 | v5.4 完整性修复实现 | 4 阶段实现完成：analyze_* 全量存储 + as_answers() 30+ 字段曝光 + 模板消费 + 655 tests pass |
+| 2026-07-14 | v5.4 幻肢审计 + 完整性设计 | _external_data 有路无车、analyze_* 采集后丢弃、as_answers 暴露不足、模板不消费检测数据 |
+| 2026-07-14 | 设计文档合并为单一 BEACON.md + TASKS.md | 8 个设计文档分散 |
+| 2026-07-14 | v5.3 信息流修复 | detect→prompt→render 信息链路断裂 |
+| 2026-07-14 | --include-hidden 扫描隐藏目录 | .qoder 等反向工程资产被系统性跳过 |
+| 2026-07-14 | R8 审计 16 项修复 + pipeline 绕过阻断 | P0 _logger 回归修复 |
+| 2026-07-08 | 深度审计 9 轮 (R1-R8) | 8 维度扫描 |
+| 2026-07-02 | v1.0 投产就绪 7 项 | 版本号统一 / monorepo / detector 拆分 |
 
 ## 待解决问题
 
 | 状态 | 问题 | 说明 |
 |------|------|------|
-| [✓] | 代码分析深度 | 已实现：依赖解析 + 框架识别 + 包管理器/测试框架/CI 自动推断 |
-| [✓] | monorepo 多语言 | 已实现：typescript/python/go/rust/java 通过 _nested_templates 切换 |
-| [✓] | run_update 命令 | 已实现：skip/overwrite/prompt 三种冲突策略 |
-| [✓] | pipeline 绕过阻断 | 已实现：SKILL.md MUST_READ + _required_outputs 自检 |
-| [~] | answers.py 323 行 | 接近 300 行阈值，职责仍单一，暂不拆分 |
+| [✓] | 代码分析深度 | 依赖解析 + 框架识别 + PM/测试/CI 自动推断 |
+| [✓] | monorepo 多语言 | typescript/python/go/rust/java |
+| [✓] | run_update 命令 | skip/overwrite/prompt 三种冲突策略 |
+| [✓] | pipeline 绕过阻断 | SKILL.md MUST_READ + _required_outputs |
+| [✓] | v5.3 信息流修复 | detect→prompt→render 全链路打通 |
+| [✓] | v5.4 检测信息完整性 | 30+ 字段全量暴露 + 模板消费检测数据 + _external_data 桥 |
+| [~] | answers.py 323 行 | 职责仍单一，暂不拆分 |
 
 ## 引用文件
 
-@design/INDEX.md · @design/v5.0-Design-Init.md · @design/audit-backlog.md · @design/his_bak/
+@design/TASKS.md · @design/his_bak/ · @SKILL.md · @src/init_engineering/

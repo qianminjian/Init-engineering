@@ -71,16 +71,6 @@ class ProjectDetector:
                     lambda deps: "@modelcontextprotocol/sdk" in str(deps),
                 ):
                     continue
-                # spec-doc 与 app-service/library 消歧义：当 design/ 目录与构建文件
-                # 共存时，优先按代码项目（app-service/library）处理
-                if ptype == "spec-doc" and any(
-                    (self.dst_path / f).exists()
-                    for f in (
-                        "package.json", "pyproject.toml", "pom.xml",
-                        "build.gradle", "build.gradle.kts", "go.mod", "Cargo.toml",
-                    )
-                ):
-                    continue
                 matches.append(ptype)
         return matches
 
@@ -157,10 +147,39 @@ class ProjectDetector:
                     if result.language == "java":
                         break
 
-        result.package_manager = _detect_package_manager(self.dst_path)
+        # 包管理器：优先使用语言分析器已设置的值（如 analyze_java 设置的 "mvn"），
+        # 只在未设置时才用根目录 lock 文件推断。防止聚合目录场景被覆盖为 None。
+        if not result.package_manager:
+            result.package_manager = _detect_package_manager(self.dst_path)
         result.test_runner = _detect_test_runner(self.dst_path, result.language)
         result.ci_platform = _detect_ci_platform(self.dst_path)
         result.has_lefthook = (self.dst_path / "lefthook.yml").exists()
         result.has_docker = (self.dst_path / "Dockerfile").exists()
+
+        # v5.3: Java 项目优先用 artifact_id 作为 project_name，
+        # 但聚合目录（根目录无构建文件）需恢复为根目录名 —
+        # analyze_java() 内部已将 project_name 设为子目录的 artifact_id
+        _root_has_build = any([
+            pkg_json.exists(), pyproject.exists(), go_mod.exists(),
+            cargo_toml.exists(), pom_xml.exists(), build_gradle.exists(),
+            build_gradle_kts.exists(),
+        ])
+        if not _root_has_build:
+            result.project_name = self.dst_path.resolve().name
+
+        # 语言分析器可能追加 monorepo 候选（如 Java 多模块），需要在分析后重新确定类型
+        if result.project_type is None and "monorepo" in result.candidates:
+            result.project_type = "monorepo"
+
+        # ── 隐藏目录元数据提取 ──
+        if self.include_hidden:
+            from .detector_qoder import analyze_qoder_repowiki
+
+            qoder_info = analyze_qoder_repowiki(self.dst_path)
+            if qoder_info is not None:
+                result._qoder_info = qoder_info
+                # qoder 描述优先于 pom.xml 的 groupId:artifactId
+                if qoder_info.get("project_description"):
+                    result.project_description = qoder_info["project_description"]
 
         return result

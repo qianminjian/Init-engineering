@@ -58,3 +58,8 @@ use_docker:
   type: bool
   help: 添加 Docker 支持（Dockerfile + docker-compose）
   default: false
+java_version:
+  type: str
+  help: Java 版本（用于 maven.compiler.source/target）
+  default: "21"
+  when: "{{ language == 'java' }}"

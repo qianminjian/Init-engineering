@@ -46,6 +46,8 @@ _RENDER_STR_VARS = [
     "test_runner",
     "ci_platform",
     "project_type",
+    "qoder_project_title",
+    "qoder_project_description",
 ]
 
 
@@ -186,6 +188,10 @@ def render_to(
         subdirectory=subdirectory,
         external_template_dir=external_template_dir,
     )
+
+    # v5.3: 多模块项目或增量模式 — 不生成根级 src/
+    if context.get("is_multi_module"):
+        exclude = list(exclude) + ["src/**"]
 
     # P1.2: 解析 exclude_callback_spec → 可调用对象
     # ImportError: 模板模块不存在 → 回退(非阻断)
