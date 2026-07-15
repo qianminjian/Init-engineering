@@ -48,6 +48,8 @@ _RENDER_STR_VARS = [
     "project_type",
     "qoder_project_title",
     "qoder_project_description",
+    "qoder_tech_stack_summary",
+    "qoder_quickstart",
 ]
 
 

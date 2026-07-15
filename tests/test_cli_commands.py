@@ -85,7 +85,7 @@ class TestCmdAnalyze:
 
         cmd_analyze(project, ProjectDetector)
         captured = capsys.readouterr()
-        assert "分析目录" in captured.out
+        assert "项目身份" in captured.out
 
     def test_analyze_python_project(self, tmp_path: Path, capsys):
         """Python 项目检测."""
@@ -97,7 +97,7 @@ class TestCmdAnalyze:
 
         cmd_analyze(project, ProjectDetector)
         captured = capsys.readouterr()
-        assert "分析目录" in captured.out
+        assert "项目身份" in captured.out
         assert "Python" in captured.out or "python" in captured.out or "语言" in captured.out
 
     def test_analyze_with_type_override(self, tmp_path: Path, capsys):
@@ -110,10 +110,10 @@ class TestCmdAnalyze:
 
         cmd_analyze(project, ProjectDetector, project_type="plugin")
         captured = capsys.readouterr()
-        assert "分析目录" in captured.out
+        assert "项目身份" in captured.out
 
     def test_analyze_with_type_disambiguates_multi_candidates(self, tmp_path: Path, capsys):
-        """P1: 多候选时 --type 可消歧义，显示 '使用 --type 指定类型'."""
+        """P1: 多候选时 --type 可消歧义，显示 '手动指定'."""
         project = tmp_path / "multi"
         project.mkdir()
         (project / "pom.xml").write_text(
@@ -127,7 +127,7 @@ class TestCmdAnalyze:
 
         cmd_analyze(project, ProjectDetector, project_type="library")
         captured = capsys.readouterr()
-        assert "使用 --type 指定类型: library" in captured.out
+        assert "手动指定: library" in captured.out
 
     def test_cli_analyze_command(self, tmp_path: Path):
         """ae analyze CLI 命令正常执行."""
@@ -139,7 +139,7 @@ class TestCmdAnalyze:
         from init_engineering.cli import main
         result = runner.invoke(main, ["analyze", str(project)])
         assert result.exit_code == 0
-        assert "分析目录" in result.output
+        assert "项目身份" in result.output
 
     def test_cli_analyze_nonexistent_dir(self):
         """ae analyze 不存在的目录报错."""

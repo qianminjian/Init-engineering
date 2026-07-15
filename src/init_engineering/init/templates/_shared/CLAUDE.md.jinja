@@ -79,6 +79,9 @@ mvn test
 {% endif %}{% if test_runner %}- Test: {{ test_runner }}
 {% endif %}{% if ci_platform and ci_platform != 'none' %}- CI: {{ ci_platform }}
 {% endif %}
+{%- if qoder_tech_stack_summary is defined and qoder_tech_stack_summary %}
+{{ qoder_tech_stack_summary }}
+{%- endif %}
 {%- if frameworks is defined and frameworks %}
 ## Frameworks
 {% for f in frameworks %}
@@ -89,6 +92,11 @@ mvn test
 ## Modules
 {% for m in java_modules.split(",") | map("trim") | list %}
 - {{ m }}
+{%- endfor %}
+{%- elif qoder_module_details is defined and qoder_module_details %}
+## Modules
+{% for m in qoder_module_details %}
+- **{{ m.key }}** — {{ m.title }}{% if m.overview %}: {{ m.overview }}{% endif %}
 {%- endfor %}
 {%- endif %}
 {%- if java_dependencies is defined and java_dependencies %}

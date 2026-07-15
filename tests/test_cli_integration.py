@@ -24,8 +24,8 @@ class TestAnalyzeMode:
         (tmp_path / "tsconfig.json").write_text('{"compilerOptions": {}}')
         result = _runner.invoke(init, ["--analyze", str(tmp_path)])
         assert result.exit_code == 0
-        assert "分析目录" in result.output
-        assert "检测到的项目类型候选" in result.output
+        assert "项目身份" in result.output
+        assert "类型候选" in result.output
 
     def test_analyze_detects_python(self, tmp_path: Path):
         """检测 Python 项目 (pyproject.toml)."""

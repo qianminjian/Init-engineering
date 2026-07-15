@@ -174,6 +174,62 @@
 
 ---
 
+## §v5.6-PhaseA Qoder 深度提取 + 分析输出重构 ✅（2026-07-15 完成）
+
+**背景**：ae analyze 反复流于表面 — detect 只用 FRAMEWORK_SIGNATURES + pom.xml 解析，qoder 只读标题/描述，隐藏目录 4 个数据源（_index.yaml/技术栈与依赖.md/模块详解/知识图谱）基本未利用。系统根因：analyzer 是解析器不是分析器、输出是 stdout 散装不是结构化报告。
+
+**设计**：BEACON.md 决策 36-38，3 层分析模型。
+
+### A1-A5: detector_qoder.py 重构 — 5 个子函数独立解析
+
+| # | 任务 | 描述 | 状态 |
+|---|------|------|------|
+| A1 | _extract_qoder_index() | 抽取 _index.yaml 解析逻辑：modules 列表、depends_on 关系、root module 元数据 | ✅ |
+| A2 | _extract_qoder_tech_stack() | 解析 技术栈与依赖.md — 提取 ## 引言 段落作为技术栈摘要 | ✅ |
+| A3 | _extract_qoder_module_details() | 遍历 核心模块详解/{mod}.md — 提取每个模块的 ## 简介 段落 | ✅ |
+| A4 | _extract_qoder_metadata() | 解析 repowiki-metadata.json — 提取 wiki_pages/relations/catalog 统计 | ✅ |
+| A5 | analyze_qoder_repowiki() 重构 | 调用 5 个子函数 + _build_module_relations()，组装完整 _qoder_info dict | ✅ |
+
+### A6-A9: _qoder_info 字段扩展
+
+| # | 任务 | 描述 | 状态 |
+|---|------|------|------|
+| A6 | tech_stack_summary | 从 技术栈与依赖.md 提取的结构化文本（500 字符截断） | ✅ |
+| A7 | module_details | [{key, title, overview}] — 8 个模块各含概述文本（TMP-for-init 实测） | ✅ |
+| A8 | module_relations | 从 _index.yaml depends_on + related_to 聚合（_build_module_relations()） | ✅ |
+| A9 | quickstart | 从 快速开始.md 提取 3 个关键段落（简介/环境搭建/编译） | ✅ |
+
+### A10-A12: as_answers() + 模板上下文
+
+| # | 任务 | 文件 | 描述 | 状态 |
+|---|------|------|------|------|
+| A10 | as_answers() 暴露 qoder 新字段 | `detector_constants.py` | qoder_tech_stack_summary, qoder_module_details, qoder_module_relations, qoder_quickstart, qoder_has_quickstart, qoder_repowiki_metadata | ✅ |
+| A11 | _RENDER_STR_VARS 补充 | `scaffold_render.py` | 新增 qoder_tech_stack_summary, qoder_quickstart 默认空字符串 | ✅ |
+| A12 | CLAUDE.md 模板消费 qoder 变量 | `_shared/CLAUDE.md.jinja` + `monorepo/java/CLAUDE.md.jinja` | Tech Stack 段追加 qoder_tech_stack_summary；Modules 段用 qoder_module_details 作为 java_modules 回退 | ✅ |
+
+### A13-A15: ae analyze 输出重构 + 验证
+
+| # | 任务 | 文件 | 描述 | 状态 |
+|---|------|------|------|------|
+| A13 | ae analyze 4 段分层输出 | `_list_cmds.py` | §项目身份 → §技术栈 → §模块结构 → §初始化建议 | ✅ |
+| A14 | --include-hidden 深度输出 | `_list_cmds.py` | include_hidden 时追加 §反向工程发现（qoder） | ✅ |
+| A15 | 全量测试验证 | `tests/` | 655 passed, 0 failed（含 3 个测试断言更新） | ✅ |
+
+### 变更摘要
+
+| 文件 | 变更 |
+|------|------|
+| `detector_qoder.py` | 单一函数 → 6 个子函数：_extract_qoder_index/tech_stack/module_details/metadata/quickstart + _build_module_relations + _extract_first_paragraph + _extract_section_paragraph |
+| `detector_constants.py:108-127` | as_answers() 新增 6 个 qoder 变量 |
+| `scaffold_render.py:42-51` | _RENDER_STR_VARS 新增 qoder_tech_stack_summary, qoder_quickstart |
+| `_list_cmds.py:50-100` | cmd_analyze 输出从 8 行平铺 → 5 段分层（含 §反向工程发现） |
+| `templates/_shared/CLAUDE.md.jinja` | Tech Stack 段追加 qoder_tech_stack_summary；Modules 段 qoder_module_details 回退 |
+| `templates/monorepo/java/CLAUDE.md.jinja` | Tech Stack 段追加 qoder_tech_stack_summary |
+| `tests/test_cli_commands.py` | 6 处断言更新（"分析目录"→"项目身份"，"使用 --type 指定类型"→"手动指定"） |
+| `tests/test_cli_integration.py` | 2 处断言更新（同上） |
+
+---
+
 ## §1 活跃任务（P1 — 短期）
 
 ### TemplateRenderer 参数透传

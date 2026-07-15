@@ -1,4 +1,4 @@
-> 创建：2026-06-24 | 更新：2026-07-15 | 阶段：v5.5 CLI 命令重组 + 帮助系统
+> 创建：2026-06-24 | 更新：2026-07-15 | 阶段：v5.6 Phase A 完成
 
 # BEACON.md — Init Engineering 设计基线
 
@@ -23,8 +23,11 @@
 - `run_update()`：增量更新已有项目（skip/overwrite/prompt 三种冲突策略）
 - **v5.4**：analyze_* 采集的全部结构化数据存入 _*_info，as_answers() 全量暴露，模板消费检测数据生成确定性内容
 
+**做：**
+- **v5.6 Phase A**：Qoder 深度提取 — 4 个 repowiki 数据源全量解析，技术栈/模块详情/知识图谱进入模板上下文
+- **v5.6 Phase B**：设计文档发现 — BEACON.md/README.md/CLAUDE.md 提取
+
 **不做：**
-- 知识库格式适配器 — 隐藏目录内容由现有 analyze_* 函数统一处理
 - dev-loop 开发循环 / 多 LLM Provider / Web UI / 远程模板
 - Agent 深度代码扫描 LLM 能力 — 非 init 核心职责（但通过 `_external_data` 桥提供注入点）
 - 模板自适应生成（非填充）— 架构级变更，需独立设计
@@ -147,6 +150,64 @@ Phase 5: finalize — shutil.copytree(tmpdir → dst_dir)
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
+### 多层深度分析系统（v5.6 — 新增）
+
+`ae analyze` 从表面检测升级为多层深度分析，整合三大信息源（源代码、隐藏目录、设计文档），输出结构化 AnalysisReport。解决反复出现的"分析流于表面"问题。
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│ ae analyze <path> [--include-hidden] [--deep]  [--json]              │
+│                                                                       │
+│ Layer 0: 基础签名检测 (always)                                         │
+│   FRAMEWORK_SIGNATURES 9 类型匹配 → candidates[] → project_type       │
+│                                                                       │
+│ Layer 1: 源代码结构解析 (always)                                        │
+│   analyze_java()    → _java_info:    {group_id, artifact_id, version, │
+│     java_version, spring_boot_version, packaging, is_multi_module,    │
+│     build_tool, dependencies[], modules[]}                            │
+│   analyze_python()  → _python_info:  {build_backend, dependencies[]}  │
+│   analyze_go()      → _go_info:      {module_path}                    │
+│   analyze_node()    → _node_info:    {package_name, package_version}  │
+│                                                                       │
+│ Layer 2: 隐藏目录反向工程 (--include-hidden, Phase A 深度扩展)           │
+│   analyze_qoder_repowiki() ──→ _qoder_info:                           │
+│     _index.yaml            → modules (title, dir_name, depends_on)    │
+│     技术栈与依赖.md         → tech_stack_summary (文本摘要)             │
+│     核心模块详解/{mod}.md   → module_details[{key, title, overview}]   │
+│     repowiki-metadata.json → knowledge_graph (关系图)                 │
+│     快速开始.md             → quickstart (构建/运行步骤)               │
+│                                                                       │
+│ Layer 3: 设计文档发现 (--deep, Phase B)                                 │
+│   analyze_design_docs() ──→ _design_info:                             │
+│     design/BEACON.md       → goals, scope, decisions                  │
+│     README.md              → summary                                  │
+│     .claude/CLAUDE.md      → ai_instructions                          │
+│                                                                       │
+│ 输出:                                                                  │
+│   stdout:  分层输出（身份 → 技术栈 → 模块 → 建议）                      │
+│   --json:  机器可读结构化输出                                           │
+│   enrich:  AnalysisReport → as_answers() → 模板上下文 (30+ → 50+)     │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+### 分析 → 初始化 数据传递（v5.6 增强）
+
+```
+ae analyze ──→ AnalysisReport (结构化, 新增)
+  ├── detection:     DetectionResult (30+ keys, existing)
+  ├── qoder:         QoderAnalysis   (10+ keys, Phase A 新增)
+  ├── design:        DesignDocAnalysis (5+ keys, Phase B 新增)
+  └── recommend:     InitRecommendation (Phase C 新增)
+
+ae init ──→ phase_prompt()
+  ├── detection.as_answers()         → defaults (existing 30+)
+  └── analysis_report.as_answers()   → defaults (new 15+)
+      qoder_tech_stack_summary, qoder_module_details,
+      qoder_module_relations, qoder_quickstart,
+      design_beacon_goals, design_beacon_scope, ...
+  → 模板变量: 30+ → 50+ 驱动渲染
+```
+
 ## 设计决策
 
 | # | 决策 | 理由 | 日期 | status |
@@ -181,6 +242,9 @@ Phase 5: finalize — shutil.copytree(tmpdir → dst_dir)
 | 33 | **app-service/library ae-template.yml 补充 java_version** | `_features/java/pom.xml.jinja` 引用 `java_version` 但仅 monorepo 定义；新增到 app-service/library 配置 | 2026-07-15 | ✅ |
 | 34 | **--from-answers 恢复时语言丢失** | `cmd_init` 从 answers 提取 `project_type` 但不提取 `language`；`phase_prompt` 的 nested 模板选择未查 `previous_answers`，导致空目录 `--from-answers` 回退到第一个嵌套模板（typescript），输出混合 Java+TypeScript | 2026-07-15 | ✅ |
 | 35 | **CLAUDE.md Tech Stack 格式断裂** | `{%- if %}` 的 `-` 静默吞掉换行符（条件为 False 时仍生效），导致 `## Tech Stack- Language: java- CI: github`。改为 `{% if %}...\n{% endif %}{% if %}` 流式模板避免空白吞食 | 2026-07-15 | ✅ |
+| 36 | **v5.6 多层深度分析** | ae analyze 从单层检测升级为 3 层分析：L1 源代码结构解析 + L2 隐藏目录反向工程（4 个 qoder 数据源：_index.yaml/技术栈与依赖.md/模块详解/知识图谱） + L3 设计文档发现（BEACON.md/README.md/CLAUDE.md）。AnalysisReport 结构化输出，分析结果写入 as_answers() 补充 15+ 模板变量。解决"分析流于表面"的系统性缺陷 | 2026-07-15 | ✅ |
+| 37 | **detector_qoder.py 拆为多函数** | 单一 analyze_qoder_repowiki() → 拆为 _extract_qoder_index/tech_stack/module_details/metadata/quickstart 五个子函数 + _build_module_relations，各解析一个数据源 | 2026-07-15 | ✅ |
+| 38 | **ae analyze 输出重构** | stdout 从 8 行平铺摘要 → 5 段分层输出（项目身份/技术栈/模块结构/初始化建议/反向工程发现），每段从多个数据源聚合而非单一函数输出 | 2026-07-15 | ✅ |
 
 ## Init → Loop 契约（Manifest）
 
@@ -194,16 +258,17 @@ Init 完成初始化时写入 `.ae-state/init-manifest.json`（schema 1.1），L
 
 ## 当前状态
 
-**阶段：** v5.5 CLI 命令重组 + 帮助系统 — 已完成
+**阶段：** v5.6 Phase A 完成 — Phase B 设计文档发现
 
-**最近动作：** 2026-07-15 — E2E 测试 + 修复 5 个 Bug。
-- E2E 测试：TMP-for-init 为存量项目测试 ae analyze + ae init 各场景；新建项目测试 monorepo/app-service/library Java 类型
-- Bug 修复 1-3（前一轮）：pom.xml 命名空间解析 + Jinja2 `| default()` 替代 `or` + ae-template.yml 补充 java_version
-- Bug 修复 4：--from-answers 恢复时语言丢失 → 混合模板输出（28 文件含 TS+Java，pom.xml 错误）。cmd_init 从 answers 提取 language；phase_prompt 检查 previous_answers 为 nested 模板偏好
-- Bug 修复 5：CLAUDE.md "## Tech Stack" 格式断裂（`{%- if %}` 吞换行符）→ 改为流式 `{% if %}...\n{% endif %}{% if %}` 模板
-- 验证：ae analyze 正确检测 monorepo；ae init monorepo/app-service/library Java 类型均生成正确输出；--from-answers 恢复正确（24 文件纯 Java）；655 tests pass
+**最近动作：** 2026-07-15 — Phase A 实现完成。
+- detector_qoder.py 拆为 6 个子函数（_extract_qoder_index/tech_stack/module_details/metadata/quickstart + _build_module_relations）
+- _qoder_info 新增 5 个字段：tech_stack_summary, module_details, module_relations, quickstart, repowiki_metadata
+- as_answers() 暴露 6 个新变量：qoder_tech_stack_summary, qoder_module_details, qoder_module_relations, qoder_quickstart, qoder_has_quickstart, qoder_repowiki_metadata
+- ae analyze 输出从 8 行平铺 → 5 段分层（§项目身份/§技术栈/§模块结构/§初始化建议/§反向工程发现）
+- CLAUDE.md 模板消费 qoder 新变量（tech_stack_summary, module_details 回退）
+- 655 tests pass, 0 failures
 
-**下一步：** TASKS.md §1 活跃任务（TemplateRenderer 参数透传 + AnswersMap 版本语义 + run_update()）
+**下一步：** Phase B — L3 设计文档发现（BEACON.md/README.md/CLAUDE.md 提取）
 
 **阻塞项：** 无
 
@@ -211,6 +276,8 @@ Init 完成初始化时写入 `.ae-state/init-manifest.json`（schema 1.1），L
 
 | 日期 | 变更 | 原因 |
 |------|------|------|
+| 2026-07-15 | Phase A 实现完成 | detector_qoder.py 拆为 6 子函数、_qoder_info 5 新字段、as_answers() 6 新变量、ae analyze 5 段分层输出、655 tests pass |
+| 2026-07-15 | v5.6 多层深度分析设计 | ae analyze 从单层检测升级为 3 层分析（源代码/隐藏目录/设计文档），AnalysisReport 结构化输出，15+ 新模板变量 |
 | 2026-07-15 | E2E 测试 + 2 追加 Bug 修复 | --from-answers 语言丢失（混合模板）+ CLAUDE.md 格式断裂（Jinja2 空白吞食）
 | 2026-07-15 | v5.5 CLI 重组 + 帮助系统 | 6 命令 + 选项分层 + 移除 5 无用选项 + 使用示例 epilog + 向后兼容 |
 | 2026-07-15 | v5.4 完整性修复实现 | 4 阶段实现完成：analyze_* 全量存储 + as_answers() 30+ 字段曝光 + 模板消费 + 655 tests pass |

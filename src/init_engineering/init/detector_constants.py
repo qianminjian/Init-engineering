@@ -119,6 +119,19 @@ class DetectionResult:
                     {"key": m["key"], "title": m["title"]}
                     for m in mods if m.get("key")
                 ]
+            # v5.6: 新增字段
+            if self._qoder_info.get("tech_stack_summary"):
+                result["qoder_tech_stack_summary"] = self._qoder_info["tech_stack_summary"]
+            if self._qoder_info.get("module_details"):
+                result["qoder_module_details"] = self._qoder_info["module_details"]
+            if self._qoder_info.get("module_relations"):
+                result["qoder_module_relations"] = self._qoder_info["module_relations"]
+            if self._qoder_info.get("quickstart"):
+                result["qoder_quickstart"] = self._qoder_info["quickstart"]
+            if self._qoder_info.get("has_quickstart"):
+                result["qoder_has_quickstart"] = True
+            if self._qoder_info.get("repowiki_metadata"):
+                result["qoder_repowiki_metadata"] = self._qoder_info["repowiki_metadata"]
         return result
 
 

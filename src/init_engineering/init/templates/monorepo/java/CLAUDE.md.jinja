@@ -59,6 +59,9 @@ mvn test
 {% endif %}- Build: Maven
 {% if ci_platform and ci_platform != 'none' %}- CI: {{ ci_platform }}
 {% endif %}
+{%- if qoder_tech_stack_summary is defined and qoder_tech_stack_summary %}
+{{ qoder_tech_stack_summary }}
+{%- endif %}
 {% if java_dependencies is defined and java_dependencies %}
 ## Key Dependencies
 {% for d in java_dependencies.split(",") | map("trim") | list %}{% if not d.startswith("module:") %}
