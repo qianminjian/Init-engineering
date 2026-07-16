@@ -1,4 +1,4 @@
-> 创建：2026-06-24 | 更新：2026-07-16 | 阶段：v5.6 Phase H — 内容感知类型推断（扫描 *.md 推断项目意图）
+> 创建：2026-06-24 | 更新：2026-07-16 | 阶段：v5.6 Phase I — monorepo Java 模板系统性修复（孤儿 tests/ + 包名 + 布局）
 
 # BEACON.md — Init Engineering 设计基线
 
@@ -278,6 +278,7 @@ ae init ──→ phase_prompt()
 | 59 | **exclude 检查在 .jinja 后缀移除后** | 之前的 `_is_excluded()` 检查模板源路径（含 `.jinja`），导致 `/pom.xml` 无法匹配 `pom.xml.jinja`。增加输出路径二次检查，使 exclude 对渲染产物生效 | 2026-07-16 | ✅ |
 | 60 | **移除 detector.py 内部 import ET 遮蔽** | 函数内 `import xml.etree.ElementTree as ET` 遮蔽顶层导入，兄弟 POM 扫描路径中 `ET` 未绑定导致 `UnboundLocalError`。顶层导入已覆盖所有使用点 | 2026-07-16 | ✅ |
 | 61 | **内容感知类型推断（Phase H）** | spec-doc 签名仅在 `design/` 目录存在时匹配，无法覆盖设计文档在根目录的项目（如 voice_clone_for_auto_design 的 `需求提示词.md`）。内容推断扫描根目录 *.md + design/*.md，按 TYPE_HINT_KEYWORDS 中英文关键词计分（≥2）。推断条件扩展为 project_type in (None, "spec-doc")，覆盖零签名匹配项目 | 2026-07-16 | ✅ |
+| 62 | **monorepo Java 模板系统性修复（Phase I）** | 3 个 bug：(1) 容器目录（aggregator_path 非空）错误生成 tests/ 孤儿模块 — exclude 列表 ad-hoc 追加导致漏项，提取 _REACTOR_ONLY_TEMPLATES 命名常量；(2) 测试文件包名硬编码 com.example — 模板未使用 java_group_id 变量；(3) tests/pom.xml testSourceDirectory 非标准 — 迁至 src/test/java/ 标准 Maven 布局 | 2026-07-16 | ✅ |
 
 ## Init → Loop 契约（Manifest）
 
@@ -291,18 +292,18 @@ Init 完成初始化时写入 `.ae-state/init-manifest.json`（schema 1.1），L
 
 ## 当前状态
 
-**阶段：** v5.6 Phase H — 内容感知类型推断（扫描 *.md 推断项目意图）
+**阶段：** v5.6 Phase I — monorepo Java 模板系统性修复（孤儿 tests/ + 包名 + 布局）
 
-**最近动作：** 2026-07-16 — Phase D+E+F+G+H 实施完成。
-- Phase H（内容感知类型推断）：解决无 design/ 目录但有根目录设计文档的项目无法检测类型的问题
-  1. `_infer_type_from_design_docs` 同时扫描根目录 *.md 和 design/*.md
-  2. 推断触发条件扩展为 project_type in (None, "spec-doc")，覆盖零签名匹配项目
-  3. TYPE_HINT_KEYWORDS 中英文关键词分 app-service/cli-tool/library 三类
-  voice_clone_for_auto_design（需求提示词.md 在根目录）验证通过：app-service ✓
-  voice_clone_for_auto_test-2 回归验证通过：app-service ✓
-  TMP-for-init 回归验证通过：monorepo ✓
+**最近动作：** 2026-07-16 — Phase D+E+F+G+H+I 实施完成。
+- Phase I（monorepo Java 模板系统性修复）：3 个 bug — 根因是 exclude 列表 ad-hoc 追加而非系统性审计
+  1. Bug 2 (P0): 提取 _REACTOR_ONLY_TEMPLATES 命名常量，tests/ 加入列表
+  2. Bug 3 (P1): package com.example → {{ java_group_id or 'com.example' }}
+  3. Bug 4 (P2): testSourceDirectory 移除，迁至 src/test/java/ 标准 Maven 布局
+  TMP-for-init 验证：无 tests/ ✓、无 pom.xml ✓、无 packages/ ✓
+  Reactor 新项目验证：tests/src/test/java/ 标准布局 ✓、包名正确 ✓
+  全量测试：655 passed ✓
 
-**下一步：** 无阻塞项。可推进 Phase I（更多语言关键词补充）或 bug 修复
+**下一步：** 无阻塞项
 
 **阻塞项：** 无
 
@@ -310,6 +311,7 @@ Init 完成初始化时写入 `.ae-state/init-manifest.json`（schema 1.1），L
 
 | 日期 | 变更 | 原因 |
 |------|------|------|
+| 2026-07-16 | Phase I monorepo Java 模板系统性修复 | 根因：exclude 列表 ad-hoc 追加（每次加一个），从未一次性审计所有 reactor-only 模板。修复：_REACTOR_ONLY_TEMPLATES 命名常量明确语义，tests/ 加入；包名改用 java_group_id；Maven 布局标准化 |
 | 2026-07-16 | Phase H 内容感知类型推断 | 根因：design/*.md 签名无法匹配根目录设计文档项目（如 voice_clone_for_auto_design）。修复：`_infer_type_from_design_docs` 同时扫描根目录 *.md + design/*.md，触发条件扩展为 project_type in (None, "spec-doc")。3 项目回归全部通过 |
 | 2026-07-16 | Phase D+E+F+G 模板工程化 + 检测修复 + 实战验证 | Phase G（3 根因 bug）：spec-doc 误判（design/*.md 太宽泛）、exclude 时序（.jinja 前检查）、import 遮蔽（UnboundLocalError）。TMP-for-init 实战验证：10 模块全生成、类型正确、结构无污染 |
 | 2026-07-15 | Phase C 存量项目增量初始化修复 | 根因：Phase 1 实现添加了设计未规定的 .ae-answers.yml 前提条件。修复：8 项改动 — detect 移除前提、brownfield 模板分类、analyze 缺失检测、pretend 文件清单、CLI 非 TTY 行为修正、SKILL.md 决策树 |

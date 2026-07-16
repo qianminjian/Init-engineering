@@ -1,6 +1,6 @@
 # TASKS.md — 任务跟踪表
 
-> 创建：2026-07-14 | 更新：2026-07-16（v5.6 Phase D+E+F+G 完成）
+> 创建：2026-07-14 | 更新：2026-07-16（v5.6 Phase D+E+F+G+H+I 完成）
 
 > 用途：本项目唯一的任务跟踪文件。所有待办、进行中、已完成、已延后的任务在此记录。
 
@@ -359,6 +359,33 @@
 | voice_clone_for_auto_test-2 | spec-doc (design/*.md) | 无 | design/*.md 关键词 | app-service ✅ |
 | voice_clone_for_auto_design | 无 | 无 | 根目录 *.md 关键词 | app-service ✅ |
 | TMP-for-init | spec-doc, monorepo | Java/Maven | 深度分析（构建系统） | monorepo ✅ |
+
+---
+
+## §v5.6-Phase-I — monorepo Java 模板系统性修复 ✅（2026-07-16 完成）
+
+**背景**：ae-init-monorepo-java-template-issues.md 故障报告 3 个 bug。根因：exclude 列表 ad-hoc 追加而非系统性审计，模板假设统一 reactor 拓扑但实际项目是独立项目容器。
+
+**设计**：BEACON.md 决策 62。
+
+### 修复详情
+
+| # | 任务 | 文件 | 描述 | 状态 |
+|---|------|------|------|------|
+| PI-1 | _REACTOR_ONLY_TEMPLATES | `scaffold_render.py` | 提取命名常量 ["/pom.xml", "packages/", "tests/"]，语义化 reactor-only 模板 | ✅ |
+| PI-2 | MonorepoTest 包名 | `monorepo/java/tests/.../MonorepoTest.java.jinja` | `com.example` → `{{ java_group_id or 'com.example' }}` | ✅ |
+| PI-3 | MainTest 包名 | `_features/java/tests/.../MainTest.java.jinja` | `com.example.app` → `{{ java_group_id or 'com.example' }}` | ✅ |
+| PI-4 | tests/pom.xml 标准布局 | `monorepo/java/tests/pom.xml.jinja` | 移除 `<testSourceDirectory>.</testSourceDirectory>`，迁至 src/test/java/ | ✅ |
+| PI-5 | TMP-for-init 验证 | - | 无 tests/ ✓、无 pom.xml ✓、无 packages/ ✓ | ✅ |
+| PI-6 | Reactor 新项目验证 | - | tests/src/test/java/ 标准布局 ✓、包名正确 ✓ | ✅ |
+| PI-7 | 全量测试 | `tests/` | 655 passed, 0 failed | ✅ |
+
+### 验证结果
+
+| 测试项目 | 模式 | tests/ | pom.xml | packages/ | 结果 |
+|---------|------|--------|---------|-----------|------|
+| TMP-for-init | incremental (container) | 未生成 ✓ | 未生成 ✓ | 未生成 ✓ | 2 文件补充，25 跳过 |
+| _test-reactor | fresh (reactor) | tests/src/test/java/ ✓ | 生成 ✓ | 生成 ✓ | 22 文件，标准布局 |
 
 ---
 
