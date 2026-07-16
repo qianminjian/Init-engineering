@@ -190,6 +190,7 @@ def build_manifest(
     *,
     design_root: str | None = None,
     now: datetime | None = None,
+    files: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     """Build a manifest dict conforming to schema 1.1.
 
@@ -198,6 +199,7 @@ def build_manifest(
         project_type: Detected or CLI-overridden project type.
         design_root: Optional design doc directory path (e.g. "design").
         now: Optional clock injection for test time freezing.
+        files: Optional per-file tracking list ({"path": ..., "status": "created"/"skipped"/"merged"}).
 
     Returns:
         Manifest dict ready for validation and serialization.
@@ -245,6 +247,8 @@ def build_manifest(
 
     if framework:
         manifest["framework"] = framework
+    if files:
+        manifest["files"] = files
 
     return manifest
 

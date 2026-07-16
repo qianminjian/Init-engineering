@@ -6,6 +6,17 @@
   "required": ["schema_version", "project_type", "language", "conventions", "structure"],
   "additionalProperties": true,
   "properties": {
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "status"],
+        "properties": {
+          "path": { "type": "string" },
+          "status": { "enum": ["created", "skipped", "merged"] }
+        }
+      }
+    },
     "schema_version": { "type": "string" },
     "project_type": {
       "enum": ["app-service","library","cli-tool","skill","hook","mcp-server","spec-doc","monorepo","plugin"]

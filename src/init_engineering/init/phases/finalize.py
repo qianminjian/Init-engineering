@@ -49,8 +49,8 @@ def phase_finalize(
     # Init → Loop contract: write init-manifest.json to .ae-state/
     # Only populate design_root if a design/ directory was actually scaffolded
     _design_root = "design" if (tmpdir / "design").is_dir() else None
-    manifest = build_manifest(answers, project_type or "unknown", design_root=_design_root)
-    write_manifest(manifest, tmpdir)
+    # Per-file tracking — filled below (before or after merge depending on mode)
+    _manifest_files: list[dict[str, str]] = []
 
     # P2-15: defense-in-depth 二次校验 — phase_detect 已校验,但 phase_finalize
     # 也可能从测试 / 内部 API 直接调用,绕过 phase_detect 校验链。
@@ -65,6 +65,14 @@ def phase_finalize(
         # PR#3 P1-1: merge_incremental 已在同模块,无需延迟 import
         created, skipped = merge_incremental(tmpdir, dst_path, created_files)
         skipped_count = len(skipped)
+        # Build per-file tracking
+        for f in created:
+            _manifest_files.append({"path": str(f.relative_to(dst_path)), "status": "created"})
+        for f in skipped:
+            _manifest_files.append({"path": str(f.relative_to(dst_path)), "status": "skipped"})
+        # Write manifest with file tracking
+        manifest = build_manifest(answers, project_type or "unknown", design_root=_design_root, files=_manifest_files if _manifest_files else None)
+        write_manifest(manifest, tmpdir)
         if not quiet:
             # PE-AUDIT-P0-2: 进度消息走 logger
             _logger.info(
@@ -79,6 +87,12 @@ def phase_finalize(
                 )
         return False, skipped_count
     else:
+        # Build per-file tracking from generated list
+        if generated:
+            for p in generated:
+                _manifest_files.append({"path": str(p), "status": "created"})
+        manifest = build_manifest(answers, project_type or "unknown", design_root=_design_root, files=_manifest_files if _manifest_files else None)
+        write_manifest(manifest, tmpdir)
         did_create_dst = not dst_path.exists()
         if did_create_dst:
             dst_path.mkdir(parents=True)

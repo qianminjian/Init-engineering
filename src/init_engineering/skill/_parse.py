@@ -8,6 +8,37 @@ from __future__ import annotations
 import re
 
 
+def _parse_options_from_args(args_str: str, options: dict) -> str | None:
+    """从参数字符串中提取 --key val 选项，返回未消费的 project_path。
+
+    副作用：修改 options dict，将解析出的选项写入。
+    返回值：剩余的第一个非选项 token 作为 project_path，无则返回 None。
+    """
+    consumed_indices: set[int] = set()
+    parts = args_str.split()
+
+    i = 0
+    while i < len(parts):
+        if parts[i].startswith("--"):
+            token = parts[i][2:]
+            consumed_indices.add(i)
+            if "=" in token:
+                key, val = token.split("=", 1)
+                options[key] = val
+            elif i + 1 < len(parts) and not parts[i + 1].startswith("--"):
+                options[token] = parts[i + 1]
+                consumed_indices.add(i + 1)
+                i += 1
+            else:
+                options[token] = "true"
+        i += 1
+
+    for idx, part in enumerate(parts):
+        if idx not in consumed_indices:
+            return part
+    return None
+
+
 def _parse_prompt(prompt: str) -> tuple[str, str | None, dict]:
     """解析 prompt 为 action/project_path/options。
 
@@ -47,51 +78,25 @@ def _parse_prompt(prompt: str) -> tuple[str, str | None, dict]:
     # analyze
     analyze_match = re.match(r"^(?:analyze|analyse)\s+(.+)$", prompt)
     if analyze_match:
-        return ("analyze", analyze_match.group(1).strip(), {})
+        args_str = analyze_match.group(1).strip()
+        options = {}
+        project_path = _parse_options_from_args(args_str, options)
+        return ("analyze", project_path, options)
 
     # init (支持 --analyze 子模式)
     init_match = re.match(r"^init\s+(.+)$", prompt)
     if init_match:
         args_str = init_match.group(1).strip()
-        options = {}
-        project_path = None
-
-        # 解析选项 — 先收集所有 --key 及其值, 剩余 token 为 project_path
-        consumed_indices: set[int] = set()
+        options: dict = {}
         parts = args_str.split()
 
         # --analyze 特殊处理: 将 init --analyze <path> 路由到分析模式
         if "--analyze" in parts:
             idx = parts.index("--analyze")
-            if idx + 1 < len(parts) and not parts[idx + 1].startswith("--"):
-                project_path = parts[idx + 1]
-            else:
-                project_path = "."
+            project_path = parts[idx + 1] if idx + 1 < len(parts) and not parts[idx + 1].startswith("--") else "."
             return ("analyze", project_path, options)
 
-        # 解析选项: --key val 或 --key=val → options[key] = val, 同时标记 consumed_indices
-        i = 0
-        while i < len(parts):
-            if parts[i].startswith("--"):
-                token = parts[i][2:]  # strip leading --
-                consumed_indices.add(i)
-                if "=" in token:
-                    key, val = token.split("=", 1)
-                    options[key] = val
-                elif i + 1 < len(parts) and not parts[i + 1].startswith("--"):
-                    options[token] = parts[i + 1]
-                    consumed_indices.add(i + 1)
-                    i += 1
-                else:
-                    options[token] = "true"
-            i += 1
-
-        # 取第一个未消费的非 -- token 为 project_path
-        for i, part in enumerate(parts):
-            if i not in consumed_indices:
-                project_path = part
-                break
-
+        project_path = _parse_options_from_args(args_str, options)
         return ("init", project_path, options)
 
     return ("unknown", None, {})

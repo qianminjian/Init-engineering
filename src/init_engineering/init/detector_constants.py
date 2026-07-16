@@ -61,6 +61,13 @@ class DetectionResult:
         if self.has_docker:
             result["use_docker"] = True
         # ── _java_info 展平 ──
+        # 变量语义说明:
+        #   detected_java_version  — pom.xml 中 <java.version>/<maven.compiler.source> 的值
+        #                            (可能是旧格式 "1.8" 或新格式 "21")，表示项目的编译目标版本
+        #   java_version           — ae-template.yml 用户回答的 JDK 版本 (默认 "21")
+        #                            表示实际安装的 JDK，CI 应优先用此值选择 JDK 镜像
+        #   java_version_num       — pom.xml <version> 即 Maven 项目版本号 (如 "0.1.0")，
+        #                            命名历史遗留，实际是 artifact version 而非 Java version
         if self._java_info:
             _java_export_keys = (
                 "java_version", "spring_boot_version",
