@@ -127,14 +127,10 @@ class ProjectDetector:
                     for d in pom_dirs:
                         pom = d / sig
                         try:
-                            import xml.etree.ElementTree as ET
-
-                            from .detector_helpers import strip_xml_ns
-
                             tree = ET.parse(pom)
-                            root = tree.getroot()
+                            root_el = tree.getroot()
 
-                            has_modules = any(strip_xml_ns(c.tag) == "modules" for c in root)
+                            has_modules = any(strip_xml_ns(c.tag) == "modules" for c in root_el)
                             if has_modules:
                                 best_dir = d
                                 break
@@ -210,8 +206,13 @@ class ProjectDetector:
         if not _root_has_build:
             result.project_name = self.dst_path.resolve().name
 
-        # 语言分析器可能追加 monorepo 候选（如 Java 多模块），需要在分析后重新确定类型
-        if result.project_type is None and "monorepo" in result.candidates:
+        # v5.6 Phase G: 深度分析发现具体构建系统时，覆盖签名级类型（如 spec-doc）。
+        # design/*.md 签名过于宽泛，会使任何含有设计文档的项目被误判为 spec-doc，
+        # 导致 monorepo/Java 初始化路径被完全跳过。
+        # 规则: 语言分析器确认了编程语言 + monorepo 候选 → 一定是 monorepo。
+        if "monorepo" in result.candidates and result.language is not None:
+            result.project_type = "monorepo"
+        elif result.project_type is None and "monorepo" in result.candidates:
             result.project_type = "monorepo"
 
         # ── 隐藏目录元数据提取 ──

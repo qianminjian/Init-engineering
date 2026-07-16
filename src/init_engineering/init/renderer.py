@@ -159,6 +159,12 @@ class TemplateRenderer:
                 if is_template:
                     rendered_rel = rendered_rel[: -len(self.templates_suffix)]
 
+                # v5.6 Phase G: exclude 应在输出路径（去 .jinja 后缀后）上检查。
+                # 之前的 _is_excluded L149 检查的是模板源路径，如 /pom.xml 无法匹配
+                # pom.xml.jinja。此处用输出路径再检查一次，补齐 exclude 对渲染产物的覆盖。
+                if self._exclude_matcher(rendered_rel):
+                    continue
+
                 dst_file = dst_dir / rendered_rel
 
                 if not is_path_under_any_root(dst_file, [dst_dir]):
