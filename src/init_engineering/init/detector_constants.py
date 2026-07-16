@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-__all__ = ["FRAMEWORK_SIGNATURES", "DetectionResult"]
+__all__ = ["FRAMEWORK_SIGNATURES", "DetectionResult", "TYPE_HINT_KEYWORDS"]
 
 from dataclasses import dataclass, field
 
@@ -207,3 +207,31 @@ FRAMEWORK_SIGNATURES: list[tuple[str, list[str]]] = [
     ),
     ("app-service", ["package.json", "pom.xml", "build.gradle", "build.gradle.kts"]),
 ]
+
+
+# ─── v5.6 Phase H: 内容感知类型推断 ─────────────────────────────────
+
+# 当仅有 spec-doc 签名匹配（无构建文件/无源码）时，扫描 design/*.md 内容推断项目意图。
+# 关键词分语言（中/英），小写匹配。每个类型独立计分，最高分且 ≥ 阈值时覆盖 spec-doc。
+TYPE_HINT_KEYWORDS: dict[str, list[str]] = {
+    "app-service": [
+        # 中文 — Web 应用 / 服务
+        "页面", "界面", "前端", "网页", "浏览器", "登录", "表单", "播放",
+        "上传", "下载", "录制", "音频", "视频", "用户界面", "交互",
+        "部署", "服务端", "后端", "微服务",
+        # English — Web app / service
+        "web application", "frontend", "backend", "api endpoint",
+        "rest api", "http", "deploy", "browser", "playback",
+    ],
+    "cli-tool": [
+        "命令行", "终端", "脚本", "自动化任务", "批处理", "定时任务", "调度",
+        "command-line", "cli tool", "terminal", "automation", "cron job",
+    ],
+    "library": [
+        "库", "sdk", "组件库", "包", "模块封装", "npm包", "发布到",
+        "library", "package", "module", "export api", "reusable",
+    ],
+}
+
+# 最低匹配关键词数，避免单个偶然词汇触发错误推断
+_TYPE_HINT_MIN_MATCHES = 2

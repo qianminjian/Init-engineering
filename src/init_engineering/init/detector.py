@@ -30,7 +30,7 @@ from .detector_analyzers import (
     analyze_node,
     analyze_python,
 )
-from .detector_constants import FRAMEWORK_SIGNATURES, DetectionResult
+from .detector_constants import FRAMEWORK_SIGNATURES, TYPE_HINT_KEYWORDS, DetectionResult
 from .detector_helpers import (
     check_pkg_dep,
     find_signatures_in_tree,
@@ -215,6 +215,19 @@ class ProjectDetector:
         elif result.project_type is None and "monorepo" in result.candidates:
             result.project_type = "monorepo"
 
+        # ── v5.6 Phase H: 内容感知类型推断 ──
+        # spec-doc 签名 + 无构建系统 → 扫描 *.md 推断项目意图。
+        # 也覆盖无签名匹配 + 无构建系统的项目（设计文档可能在根目录，不在 design/ 下）。
+        if result.language is None and result.project_type in (None, "spec-doc"):
+            inferred = _infer_type_from_design_docs(self.dst_path)
+            if inferred:
+                result.project_type = inferred
+                if inferred not in result.candidates:
+                    result.candidates.append(inferred)
+                _logger.info(
+                    "从 Markdown 文档推断项目类型 → %s (关键词匹配)", inferred,
+                )
+
         # ── 隐藏目录元数据提取 ──
         if self.include_hidden:
             from .detector_qoder import analyze_qoder_repowiki
@@ -227,3 +240,57 @@ class ProjectDetector:
                     result.project_description = qoder_info["project_description"]
 
         return result
+
+
+def _infer_type_from_design_docs(dst_path: Path) -> str | None:
+    """v5.6 Phase H: 从 *.md 内容推断项目意图类型。
+
+    扫描根目录和 design/ 下 markdown 文件的头 3000 字符，统计
+    TYPE_HINT_KEYWORDS 各类型的关键词命中数。最高分 ≥ 阈值（2）时返回对应类型。
+
+    Returns:
+        推断的项目类型，或 None（内容不足以推断）。
+    """
+    from .detector_constants import TYPE_HINT_KEYWORDS, _TYPE_HINT_MIN_MATCHES
+
+    # 收集 markdown 内容（每个文件头 3000 字符，控制 I/O）
+    parts: list[str] = []
+    # 根目录 *.md
+    try:
+        for md in dst_path.glob("*.md"):
+            try:
+                text = md.read_text(encoding="utf-8")
+                parts.append(text[:3000])
+            except (OSError, UnicodeDecodeError):
+                continue
+    except OSError:
+        pass
+    # design/ 目录 *.md
+    design_dir = dst_path / "design"
+    if design_dir.is_dir():
+        try:
+            for md in design_dir.glob("*.md"):
+                try:
+                    text = md.read_text(encoding="utf-8")
+                    parts.append(text[:3000])
+                except (OSError, UnicodeDecodeError):
+                    continue
+        except OSError:
+            pass
+
+    if not parts:
+        return None
+
+    combined = " ".join(parts).lower()
+
+    # 计分：每个关键词命中 +1
+    scores: dict[str, int] = {}
+    for ptype, keywords in TYPE_HINT_KEYWORDS.items():
+        score = sum(1 for kw in keywords if kw.lower() in combined)
+        if score >= _TYPE_HINT_MIN_MATCHES:
+            scores[ptype] = score
+
+    if not scores:
+        return None
+
+    return max(scores, key=scores.get)
