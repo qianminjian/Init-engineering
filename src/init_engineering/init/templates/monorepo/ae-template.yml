@@ -109,20 +109,19 @@ _tasks:
           m=$(echo "$m" | xargs)
           [ -z "$m" ] && continue
           [ "$m" = "tests" ] && continue
-          TD="${m}/src/test/java"
+          MODULE_NAME=$(basename "$m")
+          TD="tests/${MODULE_NAME}"
           if [ ! -d "$TD" ]; then
-            PKG_PATH=$(echo "$GROUP_ID" | tr '.' '/')
-            mkdir -p "${TD}/${PKG_PATH}"
-            cat > "${TD}/${PKG_PATH}/ModuleTest.java" << JAVAEOF
-        package ${GROUP_ID};
-
-        import org.junit.jupiter.api.Test;
-        import static org.junit.jupiter.api.Assertions.*;
-
+            mkdir -p "$TD"
+            cat > "${TD}/ModuleTest.java" << JAVAEOF
+        /**
+         * Placeholder test for module: ${m}
+         * TODO: 将此文件移至 Maven 模块的 src/test/java/ 下，
+         *       添加 package 声明并配置 JUnit 依赖后即可编译运行。
+         */
         class ModuleTest {
-            @Test
             void testPlaceholder() {
-                assertTrue(true, "placeholder test for ${m} module");
+                // TODO: 添加测试逻辑
             }
         }
         JAVAEOF
