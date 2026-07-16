@@ -1,6 +1,6 @@
 # TASKS.md — 任务跟踪表
 
-> 创建：2026-07-14 | 更新：2026-07-16（v5.6 Phase D+E 完成）
+> 创建：2026-07-14 | 更新：2026-07-16（v5.6 Phase D+E+F 完成）
 
 > 用途：本项目唯一的任务跟踪文件。所有待办、进行中、已完成、已延后的任务在此记录。
 
@@ -294,6 +294,46 @@
 - **Bash 逻辑**：`IFS=',' read -ra` 分割逗号分隔模块列表，`xargs` 修剪空白，`tr '.' '/'` 转换包路径
 - **跳过规则**：空模块名、`tests` 根模块、已有 `src/test/java/` 的模块
 - **生成产物**：`{module}/src/test/java/{group_id_path}/ModuleTest.java`（JUnit 5 骨架）
+
+---
+
+## §v5.6-Phase-F — 检测层根因修复 ✅（2026-07-16 完成）
+
+**背景**：TMP-for-init 故障报告 6 个问题。测试目录反复生成失败 10+ 次的根因不在模板层（Phase D/E），而在检测层——模块路径扁平化、同级 POM 漏检、增量模式结构冲突。
+
+**设计**：BEACON.md 决策 54-57。
+
+### 问题 → 修复映射
+
+| # | 问题 | 严重度 | 根因 | 修复 | 文件 |
+|---|------|--------|------|------|------|
+| 1 | 根级 pom.xml 与实际结构不符 | P0 | `is_multi_module` 触发 monorepo 模板生成根 reactor POM，但项目聚合在 `tmp/pom.xml` | aggregator_path 非空时排除 `/pom.xml` `packages/` | `scaffold_render.py` |
+| 2 | packages/ 目录污染 | P0 | monorepo 模板默认创建 `packages/` 目录 | 同上（打包修复） | `scaffold_render.py` |
+| 3 | 测试目录/配置未生成 | P1 | 模块路径扁平化 → Phase 4 bash 任务找错目录 | 模块路径拼接 aggregator_path 前缀 | `detector_analyzers.py` |
+| 4 | java_version 字段冲突 | P1 | 两个检测源（pom.xml + qoder）值不一致 | 用户自行处理（数据一致性校验超出 Phase F 范围） | - |
+| 5 | 模块路径扁平化 | P2 | `<module>tmp-boot</module>` 在 `tmp/pom.xml` 中，路径应为 `tmp/tmp-boot` | `analyze_java()` 接收 `project_root`，计算 relative path 前缀 | `detector_analyzers.py` |
+| 6 | tmp-manage/tmp-window 漏检 | P2 | 只解析 `<modules>` 列表，未扫同级目录的 `<parent>` 引用 | `detector.py` 新增同级 POM 扫描逻辑 | `detector.py` |
+
+### 修复详情
+
+| # | 任务 | 文件 | 描述 | 状态 |
+|---|------|------|------|------|
+| PF-1 | 模块路径前缀 | `detector_analyzers.py` | `analyze_java()` 签名增加 `project_root`，计算 aggregator_path | ✅ |
+| PF-2 | 同级 POM 扫描 | `detector.py` | 遍历根目录 pom.xml，匹配 `<parent>` 引用聚合 POM 的独立模块 | ✅ |
+| PF-3 | 增量结构防护 | `scaffold_render.py` | `aggregator_path` 非空时 exclude `["/pom.xml", "packages/"]` | ✅ |
+| PF-4 | 磁盘校验顺序修复 | `detector_analyzers.py` | `missing_modules` 校验移到路径拼接**之前**，使用原始模块名 | ✅ |
+| PF-5 | aggregator_path 数据流 | `detector_constants.py` | `as_answers()` 新增 `aggregator_path` 导出 | ✅ |
+| PF-6 | 全量测试 | `tests/` | 655 passed, 0 failed | ✅ |
+| PF-7 | Mock 验证 | - | 模拟 TMP-for-init：5 模块全检测、路径正确、无假阳性 | ✅ |
+
+### 变更文件
+
+| 文件 | 变更 |
+|------|------|
+| `detector_analyzers.py` | aggregator_path 计算 + 模块路径前缀 + 磁盘校验顺序修复 |
+| `detector.py` | 同级 POM 扫描 + `analyze_java()` 传递 `project_root` |
+| `scaffold_render.py` | 增量模式结构防护（aggregator_path 非空时排除冲突模板） |
+| `detector_constants.py` | `as_answers()` 导出 `aggregator_path` |
 
 ---
 

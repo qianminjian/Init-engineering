@@ -200,6 +200,11 @@ def render_to(
         exclude = list(exclude) + ["src/**"]
     if mode == "incremental" and context.get("project_type") == "monorepo":
         exclude = list(exclude) + ["packages/**/src/main/**"]
+        # v5.6 Phase F: 当检测到的聚合 POM 不在根级时（如 tmp/pom.xml），
+        # 跳过根 pom.xml 生成 + packages/ 模板，避免与已有项目结构冲突
+        agg_path = context.get("aggregator_path", "")
+        if agg_path:
+            exclude = list(exclude) + ["/pom.xml", "packages/"]
 
     # P1.2: 解析 exclude_callback_spec → 可调用对象
     # ImportError: 模板模块不存在 → 回退(非阻断)

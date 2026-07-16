@@ -138,7 +138,7 @@ def analyze_go(go_path: Path, result: DetectionResult) -> DetectionResult:
 
 
 
-def analyze_java(pom_path: Path, result: DetectionResult) -> DetectionResult:
+def analyze_java(pom_path: Path, result: DetectionResult, project_root: Path | None = None) -> DetectionResult:
     """分析 Java/Maven 项目 — pom.xml (Maven) 或 build.gradle (Gradle).
 
     ⚠ 副作用: 原地修改 result (result.language, result.package_manager, result.test_runner,
@@ -146,6 +146,10 @@ def analyze_java(pom_path: Path, result: DetectionResult) -> DetectionResult:
 
     Extracts: Java version, groupId/artifactId, Spring Boot version,
     detected frameworks, packaging type, multi-module detection.
+
+    project_root: 项目根目录（dst_path）。非 None 时计算 pom_path 相对路径，
+    用于拼接模块路径前缀。例如 tmp/pom.xml 的 <module>tmp-boot</module>
+    → 模块路径为 tmp/tmp-boot。
     """
     result.language = "java"
     result.package_manager = "mvn"
@@ -258,7 +262,17 @@ def analyze_java(pom_path: Path, result: DetectionResult) -> DetectionResult:
         else result.project_description
     )
 
-    # v5.6: 校验 pom.xml 声明的模块是否在磁盘上存在
+    # v5.6: 计算 POM 相对项目根目录的路径（用于模块路径前缀）
+    aggregator_path = ""
+    if project_root is not None:
+        try:
+            aggregator_path = str(pom_path.parent.resolve().relative_to(project_root.resolve()))
+            if aggregator_path == ".":
+                aggregator_path = ""
+        except ValueError:
+            aggregator_path = ""
+
+    # v5.6: 校验 pom.xml 声明的模块是否在磁盘上存在（在路径拼接前，用原始模块名）
     project_dir = pom_path.parent
     missing_modules: list[str] = []
     extra_dirs: list[str] = []
@@ -279,6 +293,16 @@ def analyze_java(pom_path: Path, result: DetectionResult) -> DetectionResult:
             len(missing_modules), ", ".join(missing_modules),
         )
 
+    # 模块路径拼接父 POM 相对路径（Issue #5 修复）
+    # tmp/pom.xml 的 <module>tmp-boot</module> → 模块路径为 tmp/tmp-boot
+    if aggregator_path:
+        prefix = aggregator_path + "/"
+        modules = [prefix + m for m in modules]
+        dependencies = [
+            f"{prefix}{dep.removeprefix('module:')}" if dep.startswith("module:") else dep
+            for dep in dependencies
+        ]
+
     # Store extra detection info for downstream use
     if result._java_info is None:
         result._java_info = {}
@@ -295,6 +319,7 @@ def analyze_java(pom_path: Path, result: DetectionResult) -> DetectionResult:
         "modules": modules,
         "module_missing": missing_modules,
         "module_extra_dirs": extra_dirs,
+        "aggregator_path": aggregator_path,
     })
 
     return result

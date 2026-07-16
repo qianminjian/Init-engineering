@@ -11,6 +11,7 @@ constants → detector_constants.py。
 from __future__ import annotations
 
 import logging
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from .._shared.detection import (
@@ -33,6 +34,7 @@ from .detector_constants import FRAMEWORK_SIGNATURES, DetectionResult
 from .detector_helpers import (
     check_pkg_dep,
     find_signatures_in_tree,
+    strip_xml_ns,
 )
 from .detector_helpers import (
     signature_matches as _signature_matches,
@@ -105,7 +107,7 @@ class ProjectDetector:
         if cargo_toml.exists():
             result.language = "rust"
         if pom_xml.exists():
-            result = analyze_java(pom_xml, result)
+            result = analyze_java(pom_xml, result, project_root=self.dst_path)
         elif build_gradle_kts.exists():
             result = analyze_gradle(build_gradle_kts, result)
         elif build_gradle.exists():
@@ -141,11 +143,52 @@ class ProjectDetector:
                                 "无法解析 %s, 跳过", pom, exc_info=True,
                             )
                     if sig == "pom.xml":
-                        result = analyze_java(best_dir / "pom.xml", result)
+                        result = analyze_java(best_dir / "pom.xml", result, project_root=self.dst_path)
                     else:
                         result = analyze_gradle(best_dir / sig, result)
                     if result.language == "java":
                         break
+
+        # v5.6: 扫描同级目录中引用聚合 POM 为 <parent> 的独立模块（Issue #6 修复）
+        # tmp/pom.xml 聚合了 8 个子模块，但 tmp-manage/pom.xml 和 tmp-window/pom.xml
+        # 以 tmp 为 <parent> 且不在 <modules> 中 — 需要单独扫描并追加到模块列表
+        if result.language == "java" and result._java_info and result._java_info.get("modules"):
+            java_info = result._java_info
+            existing_modules = set(java_info["modules"])
+            aggregator_artifact_id = java_info.get("artifact_id", "")
+            aggregator_path = java_info.get("aggregator_path", "")
+            if aggregator_artifact_id:
+                try:
+                    for entry in self.dst_path.iterdir():
+                        if not entry.is_dir() or entry.name.startswith("."):
+                            continue
+                        sibling_pom = entry / "pom.xml"
+                        if not sibling_pom.exists():
+                            continue
+                        try:
+                            stree = ET.parse(sibling_pom)
+                            sroot = stree.getroot()
+                            s_parent_artifact_id = None
+                            for schild in sroot:
+                                if strip_xml_ns(schild.tag) == "parent":
+                                    for spc in schild:
+                                        if strip_xml_ns(spc.tag) == "artifactId":
+                                            s_parent_artifact_id = (spc.text or "").strip()
+                                            break
+                                    break
+                            if s_parent_artifact_id == aggregator_artifact_id:
+                                # 追加为独立模块路径
+                                rel_path = str(entry.relative_to(self.dst_path))
+                                if rel_path not in existing_modules:
+                                    java_info["modules"].append(rel_path)
+                                    _logger.info(
+                                        "发现独立模块（不在聚合 POM <modules> 中）: %s",
+                                        rel_path,
+                                    )
+                        except (ET.ParseError, OSError):
+                            _logger.debug("跳过无法解析的 POM: %s", sibling_pom, exc_info=True)
+                except PermissionError:
+                    _logger.debug("无法扫描项目目录", exc_info=True)
 
         # 包管理器：优先使用语言分析器已设置的值（如 analyze_java 设置的 "mvn"），
         # 只在未设置时才用根目录 lock 文件推断。防止聚合目录场景被覆盖为 None。

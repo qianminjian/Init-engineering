@@ -74,6 +74,8 @@ class DetectionResult:
                 result["java_packaging"] = self._java_info["packaging"]
             if self._java_info.get("is_multi_module"):
                 result["is_multi_module"] = True
+            if self._java_info.get("aggregator_path"):
+                result["aggregator_path"] = self._java_info["aggregator_path"]
             if self._java_info.get("group_id"):
                 result["java_group_id"] = self._java_info["group_id"]
             if self._java_info.get("artifact_id"):
