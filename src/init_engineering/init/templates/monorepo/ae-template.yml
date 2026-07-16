@@ -101,6 +101,7 @@ _tasks:
       - |
         MODULES="{{ java_modules }}"
         GROUP_ID="{{ java_group_id | default('') }}"
+        MODULE_PREFIX="{% if aggregator_path is defined and aggregator_path %}{% else %}packages/{% endif %}"
         if [ -z "$MODULES" ] || [ -z "$GROUP_ID" ]; then
           exit 0
         fi
@@ -109,19 +110,22 @@ _tasks:
           m=$(echo "$m" | xargs)
           [ -z "$m" ] && continue
           [ "$m" = "tests" ] && continue
-          MODULE_NAME=$(basename "$m")
-          TD="tests/${MODULE_NAME}"
+          TD="${MODULE_PREFIX}${m}/src/test/java/$(echo "$GROUP_ID" | tr '.' '/')"
           if [ ! -d "$TD" ]; then
             mkdir -p "$TD"
             cat > "${TD}/ModuleTest.java" << JAVAEOF
+        package ${GROUP_ID};
+
+        import org.junit.jupiter.api.Test;
+        import static org.junit.jupiter.api.Assertions.*;
+
         /**
          * Placeholder test for module: ${m}
-         * TODO: 将此文件移至 Maven 模块的 src/test/java/ 下，
-         *       添加 package 声明并配置 JUnit 依赖后即可编译运行。
          */
         class ModuleTest {
+            @Test
             void testPlaceholder() {
-                // TODO: 添加测试逻辑
+                assertTrue(true, "placeholder test for ${m} module");
             }
         }
         JAVAEOF

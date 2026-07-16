@@ -1,6 +1,6 @@
 # TASKS.md — 任务跟踪表
 
-> 创建：2026-07-14 | 更新：2026-07-16（v5.6 Phase D+E+F+G+H+I 完成）
+> 创建：2026-07-14 | 更新：2026-07-16（v5.6 Phase J — 决策 47 修正 + Java 测试目录拓扑化）
 
 > 用途：本项目唯一的任务跟踪文件。所有待办、进行中、已完成、已延后的任务在此记录。
 
@@ -386,6 +386,37 @@
 |---------|------|--------|---------|-----------|------|
 | TMP-for-init | incremental (container) | 未生成 ✓ | 未生成 ✓ | 未生成 ✓ | 2 文件补充，25 跳过 |
 | _test-reactor | fresh (reactor) | tests/src/test/java/ ✓ | 生成 ✓ | 生成 ✓ | 22 文件，标准布局 |
+
+### ⚠️ Phase J 修正
+
+Phase I Bug 4（testSourceDirectory 标准化）被 Phase J 撤销。原因：Java/Maven 的 `src/main/java/` vs `src/test/java/` 本身就是测试与源码分离机制，不应强制套用其他语言的根级 `tests/` 约定。详见 BEACON.md 决策 63。
+
+---
+
+## §v5.6-Phase-J — Java 测试目录拓扑化 + 决策修正 ✅（2026-07-16 设计完成）
+
+**背景**：决策 47 "所有语言统一根级 tests/" 对 Java 过度统一——忽略了 Maven 标准布局本身就是分离机制。Phase I 在 `src/test/java/` 和 `tests/` 之间反复横跳，根因是没承认"Java 不需要根级 tests/"这个前提。
+
+**设计**：BEACON.md 决策 47（修正）、62（部分撤销）、63-65（新增）。
+
+### Java 测试目录三拓扑
+
+| 拓扑 | 项目类型 | 测试目录 | POM 配置 |
+|------|---------|---------|---------|
+| A: 单模块 | app-service / library | 根级 `tests/` | `<testSourceDirectory>tests</testSourceDirectory>` |
+| B: Reactor | monorepo + aggregator_path 为空 | `tests/` Maven 模块 | `<testSourceDirectory>.</testSourceDirectory>` |
+| C: 容器 | monorepo + aggregator_path 非空 | 各模块 `src/test/java/` | Maven 默认（无需配置） |
+
+### 修改清单
+
+| # | 任务 | 文件 | 描述 | 状态 |
+|---|------|------|------|------|
+| PJ-1 | _REACTOR_ONLY_TEMPLATES 恢复 | `scaffold_render.py` | 恢复为 `["/pom.xml", "packages/", "tests/"]` — 容器项目排除整个 tests/ | ✅ |
+| PJ-2 | post-render hook 恢复 | `monorepo/ae-template.yml` | `${m}/src/test/java/...` — Maven 默认，拓扑 C 正确路径 | ✅ |
+| PJ-3 | 模板结构保持 | `monorepo/java/tests/` + `_features/java/tests/` | 保持 Phase I 的扁平 `tests/{{ group_id }}/` 布局（拓扑 A/B 正确） | ✅ |
+| PJ-4 | tests/pom.xml 保持 | `monorepo/java/tests/pom.xml.jinja` | 保持 `<testSourceDirectory>.</testSourceDirectory>`（拓扑 B 需要） | ✅ |
+| PJ-5 | CLAUDE.md 架构树修复 | `monorepo/java/CLAUDE.md.jinja` | aggregator_path 非空时用模块实际路径替代 packages/ 占位，聚合 POM 路径正确拼接 `/` | ✅ |
+| PJ-6 | CLAUDE.md Java 版本修复 | `monorepo/java/CLAUDE.md.jinja` | 优先显示 java_version 配置值，检测值不同时以括号补充（如"Java: 21（项目检测到 1.8）"） | ✅ |
 
 ---
 

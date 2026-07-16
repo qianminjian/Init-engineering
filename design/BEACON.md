@@ -1,4 +1,4 @@
-> 创建：2026-06-24 | 更新：2026-07-16 | 阶段：v5.6 Phase I — monorepo Java 模板系统性修复（孤儿 tests/ + 包名 + 布局）
+> 创建：2026-06-24 | 更新：2026-07-16 | 阶段：v5.6 Phase J — Java 测试目录拓扑化设计 + 决策 47 修正 + CLAUDE.md 修复
 
 # BEACON.md — Init Engineering 设计基线
 
@@ -263,7 +263,7 @@ ae init ──→ phase_prompt()
 | 44 | **增量模式排除范围精确化** | 存量 monorepo 项目跳过 `packages/**/src/main/**`（示例源码），保留 src/test/**（测试模板）+ pom.xml（配置模板）| 2026-07-15 | ✅ (v5.6 Phase D: 范围精确化) |
 | 45 | **analyze 输出增加初始化模式推荐** | 根据项目状态推荐正确命令：空目录→--defaults，存量项目→--incremental，有 .ae-answers.yml→--incremental（基线对比）。不再并列推荐不适用选项 | 2026-07-15 | ✅ |
 | 46 | **Incremental 不弹交互** | --incremental 自己设置 non_interactive 内部标志，不依赖 --defaults。检测结果从 Phase 1 流入 AnswersMap.defaults，无需用户输入 | 2026-07-15 | ✅ |
-| 47 | **测试目录统一：所有语言使用根级 tests/** | 所有类型（TypeScript/Python/Go/Rust/Java/Bash）测试文件从源码同目录移到根级 tests/，独立于源码目录。解决测试文件散落在 src/ 各处的结构不一致问题 | 2026-07-16 | ✅ |
+| 47 | **测试目录统一：所有语言使用根级 tests/** | 所有类型（TypeScript/Python/Go/Rust/Bash）测试文件从源码同目录移到根级 tests/，独立于源码目录。⚠️ **Java 例外（Phase J 修正）**：Maven 标准布局 `src/main/java/` vs `src/test/java/` 本身就是测试与源码分离，不应强制迁到根级 tests/。见决策 63 | 2026-07-16 | ⚠️ amended |
 | 48 | **Monorepo Java tests/ 作为独立 Maven 模块** | tests/ 有自己的 pom.xml（parent 引用根 POM，`<testSourceDirectory>.</testSourceDirectory>`），解决多模块项目中测试编译/运行隔离问题。默认加入 java_modules 列表 | 2026-07-16 | ✅ |
 | 49 | **Maven testSourceDirectory 统一** | app-service 和 library 的 pom.xml.jinja 添加 `<testSourceDirectory>tests</testSourceDirectory>`，与物理 tests/ 目录保持一致 | 2026-07-16 | ✅ |
 | 50 | **Maven wrapper jar 内嵌模板** | `.mvn/wrapper/maven-wrapper.jar`（63KB, v3.3.2）纳入 _features/java 模板，确保 mvnw 开箱即用。.gitignore 添加 `!.mvn/wrapper/maven-wrapper.jar` 白名单 | 2026-07-16 | ✅ |
@@ -278,7 +278,10 @@ ae init ──→ phase_prompt()
 | 59 | **exclude 检查在 .jinja 后缀移除后** | 之前的 `_is_excluded()` 检查模板源路径（含 `.jinja`），导致 `/pom.xml` 无法匹配 `pom.xml.jinja`。增加输出路径二次检查，使 exclude 对渲染产物生效 | 2026-07-16 | ✅ |
 | 60 | **移除 detector.py 内部 import ET 遮蔽** | 函数内 `import xml.etree.ElementTree as ET` 遮蔽顶层导入，兄弟 POM 扫描路径中 `ET` 未绑定导致 `UnboundLocalError`。顶层导入已覆盖所有使用点 | 2026-07-16 | ✅ |
 | 61 | **内容感知类型推断（Phase H）** | spec-doc 签名仅在 `design/` 目录存在时匹配，无法覆盖设计文档在根目录的项目（如 voice_clone_for_auto_design 的 `需求提示词.md`）。内容推断扫描根目录 *.md + design/*.md，按 TYPE_HINT_KEYWORDS 中英文关键词计分（≥2）。推断条件扩展为 project_type in (None, "spec-doc")，覆盖零签名匹配项目 | 2026-07-16 | ✅ |
-| 62 | **monorepo Java 模板系统性修复（Phase I）** | 3 个 bug：(1) 容器目录（aggregator_path 非空）错误生成 tests/ 孤儿模块 — exclude 列表 ad-hoc 追加导致漏项，提取 _REACTOR_ONLY_TEMPLATES 命名常量；(2) 测试文件包名硬编码 com.example — 模板未使用 java_group_id 变量；(3) tests/pom.xml testSourceDirectory 非标准 — 迁至 src/test/java/ 标准 Maven 布局 | 2026-07-16 | ✅ |
+| 62 | **monorepo Java 模板系统性修复（Phase I）** | Bug 1/2 有效：提取 _REACTOR_ONLY_TEMPLATES 命名常量，包名改用 java_group_id。❌ **Bug 4 修复被撤销（Phase J）**：将 tests/ 从 src/test/java/ 嵌套改为扁平布局后，又发现 Java 的 Maven 标准目录本身就是分离的，不应强制用根级 tests/。正确的修复不在目录结构而在按拓扑选择策略。见决策 63 | 2026-07-16 | ⚠️ partially revoked |
+| 63 | **Java 测试目录按项目拓扑约定（Phase J）** | Java/Maven 已有 `src/main/java/` vs `src/test/java/` 分离机制，不适用决策 47 的"所有语言统一根级 tests/"规则。三拓扑：(a) 单模块 — 根级 tests/ + `<testSourceDirectory>tests</testSourceDirectory>`；(b) Reactor monorepo — tests/ Maven 模块 + `<testSourceDirectory>.</testSourceDirectory>`；(c) 容器 monorepo（无根 POM）— 各模块内部 src/test/java/（Maven 默认），post-render hook 输出到 `${m}/src/test/java/...`。容器项目 _REACTOR_ONLY_TEMPLATES 排除整个 tests/ | 2026-07-16 | ✅ |
+| 64 | **CLAUDE.md 架构树按检测数据渲染（Phase J）** | monorepo CLAUDE.md 模板硬编码 packages/ 目录树，容器项目（aggregator_path 非空）模块实际在根目录。当 aggregator_path 非空时，架构树改用各模块路径替代 packages/ 占位 | 2026-07-16 | ✅ |
+| 65 | **Java 版本显示优先使用配置值（Phase J）** | detected_java_version 来自存量 pom.xml（如 1.8），java_version 来自配置默认值（如 21）。CLAUDE.md 模板渲染时二者可能不同，应优先显示配置版本或用标注区分 | 2026-07-16 | ✅ |
 
 ## Init → Loop 契约（Manifest）
 
@@ -292,18 +295,17 @@ Init 完成初始化时写入 `.ae-state/init-manifest.json`（schema 1.1），L
 
 ## 当前状态
 
-**阶段：** v5.6 Phase I — monorepo Java 模板系统性修复（孤儿 tests/ + 包名 + 布局）
+**阶段：** v5.6 Phase J — Java 测试目录拓扑化设计 + 决策 47 修正
 
-**最近动作：** 2026-07-16 — Phase D+E+F+G+H+I 实施完成。
-- Phase I（monorepo Java 模板系统性修复）：3 个 bug — 根因是 exclude 列表 ad-hoc 追加而非系统性审计
-  1. Bug 2 (P0): 提取 _REACTOR_ONLY_TEMPLATES 命名常量，tests/ 加入列表
-  2. Bug 3 (P1): package com.example → {{ java_group_id or 'com.example' }}
-  3. Bug 4 (P2): testSourceDirectory 移除，迁至 src/test/java/ 标准 Maven 布局
-  TMP-for-init 验证：无 tests/ ✓、无 pom.xml ✓、无 packages/ ✓
-  Reactor 新项目验证：tests/src/test/java/ 标准布局 ✓、包名正确 ✓
-  全量测试：655 passed ✓
+**最近动作：** 2026-07-16 — 决策 47 修正 + 决策 63-65 新增。
+- Phase J：承认 Java/Maven 的 src/main/java vs src/test/java 本身就是标准分离机制，不应强制套用其他语言的根级 tests/ 约定。按三种拓扑分别定义测试目录约定。
+  1. 决策 47 修正：Java 例外，Maven 标准布局已是分离
+  2. 决策 62 部分撤销：Bug 4 的 src/test/java/ ↔ tests/ 往返修改均误判根因
+  3. 决策 63 新增：Java 三拓扑测试目录约定（单模块/Reactor/容器）
+  4. 决策 64 新增：CLAUDE.md 架构树按检测数据渲染
+  5. 决策 65 新增：Java 版本显示优先使用配置值
 
-**下一步：** 无阻塞项
+**下一步：** 实施 Phase J 代码修改
 
 **阻塞项：** 无
 
@@ -311,7 +313,8 @@ Init 完成初始化时写入 `.ae-state/init-manifest.json`（schema 1.1），L
 
 | 日期 | 变更 | 原因 |
 |------|------|------|
-| 2026-07-16 | Phase I monorepo Java 模板系统性修复 | 根因：exclude 列表 ad-hoc 追加（每次加一个），从未一次性审计所有 reactor-only 模板。修复：_REACTOR_ONLY_TEMPLATES 命名常量明确语义，tests/ 加入；包名改用 java_group_id；Maven 布局标准化 |
+| 2026-07-16 | Phase J 决策 47 修正 + Java 测试目录拓扑化 | 根因：决策 47 过度统一——Java/Maven 的 src/main/java vs src/test/java 本身就是标准分离，不应被根级 tests/ 覆盖。Phase I 在 Maven 标准布局和根级 tests/ 之间反复横跳，是因为没承认这个前提。修正：按三拓扑定义 Java 约定，撤销 Phase I Bug 4 修复 |
+| 2026-07-16 | Phase I monorepo Java 模板系统性修复 | 根因：exclude 列表 ad-hoc 追加，从未一次性审计所有 reactor-only 模板。修复：_REACTOR_ONLY_TEMPLATES 命名常量 + 包名模板化。Bug 4 修复（testSourceDirectory）后被 Phase J 撤销 |
 | 2026-07-16 | Phase H 内容感知类型推断 | 根因：design/*.md 签名无法匹配根目录设计文档项目（如 voice_clone_for_auto_design）。修复：`_infer_type_from_design_docs` 同时扫描根目录 *.md + design/*.md，触发条件扩展为 project_type in (None, "spec-doc")。3 项目回归全部通过 |
 | 2026-07-16 | Phase D+E+F+G 模板工程化 + 检测修复 + 实战验证 | Phase G（3 根因 bug）：spec-doc 误判（design/*.md 太宽泛）、exclude 时序（.jinja 前检查）、import 遮蔽（UnboundLocalError）。TMP-for-init 实战验证：10 模块全生成、类型正确、结构无污染 |
 | 2026-07-15 | Phase C 存量项目增量初始化修复 | 根因：Phase 1 实现添加了设计未规定的 .ae-answers.yml 前提条件。修复：8 项改动 — detect 移除前提、brownfield 模板分类、analyze 缺失检测、pretend 文件清单、CLI 非 TTY 行为修正、SKILL.md 决策树 |

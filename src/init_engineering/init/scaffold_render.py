@@ -203,7 +203,9 @@ def render_to(
         # v5.6 Phase I: aggregator 不在根目录 → 项目是「独立项目容器」而非「统一 reactor」。
         # 所有依赖根 reactor POM 的模板都应跳过（tests/ 的 pom.xml 有 <parent> 引用根 POM）。
         # 此列表为命名常量而非 ad-hoc 字符串追加，确保同类模板一次性全审计。
-        _REACTOR_ONLY_TEMPLATES = ["/pom.xml", "packages/", "tests/pom.xml"]
+        # v5.6 Phase J: 容器项目无根 POM → 排除 tests/ 整个目录（含 pom.xml + Java 文件）。
+        # tests/ Maven 模块仅适用于拓扑 B（reactor），拓扑 C 各模块用 src/test/java/。
+        _REACTOR_ONLY_TEMPLATES = ["/pom.xml", "packages/", "tests/"]
         if context.get("aggregator_path", ""):
             exclude = list(exclude) + _REACTOR_ONLY_TEMPLATES
 

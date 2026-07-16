@@ -13,6 +13,22 @@ mvn test
 
 ```
 {{ repo_name or project_name or '.' }}/
+{%- if aggregator_path is defined and aggregator_path %}
+├── {{ aggregator_path }}/pom.xml       # Aggregator POM (packaging=pom)
+{%- if java_modules is defined and java_modules %}
+{%- for m in java_modules.split(",") | map("trim") | list %}
+├── {{ m }}/                 # {{ m }} module
+│   ├── pom.xml
+│   ├── src/main/java/{{ java_group_id | replace('.', '/') }}/
+│   └── src/test/java/{{ java_group_id | replace('.', '/') }}/
+{%- endfor %}
+{%- else %}
+├── module1/             # Example module
+│   ├── pom.xml
+│   ├── src/main/java/
+│   └── src/test/java/
+{%- endif %}
+{%- else %}
 ├── pom.xml              # Root aggregator POM (packaging=pom)
 ├── packages/            # Maven modules
 {%- if java_modules is defined and java_modules %}
@@ -28,13 +44,14 @@ mvn test
 │       ├── src/main/java/
 │       └── src/test/java/
 {%- endif %}
+{%- endif %}
 ├── design/              # Design documents
 ├── docs/                # Project documentation
 └── .github/workflows/   # CI/CD
 ```
 
 ## Modules
-{% if java_modules %}
+{% if java_modules is defined and java_modules %}
 {% for m in java_modules.split(",") | map("trim") | list %}
 - **{{ m }}** — `{{ java_group_id }}:{{ m }}`
 {%- endfor %}
@@ -51,9 +68,9 @@ mvn test
 
 ## Tech Stack
 {% if language %}- Language: {{ language }}
-{% endif %}{% if detected_java_version is defined and detected_java_version %}- Java: {{ detected_java_version }}
-{% elif java_version_num is defined and java_version_num %}- Java: {{ java_version_num }}
-{% elif java_version is defined and java_version %}- Java: {{ java_version }}
+{% endif %}{% if java_version is defined and java_version %}- Java: {{ java_version }}{% if detected_java_version is defined and detected_java_version and detected_java_version != java_version %}（项目检测到 {{ detected_java_version }}）{% endif %}
+{% elif java_version_num is defined and java_version_num %}- Java: {{ java_version_num }}{% if detected_java_version is defined and detected_java_version and detected_java_version != java_version_num %}（项目检测到 {{ detected_java_version }}）{% endif %}
+{% elif detected_java_version is defined and detected_java_version %}- Java: {{ detected_java_version }}
 {% endif %}
 {% if detected_spring_boot_version is defined and detected_spring_boot_version %}- Spring Boot: {{ detected_spring_boot_version }}
 {% endif %}- Build: Maven
