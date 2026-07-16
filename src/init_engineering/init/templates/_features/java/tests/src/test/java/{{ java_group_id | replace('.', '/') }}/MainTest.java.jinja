@@ -1,11 +1,11 @@
-package com.example;
+package {{ java_group_id or 'com.example' }};
 
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
-class MonorepoTest {
+class MainTest {
     @Test
     void testPlaceholder() {
-        assertTrue(true, "placeholder test for {{ repo_name or project_name }}");
+        assertTrue(true, "placeholder test for {{ project_name }}");
     }
 }

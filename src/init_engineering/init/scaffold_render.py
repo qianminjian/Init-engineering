@@ -200,11 +200,12 @@ def render_to(
         exclude = list(exclude) + ["src/**"]
     if mode == "incremental" and context.get("project_type") == "monorepo":
         exclude = list(exclude) + ["packages/**/src/main/**"]
-        # v5.6 Phase F: 当检测到的聚合 POM 不在根级时（如 tmp/pom.xml），
-        # 跳过根 pom.xml 生成 + packages/ 模板，避免与已有项目结构冲突
-        agg_path = context.get("aggregator_path", "")
-        if agg_path:
-            exclude = list(exclude) + ["/pom.xml", "packages/"]
+        # v5.6 Phase I: aggregator 不在根目录 → 项目是「独立项目容器」而非「统一 reactor」。
+        # 所有依赖根 reactor POM 的模板都应跳过（tests/ 的 pom.xml 有 <parent> 引用根 POM）。
+        # 此列表为命名常量而非 ad-hoc 字符串追加，确保同类模板一次性全审计。
+        _REACTOR_ONLY_TEMPLATES = ["/pom.xml", "packages/", "tests/"]
+        if context.get("aggregator_path", ""):
+            exclude = list(exclude) + _REACTOR_ONLY_TEMPLATES
 
     # P1.2: 解析 exclude_callback_spec → 可调用对象
     # ImportError: 模板模块不存在 → 回退(非阻断)
