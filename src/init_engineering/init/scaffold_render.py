@@ -155,6 +155,7 @@ def render_to(
     templates_suffix: str = ".jinja",
     preserve_symlinks: bool = True,
     external_template_dir: Path | None = None,
+    mode: str = "fresh",
 ) -> list[Path]:
     """Phase 渲染 — 委托给 TemplateRenderer，渲染到 tmpdir。
 
@@ -167,13 +168,14 @@ def render_to(
         subdirectory: 可选子目录
         exclude_callback_spec: P1.2 — "module:function" 格式字符串, 渲染阶段动态排除
             来源: Copier _main.py:753 match_exclude
+        mode: "fresh" | "incremental" — 增量模式跳过示例源码模板
         其他: TemplateRenderer 参数
 
     Returns:
         生成的文件相对路径列表
     """
     # 准备 context 默认值（不修改传入的 AnswersMap，避免隐式副作用）
-    builtin_overrides: dict = {"_folder_name": folder_name}
+    builtin_overrides: dict = {"_folder_name": folder_name, "_mode": mode}
     for var in _RENDER_STR_VARS:
         if var not in answers:
             builtin_overrides[var] = ""
@@ -191,9 +193,13 @@ def render_to(
         external_template_dir=external_template_dir,
     )
 
-    # v5.3: 多模块项目或增量模式 — 不生成根级 src/
+    # v5.3: 多模块项目 — 不生成根级 src/
+    # v5.6: 增量模式 — 存量 monorepo 项目已有自己的模块结构，
+    #        跳过 packages/** 示例模块（如 packages/shared/）
     if context.get("is_multi_module"):
         exclude = list(exclude) + ["src/**"]
+    if mode == "incremental" and context.get("project_type") == "monorepo":
+        exclude = list(exclude) + ["packages/**"]
 
     # P1.2: 解析 exclude_callback_spec → 可调用对象
     # ImportError: 模板模块不存在 → 回退(非阻断)

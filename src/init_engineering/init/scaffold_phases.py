@@ -140,9 +140,21 @@ class InitWorker:
         self._phase_prompt()
 
         if self.pretend:
+            # v5.6: --pretend 模式仍执行 Phase 3 渲染（到 tmpdir），输出文件清单后清理
+            tmpdir = Path(tempfile.mkdtemp(prefix="ae-init-"))
+            try:
+                self._current_phase = "render"
+                generated_tmp = self._phase_render(tmpdir)
+                if not self.quiet:
+                    _logger.info("将要生成 %d 个文件:", len(generated_tmp))
+                    for f in sorted(generated_tmp):
+                        _logger.info("  %s", f)
+            finally:
+                shutil.rmtree(tmpdir, ignore_errors=True)
             return InitResult(
                 dst_path=self.dst_path,
                 project_type=self.project_type or "",
+                files=[self.dst_path / str(f) for f in generated_tmp],
             )
 
         tmpdir = Path(tempfile.mkdtemp(prefix="ae-init-"))
@@ -233,9 +245,13 @@ class InitWorker:
 
     def _phase_prompt(self) -> None:
         detection_for_prompt = self._detection
+        # v5.6: --incremental 隐式非交互 — 存量项目不弹问答，
+        # 检测结果从 Phase 1 流入 AnswersMap.defaults 驱动渲染。
+        # 不依赖 --defaults CLI flag（语义不同：defaults=模板默认值，incremental=检测值）。
+        non_interactive = self.defaults or self._mode == "incremental"
         self._template, self._answers = phase_prompt(
             project_type=self.project_type,
-            defaults=self.defaults,
+            defaults=non_interactive,
             previous_answers=self._previous_answers,
             language=self.language,
             package_manager=self.package_manager,
@@ -260,6 +276,7 @@ class InitWorker:
             templates_suffix=self.templates_suffix,
             preserve_symlinks=self.preserve_symlinks,
             template_dir_override=self.template_dir_override,
+            mode=self._mode,
         )
 
     def _phase_tasks(self, tmpdir: Path) -> None:

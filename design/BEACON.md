@@ -1,11 +1,11 @@
-> 创建：2026-06-24 | 更新：2026-07-15 | 阶段：v5.6 Phase A 完成
+> 创建：2026-06-24 | 更新：2026-07-15 | 阶段：v5.6 Phase C — 存量项目增量初始化修复
 
 # BEACON.md — Init Engineering 设计基线
 
 ## 目标与成功标准
 
 1. **Agent Skill 模式运行**：`ae init` 作为 Claude Code Skill 在 agent 里调用，为 agent 工作流提供项目环境初始化能力
-2. **存量项目自动初始化**：通过代码分析自动识别项目类型、依赖、配置，检测结果**完整**驱动模板渲染，不修改 `src/` 任何已有文件
+2. **存量项目自动初始化**：通过代码分析自动识别项目类型、依赖、配置，检测结果**完整**驱动模板渲染。`--incremental` 模式基于文件系统对比（非 `.ae-answers.yml` 基线），逐文件判断"跳过已有/补充缺失"，不修改任何已有文件。首次使用的存量项目无需预先准备基线文件
 3. **新项目向导初始化**：交互式询问确认项目方向、技术栈、目录结构，生成定制化项目骨架
 4. **模板组合引擎**：9 类型 × 6 语言（含 plugin 多 Skill 插件模板）
 5. **Pipeline 绕过阻断**：SKILL.md MUST_READ 门禁 + `_required_outputs` 自检，防止 AI 跳过 5 阶段流水线
@@ -16,16 +16,18 @@
 
 **做：**
 - Agent Skill 模式：5 阶段流水线（detect → prompt → render → tasks → finalize）
-- 存量项目初始化：代码分析 → 自动识别 → 自动化配置（含隐藏目录资产）
+- 存量项目初始化：代码分析 → 自动识别 → `--incremental` 基于文件系统对比补充缺失
+- 存量项目模板分类：基础设施模板（_shared/CI/lint）全量渲染；示例源码（_features/<lang>/src/）跳过
 - 新项目向导：交互式询问 → 确认方向 → 生成骨架
 - 9 类型 × 6 语言模板 + 13 exports 公共 API
 - `--include-hidden`：检测阶段扫描隐藏目录（默认关闭，显式 opt-in）
 - `run_update()`：增量更新已有项目（skip/overwrite/prompt 三种冲突策略）
-- **v5.4**：analyze_* 采集的全部结构化数据存入 _*_info，as_answers() 全量暴露，模板消费检测数据生成确定性内容
-
-**做：**
-- **v5.6 Phase A**：Qoder 深度提取 — 4 个 repowiki 数据源全量解析，技术栈/模块详情/知识图谱进入模板上下文
+- `ae analyze` 缺失工程文件检测：报告缺少的 .editorconfig/.gitignore/CLAUDE.md/CI/test 目录
+- `--pretend` 输出完整文件清单
+- **v5.4**：analyze_* 采集的全部结构化数据存入 _*_info，as_answers() 全量暴露
+- **v5.6 Phase A**：Qoder 深度提取 — 4 个 repowiki 数据源全量解析
 - **v5.6 Phase B**：设计文档发现 — BEACON.md/README.md/CLAUDE.md 提取
+- **v5.6 Phase C**：存量项目增量初始化修复（本次）
 
 **不做：**
 - dev-loop 开发循环 / 多 LLM Provider / Web UI / 远程模板
@@ -37,7 +39,7 @@
 ### 5 阶段流水线
 
 ```
-Phase 1: detect — ProjectDetector.detect(target_dir)
+Phase 1: detect — ProjectDetector.analyze(target_dir)
   └─ list_candidates() → FRAMEWORK_SIGNATURES 9 类型匹配
   └─ analyze_java()    → _java_info:    {group_id, artifact_id, version, java_version,
                                           spring_boot_version, packaging, is_multi_module,
@@ -47,6 +49,12 @@ Phase 1: detect — ProjectDetector.detect(target_dir)
   └─ analyze_node()    → _node_info:    {package_name, package_version}
   └─ analyze_gradle()  → _java_info:    {build_tool="gradle"}
   └─ 输出 DetectionResult（含完整 _*_info，禁止采集后丢弃）
+  └─ 模式判定（设计 §8 状态机）:
+       • dst_path 不存在/空 → mode="fresh"
+       • dst_path 非空 + --incremental → mode="incremental"（无需 .ae-answers.yml）
+       • dst_path 非空 + --force → mode="fresh"
+       • dst_path 非空 + 无 --force --incremental → TargetDirectoryError
+  └─ v5.6: detect_missing_infrastructure() → missing[] 列表（.editorconfig 等缺失项）
 
 Phase 2: prompt — InteractivePrompt + AnswersMap（6 层 ChainMap）
   └─ 优先级: cli_overrides > interactive > previous > defaults > builtins > external
@@ -56,12 +64,14 @@ Phase 2: prompt — InteractivePrompt + AnswersMap（6 层 ChainMap）
 Phase 3: render — TemplateRenderer.render_to(tmpdir)
   └─ 遍历多层 template_dirs: _shared → _features → type → monorepo 子模板
   └─ CLAUDE.md 模板消费 frameworks/dependencies/modules/project_description
-  └─ _external_data 条件渲染段：Agent 扫描结果注入点
+  └─ incremental 模式: 跳过示例源码模板（src/main/**），保留基础设施 + 测试模板
   └─ Jinja2 SandboxedEnvironment，双层渲染（文件名 + 内容）
+  └─ --pretend 模式: 输出完整文件清单（路径列表）
 
 Phase 4: tasks — TaskRunner.run(tasks_before, tasks_after)
-Phase 5: finalize — shutil.copytree(tmpdir → dst_dir)
-  └─ 写入 .ae-answers.yml + init-manifest.json
+Phase 5: finalize — merge_incremental (增量) / 原子 copytree (全量)
+  └─ incremental: 逐文件对比 tmpdir vs dst_path → 跳过已有, 补充缺失
+  └─ 写入 .ae-answers.yml + init-manifest.json（首次创建基线）
 ```
 
 ### 模块映射
@@ -245,6 +255,14 @@ ae init ──→ phase_prompt()
 | 36 | **v5.6 多层深度分析** | ae analyze 从单层检测升级为 3 层分析：L1 源代码结构解析 + L2 隐藏目录反向工程（4 个 qoder 数据源：_index.yaml/技术栈与依赖.md/模块详解/知识图谱） + L3 设计文档发现（BEACON.md/README.md/CLAUDE.md）。AnalysisReport 结构化输出，分析结果写入 as_answers() 补充 15+ 模板变量。解决"分析流于表面"的系统性缺陷 | 2026-07-15 | ✅ |
 | 37 | **detector_qoder.py 拆为多函数** | 单一 analyze_qoder_repowiki() → 拆为 _extract_qoder_index/tech_stack/module_details/metadata/quickstart 五个子函数 + _build_module_relations，各解析一个数据源 | 2026-07-15 | ✅ |
 | 38 | **ae analyze 输出重构** | stdout 从 8 行平铺摘要 → 5 段分层输出（项目身份/技术栈/模块结构/初始化建议/反向工程发现），每段从多个数据源聚合而非单一函数输出 | 2026-07-15 | ✅ |
+| 39 | **移除 --incremental 的 .ae-answers.yml 前提条件** | merge_incremental() 基于文件系统对比（tmpdir vs dst_path），逐文件判断存在性。基线文件是 init 的产出物，不是前提条件。首次存量项目直接可用 --incremental | 2026-07-15 | ✅ |
+| 40 | **存量项目模板分类：基础设施 vs 示例源码** | incremental 模式：_shared/ + CI/lint 基础设施模板全量渲染；_features/<lang>/src/main/** 示例源码跳过。测试模板（src/test/**）保留——存量项目可能缺测试目录 | 2026-07-15 | ✅ |
+| 41 | **ae analyze 增加缺失工程文件检测** | 检测并报告：.editorconfig / .gitignore / CLAUDE.md / README.md / LICENSE / .github/workflows/ / .gitlab-ci.yml / .pre-commit-config.yaml / lefthook.yml / src/test/ 目录。输出补全建议清单 | 2026-07-15 | ✅ |
+| 42 | **非 TTY + --incremental 不再自动覆盖为 --defaults** | --incremental 显式传入时保持用户意图，不自动追加 --defaults。增量模式自身已隐含非交互（不弹问答），无需借道 --defaults | 2026-07-15 | ✅ |
+| 43 | **--pretend 输出完整文件清单** | render 阶段完成后，列出所有将要生成的文件路径。存量项目用户可据此评估影响，决定是否执行 | 2026-07-15 | ✅ |
+| 44 | **增量模式排除 monorepo packages/ 示例模块** | 存量 monorepo 项目已有自己的模块结构，跳过 packages/** 示例模板 | 2026-07-15 | ✅ |
+| 45 | **analyze 输出增加初始化模式推荐** | 根据项目状态推荐正确命令：空目录→--defaults，存量项目→--incremental，有 .ae-answers.yml→--incremental（基线对比）。不再并列推荐不适用选项 | 2026-07-15 | ✅ |
+| 46 | **Incremental 不弹交互** | --incremental 自己设置 non_interactive 内部标志，不依赖 --defaults。检测结果从 Phase 1 流入 AnswersMap.defaults，无需用户输入 | 2026-07-15 | ✅ |
 
 ## Init → Loop 契约（Manifest）
 
@@ -258,17 +276,14 @@ Init 完成初始化时写入 `.ae-state/init-manifest.json`（schema 1.1），L
 
 ## 当前状态
 
-**阶段：** v5.6 Phase A 完成 — Phase B 设计文档发现
+**阶段：** v5.6 Phase C — 存量项目增量初始化修复
 
-**最近动作：** 2026-07-15 — Phase A 实现完成。
-- detector_qoder.py 拆为 6 个子函数（_extract_qoder_index/tech_stack/module_details/metadata/quickstart + _build_module_relations）
-- _qoder_info 新增 5 个字段：tech_stack_summary, module_details, module_relations, quickstart, repowiki_metadata
-- as_answers() 暴露 6 个新变量：qoder_tech_stack_summary, qoder_module_details, qoder_module_relations, qoder_quickstart, qoder_has_quickstart, qoder_repowiki_metadata
-- ae analyze 输出从 8 行平铺 → 5 段分层（§项目身份/§技术栈/§模块结构/§初始化建议/§反向工程发现）
-- CLAUDE.md 模板消费 qoder 新变量（tech_stack_summary, module_details 回退）
-- 655 tests pass, 0 failures
+**最近动作：** 2026-07-15 — Phase C 设计完成，开始实施。
+- 根因确认：phases/detect.py 在实现时添加了设计未规定的 `.ae-answers.yml` 前提条件
+- 设计方案：8 项修改（detect/prompt/render/finalize/analyze/CLI/SKILL.md）
+- Phase A+B 已完成（Qoder 深度提取 + 设计文档发现）
 
-**下一步：** Phase B — L3 设计文档发现（BEACON.md/README.md/CLAUDE.md 提取）
+**下一步：** 实施 8 项代码修改 + 测试更新
 
 **阻塞项：** 无
 
@@ -276,6 +291,7 @@ Init 完成初始化时写入 `.ae-state/init-manifest.json`（schema 1.1），L
 
 | 日期 | 变更 | 原因 |
 |------|------|------|
+| 2026-07-15 | Phase C 存量项目增量初始化修复 | 根因：Phase 1 实现添加了设计未规定的 .ae-answers.yml 前提条件。修复：8 项改动 — detect 移除前提、brownfield 模板分类、analyze 缺失检测、pretend 文件清单、CLI 非 TTY 行为修正、SKILL.md 决策树 |
 | 2026-07-15 | Phase A 实现完成 | detector_qoder.py 拆为 6 子函数、_qoder_info 5 新字段、as_answers() 6 新变量、ae analyze 5 段分层输出、655 tests pass |
 | 2026-07-15 | v5.6 多层深度分析设计 | ae analyze 从单层检测升级为 3 层分析（源代码/隐藏目录/设计文档），AnalysisReport 结构化输出，15+ 新模板变量 |
 | 2026-07-15 | E2E 测试 + 2 追加 Bug 修复 | --from-answers 语言丢失（混合模板）+ CLAUDE.md 格式断裂（Jinja2 空白吞食）

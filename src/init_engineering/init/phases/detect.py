@@ -50,24 +50,10 @@ def phase_detect(
     if dst_path.exists() and any(dst_path.iterdir()):
         if incremental:
             mode = "incremental"
-            if not (dst_path / ".ae-answers.yml").exists():
-                if not project_type and defaults:
-                    raise TargetDirectoryError(
-                        "目录非空但缺少 .ae-answers.yml 基线文件，且无法自动检测项目类型。"
-                        " 使用 --type 指定类型后重试，或 --force 进行完整初始化。"
-                    )
-                if project_type:
-                    raise TargetDirectoryError(
-                        f"目录非空但缺少 .ae-answers.yml 基线文件，增量模式无法判断哪些文件已存在。"
-                        f" 请先 ae init --type {project_type} --defaults --force 完整初始化，"
-                        f"或使用 --analyze 查看检测结果。"
-                    )
-                else:
-                    raise TargetDirectoryError(
-                        "目录非空但缺少 .ae-answers.yml 基线文件，增量模式无法判断哪些文件已存在。"
-                        " 请先 ae init --type <type> --defaults --force 完整初始化，"
-                        "或使用 --analyze 查看检测结果。"
-                    )
+            # v5.6: merge_incremental() 基于文件系统直接对比（tmpdir vs dst_path），
+            # 逐文件判断"跳过已有/补充缺失"。不需要 .ae-answers.yml 基线文件——
+            # 它是 init 的产出物（Phase 5 写入），不是前提条件。
+            # 设计 §8 状态机规定：非空目录 + --incremental → incremental mode。
         elif not force:
             _raise_nonempty(dst_path)
         else:

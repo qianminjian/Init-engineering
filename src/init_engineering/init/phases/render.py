@@ -22,12 +22,14 @@ def phase_render(
     templates_suffix: str | None,
     preserve_symlinks: bool | None,
     template_dir_override: Path | None,
+    mode: str = "fresh",
 ) -> list[Path]:
     """渲染到 tmpdir。
 
     ⚠ 副作用:
     - 遍历模板目录树，写入渲染后文件到 tmpdir
     - 生成的路径列表供后续 phase_finalize 使用
+    - mode="incremental" 时跳过示例源码模板
     """
     templates_suffix, preserve_symlinks = template.resolve_render_opts(
         templates_suffix, preserve_symlinks
@@ -48,6 +50,7 @@ def phase_render(
         exclude_callback_spec=template.exclude_callback,
         templates_suffix=templates_suffix,
         preserve_symlinks=preserve_symlinks,
+        mode=mode,
     )
 
     return generated

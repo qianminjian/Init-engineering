@@ -47,6 +47,76 @@ def cmd_list_templates(templates_root: Path, *, filter_type: str | None = None) 
                 click.echo(f"  {rel}")
 
 
+def _detect_missing_infrastructure(
+    dst_path: Path,
+    result: "DetectionResult",
+) -> list[str]:
+    """检测缺失的工程基础设施文件。
+
+    返回人类可读的缺失项列表，用于 ae analyze 输出。
+    """
+    missing: list[str] = []
+
+    # 根目录工程文件
+    for fname, label in [
+        (".editorconfig", ".editorconfig — 编辑器配置"),
+        (".gitignore", ".gitignore — Git 忽略规则"),
+        ("CLAUDE.md", "CLAUDE.md — AI Agent 项目文档"),
+        ("README.md", "README.md — 项目说明"),
+        ("LICENSE", "LICENSE — 开源许可证"),
+    ]:
+        if not (dst_path / fname).exists():
+            missing.append(label)
+
+    # 设计基线
+    if not (dst_path / "design" / "BEACON.md").exists():
+        missing.append("design/BEACON.md — 设计基线")
+
+    # CI 配置
+    has_ci = (
+        (dst_path / ".github" / "workflows").exists()
+        or (dst_path / ".gitlab-ci.yml").exists()
+        or (dst_path / "Jenkinsfile").exists()
+    )
+    if not has_ci:
+        missing.append(".github/workflows/ 或 .gitlab-ci.yml — CI 流水线")
+
+    # Git hooks
+    has_hooks = (
+        (dst_path / ".pre-commit-config.yaml").exists()
+        or (dst_path / "lefthook.yml").exists()
+    )
+    if not has_hooks:
+        missing.append(".pre-commit-config.yaml 或 lefthook.yml — Git hooks")
+
+    # 测试目录
+    test_dirs = _find_test_dirs(dst_path, result)
+    if test_dirs is not None and not test_dirs:
+        missing.append("src/test/ — 测试目录（全项目未发现）")
+
+    return missing
+
+
+def _find_test_dirs(
+    dst_path: Path,
+    result: "DetectionResult",
+) -> list[Path] | None:
+    """查找项目中的测试目录。返回 None 表示无法判断（无源码语言）。
+
+    在项目根目录下递归搜索 src/test/ 目录（最多 3 层）。
+    """
+    found: list[Path] = []
+    try:
+        for p in dst_path.rglob("src/test"):
+            if p.is_dir():
+                found.append(p)
+                if len(found) >= 10:
+                    break
+    except OSError:
+        return None
+    return found
+
+
 def cmd_analyze(
     dst_path: Path,
     detector_cls: type[ProjectDetector],
@@ -152,20 +222,45 @@ def cmd_analyze(
                 deps = ", ".join(r["depends_on"])
                 click.echo(f"    {r['module']} → 依赖: {deps}")
 
-    # ═══ §4 初始化建议 ═══
+    # ═══ §4 缺失的工程文件 ═══
+    click.echo("")
+    click.echo("═══ § 缺失的工程文件 ═══")
+    missing = _detect_missing_infrastructure(dst_path, result)
+    if missing:
+        for item in missing:
+            click.echo(f"  ✗ {item}")
+    else:
+        click.echo("  ✓ 工程基础设施完整")
+
+    # ═══ §5 初始化建议 ═══
     click.echo("")
     click.echo("═══ § 初始化建议 ═══")
     _ptype = result.project_type or "app-service"
     _lang = result.language or ""
     lang_flag = f" --language {_lang}" if _lang else ""
-    click.echo(f"  ae init . --type {_ptype}{lang_flag} --defaults")
+
+    # v5.6: 根据项目状态推荐正确的初始化模式
+    has_answers_yml = (dst_path / ".ae-answers.yml").exists()
+    is_empty = not any(dst_path.iterdir()) if dst_path.exists() else True
+
+    if is_empty:
+        click.echo(f"  新项目（空目录）:")
+        click.echo(f"    ae init . --type {_ptype}{lang_flag} --defaults")
+    elif has_answers_yml:
+        click.echo(f"  存量项目（有基线文件）:")
+        click.echo(f"    ae init . --incremental     # 基于基线补充缺失文件")
+        click.echo(f"    ae update                    # 版本升级增量更新")
+    else:
+        click.echo(f"  存量项目（首次初始化）:")
+        click.echo(f"    ae init . --incremental     # 自动检测 + 只补缺失文件")
+        if missing:
+            click.echo(f"    将补充以上 {len(missing)} 个缺失的工程文件")
     if include_hidden:
-        click.echo(f"  ae init . --type {_ptype}{lang_flag} --defaults --include-hidden")
-    click.echo(f"  ae init . --incremental     # 只补充缺失文件")
+        click.echo(f"    --include-hidden 已启用")
     click.echo("")
     click.echo("  详细选项: ae init --help")
 
-    # ═══ §5 反向工程发现（--include-hidden） ═══
+    # ═══ §6 反向工程发现（--include-hidden） ═══
     if result._qoder_info:
         qi = result._qoder_info
         click.echo("")

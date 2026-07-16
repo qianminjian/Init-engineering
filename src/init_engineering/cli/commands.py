@@ -105,13 +105,14 @@ def cmd_init(
 
     _configure_logging(verbose=verbose)
 
-    # 非 TTY 环境自动启用 --defaults，避免 BasicPromptBackend.input() 等待不可用的 stdin
-    # --incremental 模式也自动启用 --defaults（增量模式不应弹交互提示）
+    # 非 TTY 环境自动启用非交互模式。
+    # --incremental 自身已隐含非交互（存量项目不弹问答），不需要 --defaults 的语义覆盖。
+    # --defaults 意味着"全部使用模板默认值"；--incremental 意味着"使用检测值驱动渲染"。
+    # 两者语义不同——incremental 走自己的 non_interactive 路径。
     import sys as _sys
-    if (not _sys.stdin.isatty() or incremental) and not defaults:
+    if (not _sys.stdin.isatty()) and not defaults and not incremental:
         if not quiet:
-            click.echo("非 TTY 环境，自动启用 --defaults 模式" if not _sys.stdin.isatty()
-                       else "--incremental 模式自动启用 --defaults", err=True)
+            click.echo("非 TTY 环境，自动启用 --defaults 模式", err=True)
         defaults = True
 
     _worker_kwargs = _build_init_worker_kwargs(

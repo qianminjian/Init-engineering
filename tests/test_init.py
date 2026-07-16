@@ -937,9 +937,12 @@ class TestScaffoldNonEmptyDir:
         worker._phase_detect()
         assert worker._mode == "incremental"
 
-    def test_incremental_without_baseline_raises(self, tmp_path):
-        """增量模式缺 .ae-answers.yml 基线时必须报错退出，而非警告后继续."""
-        from init_engineering.init.errors import TargetDirectoryError
+    def test_incremental_without_baseline_allowed(self, tmp_path):
+        """v5.6: 增量模式无需 .ae-answers.yml 基线 — 首次存量项目直接可用。
+
+        merge_incremental() 基于文件系统对比（tmpdir vs dst_path），
+        逐文件判断存在性。基线文件是 init 产出物，不是前提条件。
+        """
         from init_engineering.init.scaffold_phases import InitWorker
 
         existing = tmp_path / "existing"
@@ -952,8 +955,9 @@ class TestScaffoldNonEmptyDir:
             defaults=True,
             incremental=True,
         )
-        with pytest.raises(TargetDirectoryError, match=".ae-answers.yml"):
-            worker._phase_detect()
+        # v5.6: 不再抛出 TargetDirectoryError — 缺基线文件时正常进入增量模式
+        worker._phase_detect()
+        assert worker._mode == "incremental"
 
     def test_empty_dir_sets_fresh_mode(self, tmp_path):
         from init_engineering.init.scaffold_phases import InitWorker
@@ -982,9 +986,9 @@ class TestScaffoldNonEmptyDir:
 
 
 class TestScaffoldPretendMode:
-    """覆盖 scaffold.py:75-90 pretend 模式返回空 InitResult."""
+    """v5.6: --pretend 模式渲染到 tmpdir 输出文件清单，不写入 dst."""
 
-    def test_pretend_returns_empty_files_list(self, tmp_path):
+    def test_pretend_renders_and_lists_files(self, tmp_path):
         from init_engineering.init.scaffold_phases import InitWorker
 
         dst = tmp_path / "pretend-project"
@@ -996,9 +1000,10 @@ class TestScaffoldPretendMode:
             quiet=True,
         )
         result = worker.execute()
-        assert result.files == []
+        # v5.6: --pretend 执行 Phase 3 渲染，输出文件清单
+        assert len(result.files) > 0, "pretend 应列出将要生成的文件"
         assert result.project_type == "library"
-        assert not dst.exists()  # pretend 不创建文件
+        assert not dst.exists()  # pretend 不创建目标目录
 
 
 class TestScaffoldCleanupOnError:

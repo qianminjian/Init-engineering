@@ -21,25 +21,26 @@ Project environment initialization for Claude Code agent workflows.
 ## Quick Reference
 
 ```
-# ── 新项目 ──────────────────────────────────────
+# ── 第一步：分析（存量项目必须先做） ──────────────
+/ae-init analyze .                                   # 检测项目类型 + 缺失文件清单
+/ae-init analyze . --include-hidden                  # 含 .qoder/.claude/ 隐藏资产
+
+# ── 新项目（空目录） ──────────────────────────────
 /ae-init init my-app --type app-service              # TS 全栈应用
 /ae-init init my-lib --type library --language py    # Python 库
 /ae-init init my-cli --type cli-tool --defaults      # 全部默认, 无交互
-/ae-init init my-skill --type skill                  # Claude Code Skill
 
-# ── 存量项目 ────────────────────────────────────
-/ae-init init . --analyze                           # 自动检测 + 报告
-/ae-init init . --analyze --include-hidden           # 含 .qoder/.claude/ 资产
-/ae-init init . --incremental                        # 只补缺失文件
+# ── 存量项目（有代码的目录） ──────────────────────
+/ae-init init . --incremental                        # 自动检测 + 只补缺失工程文件
+/ae-init init . --incremental --pretend              # 先看会生成什么, 再决定
 
 # ── 查询 ────────────────────────────────────────
-/ae-init init --list-types                           # 列出 9 种项目类型
-/ae-init init --list-templates                       # 列出所有模板文件
+/ae-init list-types                                  # 列出 9 种项目类型
+/ae-init list-templates                              # 列出所有模板文件
 
 # ── 特殊场景 ────────────────────────────────────
-/ae-init init . --force                              # 覆盖非空目录
 /ae-init init my-app --from-answers .ae-answers.yml  # 从答案文件重放
-/ae-init init my-app --pretend                       # 模拟, 不写文件
+/ae-init init . --force                              # 覆盖非空目录（慎用）
 ```
 
 ---
@@ -83,8 +84,29 @@ CLI 等效：`ae init <project> --type <type> [options]`
 | 模式 | 命令 | 流程 |
 |------|------|------|
 | **新项目** | `/ae-init init <dir> --type <type>` | 交互问答 → 渲染模板 → 生成骨架 |
-| **存量项目** | `/ae-init init <dir> --analyze` | 代码扫描 → 自动识别语言/框架/PM/CI → 增量补充 |
-| **增量补充** | `/ae-init init <dir> --incremental` | 基于 .ae-answers.yml 只补缺失文件 |
+| **存量项目** | `/ae-init init <dir> --incremental` | 代码扫描 → 自动识别 → 对比文件系统 → 只补充缺失 |
+| **存量项目分析** | `/ae-init analyze <dir>` | 代码扫描 → 输出检测报告 + 缺失文件清单 + 推荐命令 |
+
+### 决策树：选择正确的初始化模式
+
+```
+开始 → ae analyze <path>（先分析）
+  ├─ 目录为空？
+  │   └─ ae init <dir> --type <type>          # 新项目向导
+  │
+  ├─ 目录非空 + 有 .ae-answers.yml？
+  │   └─ ae init . --incremental               # 基线对比 + 补充缺失
+  │   或 ae update                              # 版本升级增量更新
+  │
+  └─ 目录非空 + 无 .ae-answers.yml（首次存量项目）？
+      └─ ae init . --incremental               # 自动检测 + 只补缺失工程文件
+         ▸ 不会引入示例源码（src/main/** 被跳过）
+         ▸ 不会覆盖已有文件（merge_incremental 逐文件对比）
+         ▸ 测试模板仍会生成（src/test/** 保留——存量项目可能缺测试）
+         ▸ 完成后写入 .ae-answers.yml 基线文件
+```
+
+**首次存量项目不需要预先生成 `.ae-answers.yml`** — `--incremental` 直接对比模板输出与文件系统，逐文件判断"跳过已有/补充缺失"。`.ae-answers.yml` 是 init 的产出物，不是前提条件。
 
 ## 项目类型 (--type)
 
