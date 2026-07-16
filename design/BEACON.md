@@ -1,4 +1,4 @@
-> 创建：2026-06-24 | 更新：2026-07-16 | 阶段：v5.6 Phase F — 检测层模块路径修复 + 同级 POM 扫描
+> 创建：2026-06-24 | 更新：2026-07-16 | 阶段：v5.6 Phase G — 检测层深度修复（spec-doc 误判 + exclude 时序 + import 遮蔽）
 
 # BEACON.md — Init Engineering 设计基线
 
@@ -274,6 +274,9 @@ ae init ──→ phase_prompt()
 | 55 | **同级 POM 扫描（sibling detection）** | 扫描项目根目录中所有 pom.xml，检测 `<parent><artifactId>` 引用聚合 POM 但不在 `<modules>` 中的独立模块（如 `tmp-manage`/`tmp-window`）。追加到 `java_modules` 列表 | 2026-07-16 | ✅ |
 | 56 | **磁盘校验在路径拼接前执行** | `missing_modules` 校验使用原始模块名（相对 pom_path.parent），而非拼接 aggregator_path 后的路径。避免 `tmp/tmp-boot` vs 磁盘目录 `tmp-boot` 的假阳性警告 | 2026-07-16 | ✅ |
 | 57 | **增量模式结构防护** | `aggregator_path` 非空时（聚合 POM 不在根目录），增量渲染排除根级 `/pom.xml` 和 `packages/` 模板，避免与已有项目结构冲突 | 2026-07-16 | ✅ |
+| 58 | **深度分析覆盖签名级类型** | spec-doc 的 `design/*.md` 签名过于宽泛，任何有设计文档的项目都会被误判。深度分析检测到具体构建系统时（language 非空 + monorepo 候选），覆盖签名级 project_type | 2026-07-16 | ✅ |
+| 59 | **exclude 检查在 .jinja 后缀移除后** | 之前的 `_is_excluded()` 检查模板源路径（含 `.jinja`），导致 `/pom.xml` 无法匹配 `pom.xml.jinja`。增加输出路径二次检查，使 exclude 对渲染产物生效 | 2026-07-16 | ✅ |
+| 60 | **移除 detector.py 内部 import ET 遮蔽** | 函数内 `import xml.etree.ElementTree as ET` 遮蔽顶层导入，兄弟 POM 扫描路径中 `ET` 未绑定导致 `UnboundLocalError`。顶层导入已覆盖所有使用点 | 2026-07-16 | ✅ |
 
 ## Init → Loop 契约（Manifest）
 
@@ -287,16 +290,14 @@ Init 完成初始化时写入 `.ae-state/init-manifest.json`（schema 1.1），L
 
 ## 当前状态
 
-**阶段：** v5.6 Phase F — 检测层模块路径修复 + 同级 POM 扫描
+**阶段：** v5.6 Phase G — 检测层深度修复（spec-doc 误判 + exclude 时序 + import 遮蔽）
 
-**最近动作：** 2026-07-16 — Phase D+E+F 实施完成。
-- Phase D（模板工程化修复）：测试目录统一（6 语言 → 根级 tests/）、Monorepo Java tests/ 独立 Maven 模块、Maven testSourceDirectory 统一、Maven wrapper jar 内嵌、模块磁盘校验、增量排除范围精确化（packages/** → packages/**/src/main/**）、Go/Rust 测试惯例对齐
-- Phase E（Phase 4 任务分层）：monorepo/ae-template.yml 新增 `_tasks`，Phase 4 bash 任务对 Java 多模块项目动态生成 per-module 测试骨架（`{module}/src/test/java/{pkg}/ModuleTest.java`），幂等（已有则跳过），跳过 tests 根模块
-- Phase F（检测层修复 — TMP-for-init 故障报告根因）：3 项修复
-  1. 模块路径前缀：`analyze_java()` 计算 aggregator_path，`tmp/pom.xml` 的模块路径从 `tmp-boot` → `tmp/tmp-boot`
-  2. 同级 POM 扫描：`detector.py` 扫项目根目录 pom.xml，通过 `<parent>` 引用识别独立模块（tmp-manage/tmp-window）
-  3. 增量结构防护：`aggregator_path` 非空时排除根级 pom.xml + packages/ 模板
-  4. 磁盘校验顺序修复：校验在路径拼接前执行，使用原始模块名避免假阳性
+**最近动作：** 2026-07-16 — Phase D+E+F+G 实施完成。
+- Phase G（检测层深度修复 — TMP-for-init 实战验证）：3 个根因 bug
+  1. spec-doc 签名 `design/*.md` 过于宽泛 → 深度分析覆盖签名级类型
+  2. exclude 在 .jinja 后缀移除前检查 → 增加输出路径二次检查
+  3. 内部 import ET 遮蔽顶层导入 → 移除重复 import
+  修复后 TMP-for-init 验证：project_type=monorepo ✓, 10 模块测试文件 ✓, 无根 pom.xml ✓, 无 packages/ ✓
 
 **下一步：** 无阻塞项。可推进 Phase F（monorepo 非 Java 语言 per-module 测试生成）或 bug 修复
 
@@ -306,7 +307,7 @@ Init 完成初始化时写入 `.ae-state/init-manifest.json`（schema 1.1），L
 
 | 日期 | 变更 | 原因 |
 |------|------|------|
-| 2026-07-16 | Phase D+E+F 模板工程化 + Phase 4 分层 + 检测层修复 | Phase D（7 项模板修复）：测试目录统一、Monorepo Java tests/ Maven 模块、testSourceDirectory、wrapper jar、模块校验、排除精确化、Go/Rust 惯例。Phase E（任务分层）：monorepo _tasks per-module 测试生成。Phase F（检测层根因修复）：模块路径前缀、同级 POM 扫描、增量结构防护、磁盘校验顺序修复。TMP-for-init 故障报告 6 问题全部解决 |
+| 2026-07-16 | Phase D+E+F+G 模板工程化 + 检测修复 + 实战验证 | Phase G（3 根因 bug）：spec-doc 误判（design/*.md 太宽泛）、exclude 时序（.jinja 前检查）、import 遮蔽（UnboundLocalError）。TMP-for-init 实战验证：10 模块全生成、类型正确、结构无污染 |
 | 2026-07-15 | Phase C 存量项目增量初始化修复 | 根因：Phase 1 实现添加了设计未规定的 .ae-answers.yml 前提条件。修复：8 项改动 — detect 移除前提、brownfield 模板分类、analyze 缺失检测、pretend 文件清单、CLI 非 TTY 行为修正、SKILL.md 决策树 |
 | 2026-07-15 | Phase A 实现完成 | detector_qoder.py 拆为 6 子函数、_qoder_info 5 新字段、as_answers() 6 新变量、ae analyze 5 段分层输出、655 tests pass |
 | 2026-07-15 | v5.6 多层深度分析设计 | ae analyze 从单层检测升级为 3 层分析（源代码/隐藏目录/设计文档），AnalysisReport 结构化输出，15+ 新模板变量 |

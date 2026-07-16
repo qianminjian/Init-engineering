@@ -1,6 +1,6 @@
 # TASKS.md — 任务跟踪表
 
-> 创建：2026-07-14 | 更新：2026-07-16（v5.6 Phase D+E+F 完成）
+> 创建：2026-07-14 | 更新：2026-07-16（v5.6 Phase D+E+F+G 完成）
 
 > 用途：本项目唯一的任务跟踪文件。所有待办、进行中、已完成、已延后的任务在此记录。
 
@@ -294,6 +294,45 @@
 - **Bash 逻辑**：`IFS=',' read -ra` 分割逗号分隔模块列表，`xargs` 修剪空白，`tr '.' '/'` 转换包路径
 - **跳过规则**：空模块名、`tests` 根模块、已有 `src/test/java/` 的模块
 - **生成产物**：`{module}/src/test/java/{group_id_path}/ModuleTest.java`（JUnit 5 骨架）
+
+---
+
+## §v5.6-Phase-F — 检测层根因修复 ✅（2026-07-16 完成）
+
+**背景**：TMP-for-init 故障报告 6 个问题。测试目录反复生成失败 10+ 次的根因不在模板层（Phase D/E），而在检测层——模块路径扁平化、同级 POM 漏检、增量模式结构冲突。
+
+**设计**：BEACON.md 决策 58-60。
+
+### 问题 → 修复映射
+
+| # | 问题 | 严重度 | 根因 | 修复 | 文件 |
+|---|------|--------|------|------|------|
+| 1 | spec-doc 误判绕过 monorepo 路径 | P0 | `design/*.md` 签名匹配任何有设计文档的项目，project_type 在深度分析前被确定为 spec-doc | 深度分析检测到语言+monorepo 时覆盖签名级类型 | `detector.py` |
+| 2 | `/pom.xml` exclude 从未生效 | P1 | `_is_excluded()` 检查模板源路径（含 `.jinja`），`/pom.xml` 无法匹配 `pom.xml.jinja` | 输出路径（去 .jinja 后）二次检查 | `renderer.py` |
+| 3 | 兄弟 POM 扫描 UnboundLocalError | P0 | 函数内 `import ET` 遮蔽顶层导入，代码路径未经过内部 import 时 ET 未绑定 | 移除重复内部 import | `detector.py` |
+
+### 修复详情
+
+| # | 任务 | 文件 | 描述 | 状态 |
+|---|------|------|------|------|
+| PG-1 | spec-doc 覆盖 | `detector.py` | `result.language is not None and "monorepo" in candidates` → 覆盖 project_type | ✅ |
+| PG-2 | exclude 输出路径检查 | `renderer.py` | 去 .jinja 后缀后用 `self._exclude_matcher(rendered_rel)` 再检查 | ✅ |
+| PG-3 | 移除内部 import ET | `detector.py` | 删除 L130 `import xml.etree.ElementTree as ET`，使用顶层导入 | ✅ |
+| PG-4 | TMP-for-init 实战验证 | - | project_type=monorepo, 10/10 模块测试文件, 无根 pom.xml, 无 packages/ | ✅ |
+| PG-5 | 全量测试 | `tests/` | 655 passed, 0 failed | ✅ |
+
+### TMP-for-init 验证结果
+
+| 检查项 | 结果 |
+|--------|------|
+| project_type | monorepo ✅ |
+| 根 pom.xml | 未生成 ✅ |
+| packages/ | 未生成 ✅ |
+| tmp/tmp-boot~tmp-workflows (8) | src/test/java/ModuleTest.java ✅ |
+| tmp-manage | src/test/java/ModuleTest.java ✅ |
+| tmp-window | src/test/java/ModuleTest.java ✅ |
+| 模块路径前缀 | tmp/tmp-boot ✅ |
+| 同级 POM 识别 | tmp-manage, tmp-window ✅ |
 
 ---
 
