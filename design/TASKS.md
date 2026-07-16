@@ -336,6 +336,32 @@
 
 ---
 
+## §v5.6-Phase-H — 内容感知类型推断 ✅（2026-07-16 完成）
+
+**背景**：Phase G 修复了 spec-doc 签名过于宽泛的问题，但内容推断仅扫描 `design/*.md`。voice_clone_for_auto_design 设计文档（`需求提示词.md`）在根目录，无 `design/` 目录，零签名匹配。voice_clone_for_auto_test-2 的 design/ 目录下文档被正确推断，但根目录设计文档项目无法覆盖。
+
+**设计**：BEACON.md 决策 61。
+
+### 修复详情
+
+| # | 任务 | 文件 | 描述 | 状态 |
+|---|------|------|------|------|
+| PH-1 | 扫描范围扩展 | `detector.py:_infer_type_from_design_docs` | 同时扫描根目录 *.md + design/*.md | ✅ |
+| PH-2 | 触发条件扩展 | `detector.py:analyze()` | project_type in (None, "spec-doc")，覆盖零签名匹配 | ✅ |
+| PH-3 | 关键词表 | `detector_constants.py` | TYPE_HINT_KEYWORDS: app-service/cli-tool/library 中英文 | ✅ |
+| PH-4 | voice_clone_for_auto_design 验证 | - | 根目录需求提示词.md → app-service ✅ | ✅ |
+| PH-5 | 回归验证 | - | voice_clone_for_auto_test-2 → app-service ✅, TMP-for-init → monorepo ✅ | ✅ |
+
+### 验证结果
+
+| 测试项目 | 签名匹配 | 构建文件 | 推断来源 | 最终类型 |
+|---------|---------|---------|---------|---------|
+| voice_clone_for_auto_test-2 | spec-doc (design/*.md) | 无 | design/*.md 关键词 | app-service ✅ |
+| voice_clone_for_auto_design | 无 | 无 | 根目录 *.md 关键词 | app-service ✅ |
+| TMP-for-init | spec-doc, monorepo | Java/Maven | 深度分析（构建系统） | monorepo ✅ |
+
+---
+
 ## §v5.6-Phase-F — 检测层根因修复 ✅（2026-07-16 完成）
 
 **背景**：TMP-for-init 故障报告 6 个问题。测试目录反复生成失败 10+ 次的根因不在模板层（Phase D/E），而在检测层——模块路径扁平化、同级 POM 漏检、增量模式结构冲突。

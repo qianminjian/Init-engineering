@@ -1,4 +1,4 @@
-> 创建：2026-06-24 | 更新：2026-07-16 | 阶段：v5.6 Phase G — 检测层深度修复（spec-doc 误判 + exclude 时序 + import 遮蔽）
+> 创建：2026-06-24 | 更新：2026-07-16 | 阶段：v5.6 Phase H — 内容感知类型推断（扫描 *.md 推断项目意图）
 
 # BEACON.md — Init Engineering 设计基线
 
@@ -277,6 +277,7 @@ ae init ──→ phase_prompt()
 | 58 | **深度分析覆盖签名级类型** | spec-doc 的 `design/*.md` 签名过于宽泛，任何有设计文档的项目都会被误判。深度分析检测到具体构建系统时（language 非空 + monorepo 候选），覆盖签名级 project_type | 2026-07-16 | ✅ |
 | 59 | **exclude 检查在 .jinja 后缀移除后** | 之前的 `_is_excluded()` 检查模板源路径（含 `.jinja`），导致 `/pom.xml` 无法匹配 `pom.xml.jinja`。增加输出路径二次检查，使 exclude 对渲染产物生效 | 2026-07-16 | ✅ |
 | 60 | **移除 detector.py 内部 import ET 遮蔽** | 函数内 `import xml.etree.ElementTree as ET` 遮蔽顶层导入，兄弟 POM 扫描路径中 `ET` 未绑定导致 `UnboundLocalError`。顶层导入已覆盖所有使用点 | 2026-07-16 | ✅ |
+| 61 | **内容感知类型推断（Phase H）** | spec-doc 签名仅在 `design/` 目录存在时匹配，无法覆盖设计文档在根目录的项目（如 voice_clone_for_auto_design 的 `需求提示词.md`）。内容推断扫描根目录 *.md + design/*.md，按 TYPE_HINT_KEYWORDS 中英文关键词计分（≥2）。推断条件扩展为 project_type in (None, "spec-doc")，覆盖零签名匹配项目 | 2026-07-16 | ✅ |
 
 ## Init → Loop 契约（Manifest）
 
@@ -290,16 +291,18 @@ Init 完成初始化时写入 `.ae-state/init-manifest.json`（schema 1.1），L
 
 ## 当前状态
 
-**阶段：** v5.6 Phase G — 检测层深度修复（spec-doc 误判 + exclude 时序 + import 遮蔽）
+**阶段：** v5.6 Phase H — 内容感知类型推断（扫描 *.md 推断项目意图）
 
-**最近动作：** 2026-07-16 — Phase D+E+F+G 实施完成。
-- Phase G（检测层深度修复 — TMP-for-init 实战验证）：3 个根因 bug
-  1. spec-doc 签名 `design/*.md` 过于宽泛 → 深度分析覆盖签名级类型
-  2. exclude 在 .jinja 后缀移除前检查 → 增加输出路径二次检查
-  3. 内部 import ET 遮蔽顶层导入 → 移除重复 import
-  修复后 TMP-for-init 验证：project_type=monorepo ✓, 10 模块测试文件 ✓, 无根 pom.xml ✓, 无 packages/ ✓
+**最近动作：** 2026-07-16 — Phase D+E+F+G+H 实施完成。
+- Phase H（内容感知类型推断）：解决无 design/ 目录但有根目录设计文档的项目无法检测类型的问题
+  1. `_infer_type_from_design_docs` 同时扫描根目录 *.md 和 design/*.md
+  2. 推断触发条件扩展为 project_type in (None, "spec-doc")，覆盖零签名匹配项目
+  3. TYPE_HINT_KEYWORDS 中英文关键词分 app-service/cli-tool/library 三类
+  voice_clone_for_auto_design（需求提示词.md 在根目录）验证通过：app-service ✓
+  voice_clone_for_auto_test-2 回归验证通过：app-service ✓
+  TMP-for-init 回归验证通过：monorepo ✓
 
-**下一步：** 无阻塞项。可推进 Phase F（monorepo 非 Java 语言 per-module 测试生成）或 bug 修复
+**下一步：** 无阻塞项。可推进 Phase I（更多语言关键词补充）或 bug 修复
 
 **阻塞项：** 无
 
@@ -307,6 +310,7 @@ Init 完成初始化时写入 `.ae-state/init-manifest.json`（schema 1.1），L
 
 | 日期 | 变更 | 原因 |
 |------|------|------|
+| 2026-07-16 | Phase H 内容感知类型推断 | 根因：design/*.md 签名无法匹配根目录设计文档项目（如 voice_clone_for_auto_design）。修复：`_infer_type_from_design_docs` 同时扫描根目录 *.md + design/*.md，触发条件扩展为 project_type in (None, "spec-doc")。3 项目回归全部通过 |
 | 2026-07-16 | Phase D+E+F+G 模板工程化 + 检测修复 + 实战验证 | Phase G（3 根因 bug）：spec-doc 误判（design/*.md 太宽泛）、exclude 时序（.jinja 前检查）、import 遮蔽（UnboundLocalError）。TMP-for-init 实战验证：10 模块全生成、类型正确、结构无污染 |
 | 2026-07-15 | Phase C 存量项目增量初始化修复 | 根因：Phase 1 实现添加了设计未规定的 .ae-answers.yml 前提条件。修复：8 项改动 — detect 移除前提、brownfield 模板分类、analyze 缺失检测、pretend 文件清单、CLI 非 TTY 行为修正、SKILL.md 决策树 |
 | 2026-07-15 | Phase A 实现完成 | detector_qoder.py 拆为 6 子函数、_qoder_info 5 新字段、as_answers() 6 新变量、ae analyze 5 段分层输出、655 tests pass |
