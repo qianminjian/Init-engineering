@@ -258,6 +258,27 @@ def analyze_java(pom_path: Path, result: DetectionResult) -> DetectionResult:
         else result.project_description
     )
 
+    # v5.6: 校验 pom.xml 声明的模块是否在磁盘上存在
+    project_dir = pom_path.parent
+    missing_modules: list[str] = []
+    extra_dirs: list[str] = []
+    if is_multi_module and modules:
+        disk_dirs = {d.name for d in project_dir.iterdir() if d.is_dir() and not d.name.startswith(".")}
+        declared = set(modules)
+        missing_modules = sorted(declared - disk_dirs)
+        # 磁盘上存在的目录但未在 pom.xml 声明（排除已知非模块目录）
+        _known_non_module = {"src", "target", "design", "docs", "_scratch", ".github", ".mvn"}
+        potential_extra = sorted(disk_dirs - declared - _known_non_module)
+        # 只标记包含 src/ 或 pom.xml 的目录为可能遗漏的模块
+        extra_dirs = [d for d in potential_extra
+                      if (project_dir / d / "pom.xml").exists()
+                      or (project_dir / d / "src").exists()]
+    if missing_modules:
+        _logger.warning(
+            "pom.xml 声明了 %d 个模块在磁盘上不存在: %s",
+            len(missing_modules), ", ".join(missing_modules),
+        )
+
     # Store extra detection info for downstream use
     if result._java_info is None:
         result._java_info = {}
@@ -272,6 +293,8 @@ def analyze_java(pom_path: Path, result: DetectionResult) -> DetectionResult:
         "build_tool": "maven",
         "dependencies": dependencies,
         "modules": modules,
+        "module_missing": missing_modules,
+        "module_extra_dirs": extra_dirs,
     })
 
     return result

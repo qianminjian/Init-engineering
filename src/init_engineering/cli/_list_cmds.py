@@ -202,6 +202,13 @@ def cmd_analyze(
         click.echo(f"  多模块项目 ({len(java_mods)} 个子模块):")
         for mod in java_mods:
             click.echo(f"    • {mod}")
+        # v5.6: 模块-磁盘校验 — 标记 pom.xml <modules> 与磁盘目录不一致
+        missing = result._java_info.get("module_missing", []) if result._java_info else []
+        extra = result._java_info.get("module_extra_dirs", []) if result._java_info else []
+        if missing:
+            click.echo(f"  ⚠ pom.xml 声明但磁盘不存在的模块: {', '.join(missing)}")
+        if extra:
+            click.echo(f"  ⚠ 磁盘存在但未在 pom.xml 声明的模块: {', '.join(extra)}")
     else:
         qoder_mods = result._qoder_info.get("module_count") if result._qoder_info else 0
         if qoder_mods:

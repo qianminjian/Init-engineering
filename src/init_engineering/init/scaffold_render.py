@@ -193,13 +193,13 @@ def render_to(
         external_template_dir=external_template_dir,
     )
 
-    # v5.3: 多模块项目 — 不生成根级 src/
-    # v5.6: 增量模式 — 存量 monorepo 项目已有自己的模块结构，
-    #        跳过 packages/** 示例模块（如 packages/shared/）
+    # v5.3: 多模块项目 — 不生成根级 src/（各子模块有自己的源码）
+    # v5.6: 增量模式 — 存量 monorepo 项目已有模块结构，
+    #        跳过 packages/**/src/main/**（不覆盖已有源码），保留 test + pom.xml 等配置
     if context.get("is_multi_module"):
         exclude = list(exclude) + ["src/**"]
     if mode == "incremental" and context.get("project_type") == "monorepo":
-        exclude = list(exclude) + ["packages/**"]
+        exclude = list(exclude) + ["packages/**/src/main/**"]
 
     # P1.2: 解析 exclude_callback_spec → 可调用对象
     # ImportError: 模板模块不存在 → 回退(非阻断)
