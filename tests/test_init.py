@@ -144,7 +144,7 @@ class TestInitMultiLayerTemplates:
         for fname in ts_files:
             assert (target / fname).exists(), f"Missing TS file: {fname}"
         assert (target / "src" / "index.ts").exists(), "Missing TS file: src/index.ts"
-        assert (target / "src" / "index.test.ts").exists(), "Missing TS file: src/index.test.ts"
+        assert (target / "tests" / "index.test.ts").exists(), "Missing TS file: tests/index.test.ts"
 
     def test_all_project_types_generate_shared(self):
         """All 8 project types generate shared templates."""

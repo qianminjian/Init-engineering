@@ -75,7 +75,7 @@ java_version:
 java_modules:
   type: str
   help: Maven module 路径（逗号分隔，留空跳过根 POM 聚合）
-  default: "module1,module2"
+  default: "module1,module2,tests"
   when: "{{ language == 'java' }}"
 
 ci_platform:

@@ -44,6 +44,7 @@
     </dependencies>
 
     <build>
+        <testSourceDirectory>tests</testSourceDirectory>
         <plugins>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
@@ -72,5 +73,9 @@
         </dependency>
 {% endif %}
     </dependencies>
+
+    <build>
+        <testSourceDirectory>tests</testSourceDirectory>
+    </build>
 {% endif %}
 </project>
