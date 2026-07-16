@@ -1,8 +1,6 @@
 # TASKS.md — 任务跟踪表
 
-> 创建：2026-07-14 | 更新：2026-07-15（E2E 测试 + 3 Bug 修复完成）
-
-# TASKS.md — 任务跟踪表
+> 创建：2026-07-14 | 更新：2026-07-16（v5.6 Phase D+E 完成）
 
 > 用途：本项目唯一的任务跟踪文件。所有待办、进行中、已完成、已延后的任务在此记录。
 
@@ -227,6 +225,75 @@
 | `templates/monorepo/java/CLAUDE.md.jinja` | Tech Stack 段追加 qoder_tech_stack_summary |
 | `tests/test_cli_commands.py` | 6 处断言更新（"分析目录"→"项目身份"，"使用 --type 指定类型"→"手动指定"） |
 | `tests/test_cli_integration.py` | 2 处断言更新（同上） |
+
+---
+
+## §v5.6-Phase-D 模板工程化修复 ✅（2026-07-16 完成）
+
+**背景**：故障报告 `ae-init-incremental-2026-07-16.md`（P0: 测试文件未生成/sub-module pom.xml 缺失/source entry 缺失，P1: Maven wrapper jar 缺失/模块名不匹配，P2: pre-commit 空 shell）。根因：monorepo 模板设计为 TypeScript-only，Java monorepo 的测试目录、Maven wrapper、模块校验等均未覆盖。
+
+**设计**：BEACON.md 决策 47-53。
+
+| # | 任务 | 文件 | 描述 | 状态 |
+|---|------|------|------|------|
+| PD-1 | 测试目录统一 | `_features/{ts,java,go,bash,rust}/tests/` + `monorepo/{java,ts,python,go,rust}/tests/` | 6 语言测试文件从 src/ 移到根级 tests/，独立于源码目录 | ✅ |
+| PD-2 | Monorepo Java tests/ Maven 模块 | `monorepo/java/tests/pom.xml.jinja` + `MonorepoTest.java.jinja` | tests/ 作为独立 Maven 模块，parent 引用根 POM，testSourceDirectory=. | ✅ |
+| PD-3 | Maven testSourceDirectory 统一 | `_features/java/pom.xml.jinja` | app-service + library 添加 `<testSourceDirectory>tests</testSourceDirectory>` | ✅ |
+| PD-4 | Maven wrapper jar 内嵌 | `_features/java/.mvn/wrapper/maven-wrapper.jar` | 63KB 二进制从 Maven Central v3.3.2 下载纳入模板 | ✅ |
+| PD-5 | .gitignore 白名单 | `_shared/.gitignore.jinja` | Java 块添加 `!.mvn/wrapper/maven-wrapper.jar` | ✅ |
+| PD-6 | 模块磁盘校验 | `detector_analyzers.py` + `_list_cmds.py` | analyze_java() 对比 pom.xml modules vs 磁盘目录，输出缺失/多余模块警告 | ✅ |
+| PD-7 | 增量排除范围精确化 | `scaffold_render.py` | `packages/**` → `packages/**/src/main/**`，保留测试模板和 pom.xml | ✅ |
+| PD-8 | monorepo/ae-template.yml java_modules 默认值 | `monorepo/ae-template.yml` | 默认 `"module1,module2"` → `"module1,module2,tests"` | ✅ |
+| PD-9 | Go/Rust 测试惯例对齐 | `monorepo/go/tests/main_test.go.jinja` + `monorepo/rust/tests/test_lib.rs.jinja` | Go 使用 package main_test 黑盒测试，Rust 使用 tests/ cargo 集成测试 | ✅ |
+| PD-10 | 测试断言更新 | `tests/test_init.py:147` | `src/index.test.ts` → `tests/index.test.ts` | ✅ |
+
+### 变更摘要
+
+| 文件 | 变更 |
+|------|------|
+| `_features/typescript/tests/index.test.ts.jinja` | 从 `src/index.test.ts.jinja` 移动 |
+| `_features/java/tests/MainTest.java.jinja` | 从 `src/test/java/com/example/app/MainTest.java.jinja` 移动 |
+| `_features/go/tests/main_test.go.jinja` | 从 `{{ project_name }}/main_test.go.jinja` 移动 |
+| `_features/bash/tests/test_hello.sh.jinja` | 从 `test_hello.sh.jinja` 移动 |
+| `_features/rust/tests/test_main.rs.jinja` | 新建 |
+| `monorepo/java/tests/MonorepoTest.java.jinja` | 新建 |
+| `monorepo/java/tests/pom.xml.jinja` | 新建（Maven 模块 POM） |
+| `monorepo/typescript/tests/index.test.ts.jinja` | 新建 |
+| `monorepo/python/tests/test_hello.py.jinja` | 新建 |
+| `monorepo/go/tests/main_test.go.jinja` | 新建 |
+| `monorepo/rust/tests/test_lib.rs.jinja` | 新建 |
+| `_features/java/pom.xml.jinja` | 添加 `<testSourceDirectory>tests</testSourceDirectory>`（app-service + library 双分支） |
+| `_features/java/.mvn/wrapper/maven-wrapper.jar` | 新建（63KB 二进制） |
+| `_shared/.gitignore.jinja` | 添加 `!.mvn/wrapper/maven-wrapper.jar` |
+| `detector_analyzers.py:261-293` | 添加 module-disk validation |
+| `_list_cmds.py:205-210` | 添加 module mismatch 警告 |
+| `scaffold_render.py:199-203` | 增量排除 `packages/**/src/main/**`，新增 incremental monorepo 排除 |
+| `monorepo/ae-template.yml:78` | java_modules 默认值更新 |
+| `tests/test_init.py:147` | 断言路径更新 |
+
+---
+
+## §v5.6-Phase-E Phase 4 任务分层 ✅（2026-07-16 完成）
+
+**背景**：模板引擎为 1:1 静态文件映射，无法为 `java_modules` 中动态检测的模块列表生成 per-module 测试。根级别 `tests/` Maven 模块由模板覆盖，但 `{module}/src/test/java/` 需要运行时动态生成。
+
+**设计**：BEACON.md 决策 52 — Phase 4 任务分层：模板覆盖根级别骨架，`_tasks` 负责模块级动态补充。
+
+| # | 任务 | 文件 | 描述 | 状态 |
+|---|------|------|------|------|
+| PE-1 | monorepo _tasks 新增 | `monorepo/ae-template.yml` | 新增 `_tasks` 块（39 行），Phase 4 bash 任务 | ✅ |
+| PE-2 | bash 脚本：per-module 测试生成 | 同上 | 遍历 `java_modules`，检查 `{module}/src/test/java/` 是否存在，缺则生成 JUnit 5 骨架 | ✅ |
+| PE-3 | when 条件 | 同上 | `language == 'java' and java_modules | default('') | trim` | ✅ |
+| PE-4 | 幂等性 | 同上 | `[ ! -d "$TD" ]` 保证已存在测试目录不覆盖 | ✅ |
+| PE-5 | 全量测试验证 | `tests/` | 655 passed, 0 failed | ✅ |
+
+### 技术细节
+
+- **执行层**：`TaskRunner.run()` → `subprocess_run(["bash", "-c", "<script>"], cwd=tmpdir)`，`shell=False`（list cmd 模式）
+- **Jinja2 渲染**：`{{ java_modules }}`、`{{ java_group_id }}` 在 bash 执行前由 SandboxedEnvironment 渲染
+- **Bash 逻辑**：`IFS=',' read -ra` 分割逗号分隔模块列表，`xargs` 修剪空白，`tr '.' '/'` 转换包路径
+- **跳过规则**：空模块名、`tests` 根模块、已有 `src/test/java/` 的模块
+- **生成产物**：`{module}/src/test/java/{group_id_path}/ModuleTest.java`（JUnit 5 骨架）
 
 ---
 

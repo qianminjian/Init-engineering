@@ -1,4 +1,4 @@
-> 创建：2026-06-24 | 更新：2026-07-15 | 阶段：v5.6 Phase C — 存量项目增量初始化修复
+> 创建：2026-06-24 | 更新：2026-07-16 | 阶段：v5.6 Phase E — 模板工程化修复 + Phase 4 任务分层
 
 # BEACON.md — Init Engineering 设计基线
 
@@ -260,9 +260,16 @@ ae init ──→ phase_prompt()
 | 41 | **ae analyze 增加缺失工程文件检测** | 检测并报告：.editorconfig / .gitignore / CLAUDE.md / README.md / LICENSE / .github/workflows/ / .gitlab-ci.yml / .pre-commit-config.yaml / lefthook.yml / src/test/ 目录。输出补全建议清单 | 2026-07-15 | ✅ |
 | 42 | **非 TTY + --incremental 不再自动覆盖为 --defaults** | --incremental 显式传入时保持用户意图，不自动追加 --defaults。增量模式自身已隐含非交互（不弹问答），无需借道 --defaults | 2026-07-15 | ✅ |
 | 43 | **--pretend 输出完整文件清单** | render 阶段完成后，列出所有将要生成的文件路径。存量项目用户可据此评估影响，决定是否执行 | 2026-07-15 | ✅ |
-| 44 | **增量模式排除 monorepo packages/ 示例模块** | 存量 monorepo 项目已有自己的模块结构，跳过 packages/** 示例模板 | 2026-07-15 | ✅ |
+| 44 | **增量模式排除范围精确化** | 存量 monorepo 项目跳过 `packages/**/src/main/**`（示例源码），保留 src/test/**（测试模板）+ pom.xml（配置模板）| 2026-07-15 | ✅ (v5.6 Phase D: 范围精确化) |
 | 45 | **analyze 输出增加初始化模式推荐** | 根据项目状态推荐正确命令：空目录→--defaults，存量项目→--incremental，有 .ae-answers.yml→--incremental（基线对比）。不再并列推荐不适用选项 | 2026-07-15 | ✅ |
 | 46 | **Incremental 不弹交互** | --incremental 自己设置 non_interactive 内部标志，不依赖 --defaults。检测结果从 Phase 1 流入 AnswersMap.defaults，无需用户输入 | 2026-07-15 | ✅ |
+| 47 | **测试目录统一：所有语言使用根级 tests/** | 所有类型（TypeScript/Python/Go/Rust/Java/Bash）测试文件从源码同目录移到根级 tests/，独立于源码目录。解决测试文件散落在 src/ 各处的结构不一致问题 | 2026-07-16 | ✅ |
+| 48 | **Monorepo Java tests/ 作为独立 Maven 模块** | tests/ 有自己的 pom.xml（parent 引用根 POM，`<testSourceDirectory>.</testSourceDirectory>`），解决多模块项目中测试编译/运行隔离问题。默认加入 java_modules 列表 | 2026-07-16 | ✅ |
+| 49 | **Maven testSourceDirectory 统一** | app-service 和 library 的 pom.xml.jinja 添加 `<testSourceDirectory>tests</testSourceDirectory>`，与物理 tests/ 目录保持一致 | 2026-07-16 | ✅ |
+| 50 | **Maven wrapper jar 内嵌模板** | `.mvn/wrapper/maven-wrapper.jar`（63KB, v3.3.2）纳入 _features/java 模板，确保 mvnw 开箱即用。.gitignore 添加 `!.mvn/wrapper/maven-wrapper.jar` 白名单 | 2026-07-16 | ✅ |
+| 51 | **模块磁盘校验** | `analyze_java()` 对比 pom.xml `<modules>` 与实际磁盘目录，检测缺失模块和磁盘存在但未声明的模块，在 `ae analyze` 输出中警告 | 2026-07-16 | ✅ |
+| 52 | **Phase 4 任务分层：模板 + 任务双轨** | 模板覆盖根级别骨架（如 tests/ Maven 模块），Phase 4 `_tasks` 负责模块级动态补充（如 Java per-module test generation）。解决模板 1:1 静态映射无法覆盖动态模块列表的问题 | 2026-07-16 | ✅ |
+| 53 | **Go/Rust 测试惯例对齐** | Go monorepo 使用 `package main_test` 黑盒测试惯例；Rust monorepo 使用 `tests/` 目录（cargo test 自动发现集成测试） | 2026-07-16 | ✅ |
 
 ## Init → Loop 契约（Manifest）
 
@@ -276,14 +283,15 @@ Init 完成初始化时写入 `.ae-state/init-manifest.json`（schema 1.1），L
 
 ## 当前状态
 
-**阶段：** v5.6 Phase C — 存量项目增量初始化修复
+**阶段：** v5.6 Phase E — 模板工程化修复 + Phase 4 任务分层
 
-**最近动作：** 2026-07-15 — Phase C 设计完成，开始实施。
-- 根因确认：phases/detect.py 在实现时添加了设计未规定的 `.ae-answers.yml` 前提条件
-- 设计方案：8 项修改（detect/prompt/render/finalize/analyze/CLI/SKILL.md）
+**最近动作：** 2026-07-16 — Phase D+E 实施完成。
+- Phase D（模板工程化修复）：测试目录统一（6 语言 → 根级 tests/）、Monorepo Java tests/ 独立 Maven 模块、Maven testSourceDirectory 统一、Maven wrapper jar 内嵌、模块磁盘校验、增量排除范围精确化（packages/** → packages/**/src/main/**）、Go/Rust 测试惯例对齐
+- Phase E（Phase 4 任务分层）：monorepo/ae-template.yml 新增 `_tasks`，Phase 4 bash 任务对 Java 多模块项目动态生成 per-module 测试骨架（`{module}/src/test/java/{pkg}/ModuleTest.java`），幂等（已有则跳过），跳过 tests 根模块
 - Phase A+B 已完成（Qoder 深度提取 + 设计文档发现）
+- Phase C 已完成（存量项目增量初始化修复）
 
-**下一步：** 实施 8 项代码修改 + 测试更新
+**下一步：** 无阻塞项。可推进 Phase F（monorepo 非 Java 语言 per-module 测试生成）或 bug 修复
 
 **阻塞项：** 无
 
@@ -291,6 +299,7 @@ Init 完成初始化时写入 `.ae-state/init-manifest.json`（schema 1.1），L
 
 | 日期 | 变更 | 原因 |
 |------|------|------|
+| 2026-07-16 | Phase D+E 模板工程化修复 + Phase 4 任务分层 | Phase D（7 项模板修复）：测试目录统一 6 语言 → 根级 tests/、Monorepo Java tests/ 独立 Maven 模块、Maven testSourceDirectory 统一、Maven wrapper jar 内嵌、模块磁盘校验、增量排除精确化、Go/Rust 测试惯例对齐。Phase E（Phase 4 任务分层）：monorepo/ae-template.yml 新增 `_tasks`，Phase 4 bash 任务对 Java 多模块项目动态生成 per-module 测试骨架 |
 | 2026-07-15 | Phase C 存量项目增量初始化修复 | 根因：Phase 1 实现添加了设计未规定的 .ae-answers.yml 前提条件。修复：8 项改动 — detect 移除前提、brownfield 模板分类、analyze 缺失检测、pretend 文件清单、CLI 非 TTY 行为修正、SKILL.md 决策树 |
 | 2026-07-15 | Phase A 实现完成 | detector_qoder.py 拆为 6 子函数、_qoder_info 5 新字段、as_answers() 6 新变量、ae analyze 5 段分层输出、655 tests pass |
 | 2026-07-15 | v5.6 多层深度分析设计 | ae analyze 从单层检测升级为 3 层分析（源代码/隐藏目录/设计文档），AnalysisReport 结构化输出，15+ 新模板变量 |
@@ -300,10 +309,6 @@ Init 完成初始化时写入 `.ae-state/init-manifest.json`（schema 1.1），L
 | 2026-07-14 | v5.4 幻肢审计 + 完整性设计 | _external_data 有路无车、analyze_* 采集后丢弃、as_answers 暴露不足、模板不消费检测数据 |
 | 2026-07-14 | 设计文档合并为单一 BEACON.md + TASKS.md | 8 个设计文档分散 |
 | 2026-07-14 | v5.3 信息流修复 | detect→prompt→render 信息链路断裂 |
-| 2026-07-14 | --include-hidden 扫描隐藏目录 | .qoder 等反向工程资产被系统性跳过 |
-| 2026-07-14 | R8 审计 16 项修复 + pipeline 绕过阻断 | P0 _logger 回归修复 |
-| 2026-07-08 | 深度审计 9 轮 (R1-R8) | 8 维度扫描 |
-| 2026-07-02 | v1.0 投产就绪 7 项 | 版本号统一 / monorepo / detector 拆分 |
 
 ## 待解决问题
 
@@ -315,7 +320,11 @@ Init 完成初始化时写入 `.ae-state/init-manifest.json`（schema 1.1），L
 | [✓] | pipeline 绕过阻断 | SKILL.md MUST_READ + _required_outputs |
 | [✓] | v5.3 信息流修复 | detect→prompt→render 全链路打通 |
 | [✓] | v5.4 检测信息完整性 | 30+ 字段全量暴露 + 模板消费检测数据 + _external_data 桥 |
+| [✓] | v5.6 Phase C 存量项目增量初始化 | .ae-answers.yml 前提条件移除 + brownfield 模板分类 + analyze 缺失检测 |
+| [✓] | v5.6 Phase D 模板工程化修复 | 测试目录统一 + tests/ Maven 模块 + testSourceDirectory + wrapper jar + 模块校验 + 排除精确化 |
+| [✓] | v5.6 Phase E Phase 4 任务分层 | Java per-module test generation via _tasks |
 | [~] | answers.py 323 行 | 职责仍单一，暂不拆分 |
+| [Q?] | monorepo 非 Java 语言 per-module 测试生成 | TypeScript/Python/Go/Rust monorepo 是否需要按模块动态生成测试？当前仅有根级 tests/ 骨架 |
 
 ## 引用文件
 

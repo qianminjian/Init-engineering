@@ -92,6 +92,46 @@ use_docker:
   help: 添加 Docker 支持（Dockerfile + docker-compose）
   default: false
 
+# Phase 4 任务：对 Java 多模块项目，为每个声明的模块生成测试骨架
+# 模板覆盖根级别骨架（如 tests/ Maven 模块），本任务负责模块级动态补充
+_tasks:
+  - cmd:
+      - bash
+      - "-c"
+      - |
+        MODULES="{{ java_modules }}"
+        GROUP_ID="{{ java_group_id | default('') }}"
+        if [ -z "$MODULES" ] || [ -z "$GROUP_ID" ]; then
+          exit 0
+        fi
+        IFS=',' read -ra ML <<< "$MODULES"
+        for m in "${ML[@]}"; do
+          m=$(echo "$m" | xargs)
+          [ -z "$m" ] && continue
+          [ "$m" = "tests" ] && continue
+          TD="${m}/src/test/java"
+          if [ ! -d "$TD" ]; then
+            PKG_PATH=$(echo "$GROUP_ID" | tr '.' '/')
+            mkdir -p "${TD}/${PKG_PATH}"
+            cat > "${TD}/${PKG_PATH}/ModuleTest.java" << JAVAEOF
+        package ${GROUP_ID};
+
+        import org.junit.jupiter.api.Test;
+        import static org.junit.jupiter.api.Assertions.*;
+
+        class ModuleTest {
+            @Test
+            void testPlaceholder() {
+                assertTrue(true, "placeholder test for ${m} module");
+            }
+        }
+        JAVAEOF
+          fi
+        done
+    when: "{{ language == 'java' and java_modules | default('') | trim }}"
+    stage: after
+    working_directory: ""
+
 # Nested template variants — 按 language 注入对应语言的 workspace 模板
 _nested_templates:
   typescript:
