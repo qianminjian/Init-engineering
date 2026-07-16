@@ -122,20 +122,17 @@ Init-Engineering
 | `design/his_bak/v1.0-Design-Shared.md` | 共享架构、CLI 设计、共享契约 | Init/Loop 共享契约参考 |
 | `design/audit-backlog.md` | 已知但暂不修复的审计发现（避免重复报） | **任何审计前必须先读** |
 
-## 安装（两套路径，不可混用）
+## 安装
 
 ```bash
-# ae CLI 命令 — 全局安装（用户视角，GitHub 下载模式）
-uv tool install --force --reinstall "git+https://github.com/qianminjian/Init-engineering.git@main"
-# 安装到 ~/.local/share/uv/tools/init-engineering/，ae 命令在 ~/.local/bin/ae
+# 首次安装：从 GitHub 克隆到 skill 目录
+git clone https://github.com/qianminjian/Init-engineering.git ~/.claude/skills/ae-init/
 
-# 项目开发依赖 — 本地 .venv（测试/lint）
-uv sync --no-editable --dev --extra dev
-# 安装到项目 .venv/，不影响 ae 命令
+# 更新到最新版本
+cd ~/.claude/skills/ae-init && git pull origin main
 ```
 
-> ae 命令查找 `~/.local/bin/ae` → `~/.local/share/uv/tools/init-engineering/bin/python`。
-> `uv pip install` 到 `.venv` 不会更新 `ae` 命令。验证修复效果必须用 `uv tool install --force --reinstall`。
+> skill 目录是只读安装态，开发在项目目录进行。
 
 ## 核心命令
 
