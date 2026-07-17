@@ -84,7 +84,7 @@ def detect_test_runner(target_dir: Path, language: str | None = None) -> str | N
     if language == "rust":
         return "cargo test"
     if language == "java":
-        return "junit"
+        return "mvn test"
     return None
 
 

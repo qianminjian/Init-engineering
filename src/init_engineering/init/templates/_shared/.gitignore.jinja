@@ -2,16 +2,14 @@
 node_modules/
 {% if language == 'python' %}.venv/
 {% elif language == 'rust' %}target/
-{% endif %}
-
+{% endif -%}
 {% if language == 'typescript' or language == 'python' %}
 # Build output
 dist/
 build/
 {% if language == 'typescript' %}.vite/
-{% endif %}
-{% endif %}
-
+{% endif -%}
+{% endif -%}
 {% if language == 'python' %}
 # Python
 __pycache__/
@@ -19,8 +17,7 @@ __pycache__/
 *$py.class
 *.egg-info/
 .pytest_cache/
-{% endif %}
-
+{% endif -%}
 {% if language == 'java' %}
 # Java
 target/

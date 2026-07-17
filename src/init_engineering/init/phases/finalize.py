@@ -70,9 +70,10 @@ def phase_finalize(
             _manifest_files.append({"path": str(f.relative_to(dst_path)), "status": "created"})
         for f in skipped:
             _manifest_files.append({"path": str(f.relative_to(dst_path)), "status": "skipped"})
-        # Write manifest with file tracking
+        # Write manifest with file tracking — write to dst_path (not tmpdir),
+        # because merge_incremental has already run and tmpdir will be cleaned up.
         manifest = build_manifest(answers, project_type or "unknown", design_root=_design_root, files=_manifest_files if _manifest_files else None)
-        write_manifest(manifest, tmpdir)
+        write_manifest(manifest, dst_path)
         if not quiet:
             # PE-AUDIT-P0-2: 进度消息走 logger
             _logger.info(
