@@ -25,9 +25,11 @@
     "eslint": "^9",
     "@eslint/js": "^9",
     "typescript-eslint": "^8",
-    "prettier": "^3"
-    {% if test_runner == 'vitest' %},"vitest": "^3"{% endif %}
-    {% if test_runner == 'jest' %},"jest": "^30", "@types/jest": "^30", "ts-jest": "^30"{% endif %}
+    "prettier": "^3"{% if test_runner == 'vitest' %},
+    "vitest": "^3"{% endif %}{% if test_runner == 'jest' %},
+    "jest": "^30",
+    "@types/jest": "^30",
+    "ts-jest": "^30"{% endif %}
   }
 {% else %}
   "main": "dist/index.js",
@@ -44,9 +46,11 @@
     "eslint": "^9",
     "@eslint/js": "^9",
     "typescript-eslint": "^8",
-    "prettier": "^3"
-    {% if test_runner == 'vitest' %},"vitest": "^3"{% endif %}
-    {% if test_runner == 'jest' %},"jest": "^30", "@types/jest": "^30", "ts-jest": "^30"{% endif %}
+    "prettier": "^3"{% if test_runner == 'vitest' %},
+    "vitest": "^3"{% endif %}{% if test_runner == 'jest' %},
+    "jest": "^30",
+    "@types/jest": "^30",
+    "ts-jest": "^30"{% endif %}
   }
 {% endif %}
 }

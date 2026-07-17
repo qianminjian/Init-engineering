@@ -1,6 +1,6 @@
 # Dependencies
-node_modules/
-{% if language == 'python' %}.venv/
+{% if language in ('typescript', 'javascript') %}node_modules/
+{% endif %}{% if language == 'python' %}.venv/
 {% elif language == 'rust' %}target/
 {% endif -%}
 {% if language == 'typescript' or language == 'python' %}

@@ -147,12 +147,16 @@ class ProjectDetector:
 
         # v5.6: 扫描同级目录中引用聚合 POM 为 <parent> 的独立模块（Issue #6 修复）
         # tmp/pom.xml 聚合了 8 个子模块，但 tmp-manage/pom.xml 和 tmp-window/pom.xml
-        # 以 tmp 为 <parent> 且不在 <modules> 中 — 需要单独扫描并追加到模块列表
-        if result.language == "java" and result._java_info and result._java_info.get("modules"):
+        # 以 tmp 为 <parent> 且不在 <modules> 中 — 需要单独扫描并追加到模块列表。
+        # PR#10: 追加到 module_extra_dirs（独立模块）而非 modules（聚合内模块），
+        # 确保 CI/README 的 java_extra_modules 循环能覆盖这些模块。
+        if result.language == "java" and result._java_info and result._java_info.get("modules") is not None:
             java_info = result._java_info
             existing_modules = set(java_info["modules"])
             aggregator_artifact_id = java_info.get("artifact_id", "")
-            aggregator_path = java_info.get("aggregator_path", "")
+            if "module_extra_dirs" not in java_info:
+                java_info["module_extra_dirs"] = []
+            extra_dirs: list[str] = java_info["module_extra_dirs"]
             if aggregator_artifact_id:
                 try:
                     for entry in self.dst_path.iterdir():
@@ -173,10 +177,10 @@ class ProjectDetector:
                                             break
                                     break
                             if s_parent_artifact_id == aggregator_artifact_id:
-                                # 追加为独立模块路径
                                 rel_path = str(entry.relative_to(self.dst_path))
-                                if rel_path not in existing_modules:
-                                    java_info["modules"].append(rel_path)
+                                already_known = rel_path in existing_modules or rel_path in extra_dirs
+                                if not already_known:
+                                    extra_dirs.append(rel_path)
                                     _logger.info(
                                         "发现独立模块（不在聚合 POM <modules> 中）: %s",
                                         rel_path,

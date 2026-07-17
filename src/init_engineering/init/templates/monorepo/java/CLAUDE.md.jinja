@@ -6,8 +6,15 @@
 
 ```bash
 {%- if aggregator_path is defined and aggregator_path %}
+# 聚合模块
 mvn -f {{ aggregator_path }}/pom.xml install
 mvn -f {{ aggregator_path }}/pom.xml test
+{%- if java_extra_modules is defined and java_extra_modules %}
+{%- for m in java_extra_modules.split(",") | map("trim") | list %}
+# 独立模块: {{ m }}
+mvn -f {{ m }}/pom.xml install
+{%- endfor %}
+{%- endif %}
 {%- else %}
 mvn install
 mvn test
