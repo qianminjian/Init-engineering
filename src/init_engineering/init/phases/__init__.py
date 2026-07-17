@@ -1,22 +1,23 @@
-"""5 阶段流水线 — 子模块包 (P2-B 拆分).
+"""5 阶段流水线子模块包。
 
-模块结构:
-- detect.py    : phase_detect + _raise_nonempty + _validate_project_type
-- prompt.py    : phase_prompt
-- render.py    : phase_render
-- finalize.py  : phase_finalize + _atomic_copytree + _write_replay
-
-scaffold_phase_funcs.py 仍 re-export 所有 phase_* 函数 (向后兼容旧 import 路径).
+各阶段实现在对应子模块中，外部通过 scaffold_phases.py 导入。
 """
 
-from .detect import phase_detect
-from .finalize import phase_finalize
-from .prompt import phase_prompt
-from .render import phase_render
+from __future__ import annotations
 
-__all__ = [
-    "phase_detect",
-    "phase_finalize",
-    "phase_prompt",
-    "phase_render",
-]
+import re
+
+from ..errors import ValidationError
+
+
+def validate_project_type(project_type: str) -> None:
+    """防路径穿越：project_type 仅允许字母/数字/下划线/连字符。
+
+    来源：所有项目类型（CLI / detector / 交互）都需通过此校验。
+    之前在 phase_finalize 校验，但 ~/.ae-replays/<type>/ 路径已在更早阶段生成。
+    """
+    if not re.match(r"^[A-Za-z0-9_-]+$", project_type):
+        raise ValidationError(
+            f"project_type '{project_type}' 含非法字符。"
+            f"只允许字母/数字/下划线/连字符 (防路径穿越)."
+        )

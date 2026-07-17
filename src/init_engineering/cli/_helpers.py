@@ -17,7 +17,7 @@ def sanitize_error(msg: str) -> str:
 
     patterns = [
         # 长 token / api key (>=20 字符的 base64/hex)
-        (r"(?i)(token|api[_-]?key|secret|password|access[_-]?key)\s*[=:]\s*['\"]?[\w\-]{16,}['\"]?",
+        (r"(?i)(token|api[_-]?key|secret|password|access[_-]?key)\s*[=:]\s*['\"]?[\w\-\+\\\/\.]{16,}['\"]?",
          r"\1=[REDACTED]"),
         # Bearer token
         (r"(?i)Bearer\s+[\w\-\.]{16,}", "Bearer [REDACTED]"),
@@ -32,11 +32,14 @@ def sanitize_error(msg: str) -> str:
 def configure_logging(verbose: bool) -> None:
     """配置 logging — B7: 结构化 + session_id；B9: dictConfig 强制覆盖.
 
+    ⚠ 全局副作用: 调用 logging.config.dictConfig 修改进程级 root logger,
+    测试中可能改变其他模块的日志行为。
+
     设计：
     - 默认 INFO 级别（plain text）
     - --verbose 升级到 DEBUG
     - 全局注入 ae_session_id (uuid4 前 8 位) 用于日志关联
-    - 使用 dictConfig 而非 basicConfig — 避免用户/agent 已有 logger 配置失效
+    - 使用 dictConfig 而非 basicConfig — 避免用户/agent 已有 logger 配置失效。
     """
     session_id = uuid.uuid4().hex[:8]
     level = "DEBUG" if verbose else "INFO"
@@ -62,3 +65,8 @@ def configure_logging(verbose: bool) -> None:
             "handlers": ["stderr"],
         },
     })
+
+
+
+
+

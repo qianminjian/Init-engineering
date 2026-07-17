@@ -1,5 +1,16 @@
 _min_ae_version: "1.0.0"
-_exclude_callback: "auto_engineering.init._shared.exclude:default_match_exclude"
+_exclude_callback: "init_engineering.init._shared.exclude:default_match_exclude"
+_required_outputs:
+  - .gitignore
+  - .editorconfig
+  - CLAUDE.md
+  - README.md
+  - LICENSE
+  - design/BEACON.md
+  - design/INDEX.md
+  - packages/
+  - .ae-answers.yml
+  - .ae-state/init-manifest.json
 repo_name:
   type: str
   help: Monorepo 名称
@@ -16,6 +27,7 @@ language:
     python: Python（uv workspaces）
     go: Go（go.work）
     rust: Rust（Cargo workspaces）
+    java: Java/Maven（multi-module）
   default: typescript
 
 # typescript: 包管理器
@@ -47,11 +59,81 @@ go_workspace_members:
   default: "pkg1,pkg2"
   when: "{{ language == 'go' }}"
 
+# java: Maven multi-module 配置
+java_group_id:
+  type: str
+  help: Maven groupId
+  default: com.example
+  when: "{{ language == 'java' }}"
+
+java_version:
+  type: str
+  help: Java 版本（用于 maven.compiler.source/target）
+  default: "21"
+  when: "{{ language == 'java' }}"
+
+java_modules:
+  type: str
+  help: Maven module 路径（逗号分隔，留空跳过根 POM 聚合）
+  default: "module1,module2,tests"
+  when: "{{ language == 'java' }}"
+
 ci_platform:
   type: choice
   help: CI 平台
   choices: [github, gitlab, none]
   default: github
+use_lefthook:
+  type: bool
+  help: 使用 Lefthook 管理 git hooks（推荐）
+  default: false
+use_docker:
+  type: bool
+  help: 添加 Docker 支持（Dockerfile + docker-compose）
+  default: false
+
+# Phase 4 任务：对 Java 多模块项目，为每个声明的模块生成测试骨架
+# 模板覆盖根级别骨架（如 tests/ Maven 模块），本任务负责模块级动态补充
+_tasks:
+  - cmd:
+      - bash
+      - "-c"
+      - |
+        MODULES="{{ java_modules }}"
+        GROUP_ID="{{ java_group_id | default('') }}"
+        MODULE_PREFIX="{% if aggregator_path is defined and aggregator_path %}{% else %}packages/{% endif %}"
+        if [ -z "$MODULES" ] || [ -z "$GROUP_ID" ]; then
+          exit 0
+        fi
+        IFS=',' read -ra ML <<< "$MODULES"
+        for m in "${ML[@]}"; do
+          m=$(echo "$m" | xargs)
+          [ -z "$m" ] && continue
+          [ "$m" = "tests" ] && continue
+          TD="${MODULE_PREFIX}${m}/src/test/java/$(echo "$GROUP_ID" | tr '.' '/')"
+          if [ ! -d "$TD" ]; then
+            mkdir -p "$TD"
+            cat > "${TD}/ModuleTest.java" << JAVAEOF
+        package ${GROUP_ID};
+
+        import org.junit.jupiter.api.Test;
+        import static org.junit.jupiter.api.Assertions.*;
+
+        /**
+         * Placeholder test for module: ${m}
+         */
+        class ModuleTest {
+            @Test
+            void testPlaceholder() {
+                assertTrue(true, "placeholder test for ${m} module");
+            }
+        }
+        JAVAEOF
+          fi
+        done
+    when: "{{ language == 'java' and java_modules | default('') | trim }}"
+    stage: after
+    working_directory: ""
 
 # Nested template variants — 按 language 注入对应语言的 workspace 模板
 _nested_templates:
@@ -67,3 +149,6 @@ _nested_templates:
   rust:
     path: rust
     title: Rust monorepo (Cargo workspaces)
+  java:
+    path: java
+    title: Java monorepo (Maven multi-module)

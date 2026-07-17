@@ -1,18 +1,24 @@
 """Phase 2: prompt — 加载 TemplateConfig + 应用 CLI overrides + 交互问答.
 
-来源: scaffold_phase_funcs.py phase_prompt (2026-07-03 拆分).
+来源: init/scaffold_phases.py → phases/prompt.py (2026-07-03 拆分).
 """
 
 from __future__ import annotations
 
+import logging
+import shutil
 from pathlib import Path
 
+from .._shared.prompt_backend import PromptBackend
 from ..answers import AnswersMap
-from ..config import TEMPLATES_ROOT, TemplateConfig
-from ..detector import ProjectDetector
+from ..config_loader import load_template_config
+from ..config_types import TEMPLATES_ROOT, TemplateConfig
+from ..detector import DetectionResult
 from ..errors import InitInterruptedError
 from ..prompts import InteractivePrompt, prompt_for_nested_template
 from ..scaffold_question_eval import evaluate_question_defaults
+
+_logger = logging.getLogger(__name__)
 
 
 def phase_prompt(
@@ -27,20 +33,39 @@ def phase_prompt(
     use_typescript: bool | None,
     use_lefthook: bool | None,
     use_docker: bool | None,
-    detection: ProjectDetector | None,
+    detection: DetectionResult | None,
+    dst_path: Path | None = None,
+    prompt_backend: PromptBackend | None = None,
 ) -> tuple[TemplateConfig, AnswersMap]:
-    """加载 TemplateConfig + 应用 CLI overrides + 评估 question + 交互 prompt."""
-    template = TemplateConfig.load(project_type or "")
+    """加载 TemplateConfig + 应用 CLI overrides + 评估 question + 交互 prompt。
+
+    ⚠ 副作用:
+    - template.template_dir: nested template 选择时原地修改（追加语言子目录，line 65），
+      调用方如需原始值应在调用前自行 clone
+    - answers.defaults: detection 结果覆盖模板默认值（language/package_manager/test_runner 等）
+    """
+    template = load_template_config(project_type or "")
     if template.nested_templates:
         # 选择 nested template 策略:
-        # 1. 若 language 在 nested_templates 键中 → 直接选它（CLI 透传 language）
-        # 2. defaults 模式自动选第一个
-        # 3. 非 defaults 模式交互式询问用户
-        preferred = language if language in template.nested_templates else None
+        # 1. CLI --language → 直接选对应键（最高优先级）
+        # 2. previous_answers → --from-answers 恢复（无 CLI --language 时）
+        # 3. detection.language → 存量项目自动检测
+        # 4. defaults 模式 → 自动选第一个
+        # 5. 非 defaults 模式 → 交互式询问用户
+        preferred = language if (language and language in template.nested_templates) else None
+        if preferred is None and previous_answers is not None:
+            prev_lang = previous_answers.get("language")
+            if prev_lang and prev_lang in template.nested_templates:
+                preferred = prev_lang
+        if preferred is None and detection is not None:
+            det_lang = detection.language
+            if det_lang and det_lang in template.nested_templates:
+                preferred = det_lang
         chosen = prompt_for_nested_template(
             template.nested_templates,
             no_input=defaults,
             preferred=preferred,
+            backend=prompt_backend,
         )
         if chosen:
             template.template_dir = template.template_dir / chosen
@@ -69,14 +94,26 @@ def phase_prompt(
     )
     answers.builtins["project_type"] = project_type or ""
     if detection is not None:
-        if detection.language:
-            answers.builtins.setdefault("language", detection.language)
-        if detection.package_manager:
-            answers.builtins.setdefault("package_manager", detection.package_manager)
-        if detection.test_runner:
-            answers.builtins.setdefault("test_runner", detection.test_runner)
-        if detection.ci_platform:
-            answers.builtins.setdefault("ci_platform", detection.ci_platform)
+        # ⚠ 副作用: detection 结果全量写入 answers.defaults，覆盖模板默认值
+        # v5.3: 移除白名单过滤 — 检测到的 java_version/spring_boot_version/
+        # is_multi_module/project_type 等信息全部进入 AnswersMap，驱动模板渲染
+        for k, v in detection.as_answers().items():
+            answers.defaults[k] = v
+
+    # v5.5: 检测键 → 模板问题键映射 — 不同模板类型用不同的变量名
+    # detection.as_answers() 使用规范键 project_name，但 monorepo 模板定义 repo_name。
+    # 仅当用户未通过 CLI/interactive 显式指定时才用检测值覆盖模板默认值。
+    _DETECTION_KEY_MAP = {
+        "project_name": "repo_name",
+    }
+    for det_key, tmpl_key in _DETECTION_KEY_MAP.items():
+        if det_key in answers.defaults:
+            user_set = (
+                tmpl_key in answers.cli_overrides
+                or tmpl_key in answers.interactive
+            )
+            if not user_set:
+                answers.defaults[tmpl_key] = answers.defaults[det_key]
 
     # 检查 var 单个字符串,不是 list in AnswersMap (会触发 __contains__ 内部迭代 ChainMap)
     for var in ["project_description", "language", "package_manager",
@@ -84,10 +121,20 @@ def phase_prompt(
         if var not in answers:  # __contains__ 处理单 key
             answers.builtins[var] = ""
 
+    # --defaults 模式: project_name 使用目标目录名而非硬编码 "my-app"
+    if defaults and dst_path is not None:
+        dir_name = dst_path.resolve().name
+        if dir_name and dir_name != ".":
+            answers.defaults["project_name"] = dir_name
+
     evaluate_question_defaults(template, answers)
 
+    # PM 可用性检查：默认 PM 不可用时自动降级（仅 defaults 层，CLI 显式指定不覆盖）
+    # 必须在 evaluate_question_defaults 之后，确保 Jinja2 模板默认值已渲染
+    _ensure_pm_and_mutate(answers)
+
     if not defaults:
-        prompt = InteractivePrompt(template.questions, answers)
+        prompt = InteractivePrompt(template.questions, answers, backend=prompt_backend)
         try:
             answers = prompt.run()
         except KeyboardInterrupt:
@@ -95,3 +142,35 @@ def phase_prompt(
             raise InitInterruptedError() from None
 
     return template, answers
+
+
+def _ensure_pm_and_mutate(answers: AnswersMap) -> None:
+    """检测包管理器 CLI 可用性，不可用时自动降级。
+
+    仅当 package_manager 来自 defaults 层（非 CLI/interactive 显式指定）时才检查。
+    Node.js PM 降级链: pnpm → npm, yarn → npm, bun → npm。
+
+    ⚠ 副作用: 降级时会直接修改 answers.defaults["package_manager"]。
+    """
+    pm = answers.get("package_manager")
+    if not pm:
+        return
+    # 用户显式指定（CLI 或交互）→ 不覆盖
+    if pm in answers.cli_overrides or pm in answers.interactive:
+        return
+    if shutil.which(pm) is not None:
+        return
+    # PM 不可用，尝试降级
+    node_fallbacks = {"pnpm": "npm", "yarn": "npm", "bun": "npm"}
+    fallback = node_fallbacks.get(pm)
+    if fallback and shutil.which(fallback):
+        _logger.warning(
+            "%s 未安装，已自动降级为 %s。安装 %s 后可重新初始化。",
+            pm, fallback, pm,
+        )
+        answers.defaults["package_manager"] = fallback
+    else:
+        _logger.warning(
+            "%s 未安装且无可降级方案。请安装后重新运行，或使用 --package-manager 指定。",
+            pm,
+        )

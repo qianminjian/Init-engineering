@@ -299,7 +299,7 @@ class TestInitWorkerFivePhases:
     """C2: 直接调用 InitWorker 测 5 阶段流程."""
 
     def test_execute_incremental_mode(self, tmp_path: Path):
-        from init_engineering.init.scaffold import InitWorker
+        from init_engineering.init.scaffold_phases import InitWorker
 
         dst = tmp_path / "p"
         dst.mkdir()
@@ -321,7 +321,7 @@ class TestInitWorkerFivePhases:
         assert result.project_type == "library"
 
     def test_execute_returns_init_result(self, tmp_path: Path):
-        from init_engineering.init.scaffold import InitResult, InitWorker
+        from init_engineering.init.scaffold_phases import InitResult, InitWorker
 
         dst = tmp_path / "result"
         worker = InitWorker(
@@ -338,7 +338,7 @@ class TestInitWorkerFivePhases:
         assert len(result.files) > 0
 
     def test_execute_pretend_no_dst(self, tmp_path: Path):
-        from init_engineering.init.scaffold import InitWorker
+        from init_engineering.init.scaffold_phases import InitWorker
 
         dst = tmp_path / "pretend"
         worker = InitWorker(
@@ -354,7 +354,7 @@ class TestInitWorkerFivePhases:
 
     def test_phase_prompt_with_defaults(self, tmp_path: Path):
         """_phase_prompt 在 defaults=True 时不调用 InteractivePrompt."""
-        from init_engineering.init.scaffold import InitWorker
+        from init_engineering.init.scaffold_phases import InitWorker
 
         dst = tmp_path / "p"
         worker = InitWorker(
@@ -368,7 +368,7 @@ class TestInitWorkerFivePhases:
 
     def test_phase_render_generates_files(self, tmp_path: Path):
         """_phase_render 渲染到 tmpdir."""
-        from init_engineering.init.scaffold import InitWorker
+        from init_engineering.init.scaffold_phases import InitWorker
 
         dst = tmp_path / "p"
         worker = InitWorker(
@@ -386,7 +386,7 @@ class TestInitWorkerFivePhases:
 
     def test_context_manager_runs_cleanup(self, tmp_path: Path):
         """__enter__/__exit__ 自动 cleanup."""
-        from init_engineering.init.scaffold import InitWorker
+        from init_engineering.init.scaffold_phases import InitWorker
 
         dst = tmp_path / "p"
         with InitWorker(

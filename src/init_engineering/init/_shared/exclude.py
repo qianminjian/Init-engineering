@@ -17,7 +17,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 # 默认排除目录名（来源: Copier _template.py:DEFAULT_EXCLUDE 增强版）
-_EXCLUDED_DIRS: frozenset[str] = frozenset(
+EXCLUDED_DIRS: frozenset[str] = frozenset(
     {
         ".git",
         "__pycache__",
@@ -43,7 +43,7 @@ def default_match_exclude(path: Path) -> bool:
     """默认 exclude 回调 — 排除常见构建/版本控制/缓存产物.
 
     规则（按顺序短路求值）:
-    1. 路径中任一段在 _EXCLUDED_DIRS (.git, __pycache__, .venv, node_modules) → True
+    1. 路径中任一段在 EXCLUDED_DIRS (.git, __pycache__, .venv, node_modules) → True
     2. 路径中任一段在 _EXCLUDED_NAMES (.DS_Store, .env) → True
     3. 文件名后缀在 _EXCLUDED_SUFFIXES (.pyc) → True
     4. 其他 → False (包括 .gitignore / .editorconfig 等 dotfile)
@@ -55,7 +55,7 @@ def default_match_exclude(path: Path) -> bool:
         True 表示应排除该路径.
     """
     parts = path.parts
-    if any(p in _EXCLUDED_DIRS for p in parts):
+    if any(p in EXCLUDED_DIRS for p in parts):
         return True
     if any(p in _EXCLUDED_NAMES for p in parts):
         return True

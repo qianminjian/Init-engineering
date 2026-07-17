@@ -151,7 +151,7 @@ class TestSandboxRootsFallback:
 
 
 class TestTemplateDirHardBlock:
-    """PR#4 P1-4: --template-dir 白名单硬阻断 + --force-unsafe-template 绕过."""
+    """PR#4 P1-4: --template-dir 白名单硬阻断（v5.5: --force-unsafe-template 已移除，安全路径外一律拒绝）."""
 
     def test_unsafe_template_dir_blocked_by_default(self, tmp_path: Path):
         """非白名单路径 + 无 bypass → 抛 UsageError."""
@@ -189,21 +189,20 @@ class TestTemplateDirHardBlock:
                 ],
             )
             assert result.exit_code != 0
-            assert "不在常用安全路径内" in result.output or "not in" in result.output.lower()
+            assert "不在安全路径内" in result.output or "not in" in result.output.lower()
         finally:
             import shutil
             shutil.rmtree(bad_dir, ignore_errors=True)
             shutil.rmtree(Path("/var/tmp/ae-malicious"), ignore_errors=True)
 
-    def test_force_unsafe_template_bypasses(self, tmp_path: Path):
-        """--force-unsafe-template 允许非白名单路径."""
+    def test_non_safe_template_dir_always_blocked(self, tmp_path: Path):
+        """v5.5: --force-unsafe-template 已移除，非白名单路径一律拒绝."""
         from click.testing import CliRunner
         from init_engineering.cli import init as cli_init
 
         from pathlib import Path as _P
         non_safe = _P("/var/tmp/ae-malicious-bypass")
         non_safe.mkdir(parents=True, exist_ok=True)
-        # 创建一个 minimal template
         (non_safe / "ae-template.yml").write_text(
             "_questions:\n  - {var_name: project_name, type: str, default: x}\n"
         )
@@ -214,13 +213,12 @@ class TestTemplateDirHardBlock:
                 [
                     str(tmp_path / "out"),
                     "--template-dir", str(non_safe),
-                    "--force-unsafe-template",
                     "--defaults",
                     "--skip-tasks",
                 ],
             )
-            # 不应因白名单被拒 (可能因模板不完整失败但 exit code != UsageError)
-            assert "不在常用安全路径内" not in result.output
+            assert result.exit_code != 0
+            assert "不在安全路径内" in result.output
         finally:
             import shutil
             shutil.rmtree(non_safe, ignore_errors=True)

@@ -1,20 +1,27 @@
-"""TemplateConfig YAML 加载逻辑 — 从 config.py 提取的 load() 流程。
+"""TemplateConfig YAML 加载逻辑 — ae-template.yml 解析 + !include 安全校验。
 
-将 TemplateConfig.load() 中的解析流水线（YAML → kwargs → TemplateConfig）
-抽到独立模块，config.py 只保留 dataclass 字段声明。
+使用方: scaffold_phases.py → InitWorker._load_config。
+类型定义见 config_types.py。
 """
 
+from __future__ import annotations
+
+import logging
 from pathlib import Path
 from typing import Any
 
 import yaml
 
 from ._shared.path_utils import is_path_under_any_root
-from .config_types import DEFAULT_EXCLUDE, TEMPLATES_ROOT, Question, Task
+from .config_types import DEFAULT_EXCLUDE, TEMPLATES_ROOT, Question, Task, TemplateConfig
 from .errors import ConfigFileError, ConfigLoaderSecurityError
 
+_logger = logging.getLogger(__name__)
 
-def load_template_config(project_type: str, sandbox_roots: list[str] | None = None) -> "TemplateConfig":  # noqa: F821
+
+def load_template_config(
+    project_type: str, sandbox_roots: list[str] | None = None
+) -> TemplateConfig:
     """加载并解析 ae-template.yml，返回 TemplateConfig 实例。
 
     完整流程：
@@ -30,8 +37,6 @@ def load_template_config(project_type: str, sandbox_roots: list[str] | None = No
         sandbox_roots: 可选的 sandbox 根目录列表。若非空, !include 路径必须
             在这些根目录下 (realpath 归一化防 symlink 穿越)。
     """
-    from .config import TemplateConfig
-
     config_path = TEMPLATES_ROOT / project_type / "ae-template.yml"
     if not config_path.exists():
         raise ConfigFileError(f"模板配置文件不存在: {config_path}")
@@ -46,42 +51,62 @@ def load_template_config(project_type: str, sandbox_roots: list[str] | None = No
         if key.startswith("_"):
             config_key = key[1:]  # 去 _ 前缀
             if config_key == "tasks":
+                if not isinstance(value, list):
+                    raise ConfigFileError(
+                        f"_tasks 必须是 list, 实际是 {type(value).__name__}"
+                    )
                 _parse_tasks(value, config_kwargs)
             elif config_key == "exclude":
                 config_kwargs["exclude"] = DEFAULT_EXCLUDE + list(value)
             elif config_key == "skip_if_exists":
                 config_kwargs["skip_if_exists"] = list(value)
-            elif config_key == "secret_questions":
-                config_kwargs["secret_questions"] = list(value)
             elif config_key == "envops":
                 config_kwargs["envops"] = {**config_kwargs.get("envops", {}), **value}
             elif config_key == "no_render":
                 config_kwargs["no_render"] = list(value)
             elif config_key == "external_data":
+                if not isinstance(value, dict):
+                    raise ConfigFileError(
+                        f"_external_data 必须是 mapping, 实际是 {type(value).__name__}"
+                    )
                 config_kwargs["external_data"] = dict(value)
             elif config_key == "nested_templates":
+                if not isinstance(value, dict):
+                    raise ConfigFileError(
+                        f"_nested_templates 必须是 mapping, 实际是 {type(value).__name__}"
+                    )
                 config_kwargs["nested_templates"] = dict(value)
             elif config_key == "subdirectory":
                 config_kwargs["subdirectory"] = str(value)
             elif config_key == "templates_suffix":
                 config_kwargs["templates_suffix"] = str(value)
+            elif config_key == "exclude_callback":
+                config_kwargs["exclude_callback"] = str(value)
             elif config_key == "min_ae_version":
                 config_kwargs["min_ae_version"] = str(value)
             elif config_key == "message_before":
                 config_kwargs["message_before"] = str(value)
             elif config_key == "message_after":
                 config_kwargs["message_after"] = str(value)
+            elif config_key == "required_outputs":
+                if not isinstance(value, list):
+                    raise ConfigFileError(
+                        f"_required_outputs 必须是 list, 实际是 {type(value).__name__}"
+                    )
+                config_kwargs["required_outputs"] = [str(v) for v in value]
             else:
+                _logger.warning(
+                    "未知的 _ 前缀配置键: _%s (值=%s) — 拼写错误? 将被忽略。"
+                    "已知键: tasks/exclude/skip_if_exists/envops/no_render/"
+                    "external_data/nested_templates/subdirectory/templates_suffix/"
+                    "exclude_callback/min_ae_version/message_before/message_after/required_outputs",
+                    config_key, value,
+                )
                 config_kwargs[config_key] = value
         else:
             questions_data[key] = value
 
-    # 嵌套模板处理（来源: Cookiecutter main.py:144-146 choose_nested_template）
-    nested = config_kwargs.get("nested_templates", {})
-    if nested:
-        chosen = _resolve_nested_template(config_path.parent, nested)
-        if chosen:
-            config_path = chosen
+    # 嵌套模板选择由 InteractivePrompt 处理 (prompts.py:prompt_for_nested_template)
 
     questions = _parse_questions(questions_data)
     return TemplateConfig(template_dir=config_path.parent, questions=questions, **config_kwargs)
@@ -176,18 +201,6 @@ def _load_yaml_with_includes(config_path: Path, sandbox_roots: list[str] | None 
         return result
 
 
-def _resolve_nested_template(template_dir: Path, nested: dict) -> Path | None:
-    """解析嵌套模板选择。
-
-    来源：Cookiecutter main.py:144-146 choose_nested_template。
-    非交互模式返回 None（交给 InteractivePrompt 处理）。
-    """
-    if not nested:
-        return None
-    # 交互式选择由 InteractivePrompt 处理，InitWorker._phase_prompt
-    # 会检测 nested_templates 并调用 prompt_for_nested_template
-    return None
-
 
 def _parse_questions(data: dict[str, Any]) -> list[Question]:
     """将 YAML 问题定义转为 Question 对象列表。
@@ -218,10 +231,17 @@ def _parse_tasks(tasks_raw: list[dict[str, Any]], config_kwargs: dict[str, Any])
     """
     before: list[Task] = []
     after: list[Task] = []
-    for t in tasks_raw:
-        task_kwargs = {k: v for k, v in t.items() if k in Task.__dataclass_fields__}
+    for i, raw_task in enumerate(tasks_raw):
+        task_kwargs = {k: v for k, v in raw_task.items() if k in Task.__dataclass_fields__}
+        if "cmd" not in task_kwargs:
+            raise ConfigFileError(
+                f"_tasks[{i}] 缺少必填字段 'cmd'。"
+                f"有效字段: {sorted(Task.__dataclass_fields__.keys())}。"
+                f"当前字段: {sorted(raw_task.keys())}",
+                config_path="ae-template.yml",
+            )
         task = Task(**task_kwargs)
-        stage = t.get("stage", "after")
+        stage = raw_task.get("stage", "after")
         if stage == "before":
             before.append(task)
         else:

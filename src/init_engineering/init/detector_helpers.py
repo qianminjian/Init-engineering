@@ -1,136 +1,115 @@
-"""Helper detection functions — 拆自 detector.py (v2.5: 382→可控)。
+"""Helper detection functions — 拆自 detector.py (v2.5: 382→可控).
 
-设计：
-- _detect_package_manager() / _detect_test_runner() / _detect_ci_platform() / _signature_matches() / _check_pkg_dep() 一律下沉到本模块
+设计:
+- detect_*() / signature_matches() / check_pkg_dep() 一律下沉到本模块
 - detector.py 只保留 datatypes + ProjectDetector class
+- detect_package_manager/detect_test_runner/detect_ci_platform 提取到
+  _shared.detection (config/ 层可跨层复用, 不破坏 config → init 层级)
 """
 
 from __future__ import annotations
 
+import contextlib
 import json
+import logging
 from collections.abc import Callable
 from pathlib import Path
 
-# ─── 包管理器检测 ─────────────────────────────────────────────────────
-
-_LOCK_FILE_MAP: dict[str, str] = {
-    "package-lock.json": "npm",
-    "pnpm-lock.yaml": "pnpm",
-    "yarn.lock": "yarn",
-    "bun.lockb": "bun",
-    "uv.lock": "uv",
-    "poetry.lock": "poetry",
-    "Pipfile.lock": "pipenv",
-}
-
-# ─── 测试框架检测 ─────────────────────────────────────────────────────
-
-_TEST_CONFIG_MAP: dict[str, str] = {
-    "vitest.config.ts": "vitest",
-    "vitest.config.js": "vitest",
-    "vitest.config.mjs": "vitest",
-    "jest.config.ts": "jest",
-    "jest.config.js": "jest",
-    "jest.config.mjs": "jest",
-    "pytest.ini": "pytest",
-    "tox.ini": "pytest",
-    "pyproject.toml": "pytest",
-}
-
-# ─── CI 平台检测 ──────────────────────────────────────────────────────
-
-_CI_DETECT_MAP: dict[str, str] = {
-    ".github/workflows": "github",
-    ".gitlab-ci.yml": "gitlab",
-}
+_logger = logging.getLogger(__name__)
 
 
-def detect_package_manager(target_dir: Path) -> str | None:
-    """通过 lock 文件推断包管理器。有多个时按优先级返回."""
-    priority = ["pnpm-lock.yaml", "yarn.lock", "bun.lockb", "package-lock.json",
-                "uv.lock", "poetry.lock", "Pipfile.lock"]
-    for lock in priority:
-        if (target_dir / lock).exists():
-            return _LOCK_FILE_MAP[lock]
-    pkg_json = target_dir / "package.json"
-    if pkg_json.exists():
-        try:
-            data = json.loads(pkg_json.read_text())
-            pm = data.get("packageManager", "")
-            if isinstance(pm, str) and pm:
-                return pm.split("@")[0]
-        except (json.JSONDecodeError, OSError):
-            pass
-    return None
+def strip_xml_ns(tag: str) -> str:
+    """剥离 XML 命名空间前缀 — 如 {http://maven.apache.org/POM/4.0.0}groupId → groupId."""
+    return tag.rsplit("}", 1)[-1] if "}" in tag else tag
 
 
-def detect_test_runner(target_dir: Path, language: str | None = None) -> str | None:
-    """通过配置文件和依赖推断测试框架."""
-    for config, runner in _TEST_CONFIG_MAP.items():
-        if (target_dir / config).exists():
-            return runner
-    if language == "python":
-        return "pytest"
-    if language in ("typescript", "javascript"):
-        pkg = target_dir / "package.json"
-        if pkg.exists():
-            try:
-                data = json.loads(pkg.read_text())
-                deps = {**data.get("dependencies", {}), **data.get("devDependencies", {})}
-                if "vitest" in deps:
-                    return "vitest"
-                if "jest" in deps:
-                    return "jest"
-            except (json.JSONDecodeError, OSError):
-                pass
-        return "vitest"
-    if language == "go":
-        return "go test"
-    if language == "rust":
-        return "cargo test"
-    return None
-
-
-def detect_ci_platform(target_dir: Path) -> str | None:
-    """通过 CI 配置文件推断 CI 平台."""
-    for config_dir, platform in _CI_DETECT_MAP.items():
-        path = target_dir / config_dir
-        if path.exists() and (path.is_dir() or path.is_file()):
-            return platform
-    return None
-
-
-def check_pkg_dep(target_dir: Path, check_fn: Callable[[dict], bool]) -> bool:
-    """检查 package.json 依赖.
+def check_pkg_dep(dst_path: Path, check_fn: Callable[[dict], bool]) -> bool:
+    """Check package.json dependencies.
 
     Args:
-        target_dir: 项目根
-        check_fn: 接收 dependencies 字典返回 bool 的回调
+        dst_path: project root
+        check_fn: callback receiving dependencies dict, returning bool
     """
-    pkg = target_dir / "package.json"
+    pkg = dst_path / "package.json"
     if not pkg.exists():
         return False
     try:
-        data = json.loads(pkg.read_text())
+        data = json.loads(pkg.read_text(encoding="utf-8"))
         return check_fn(data.get("dependencies", {}))
     except (json.JSONDecodeError, OSError):
+        _logger.debug("无法解析 package.json: %s", pkg, exc_info=True)
         return False
 
 
-def signature_matches(target_dir: Path, sig: str) -> bool:
-    """检查签名是否匹配 — 支持 glob 通配符."""
+def signature_matches(dst_path: Path, sig: str, *, max_depth: int = 0, include_hidden: bool = False) -> bool:
+    """Check if a signature matches — supports glob wildcards + optional shallow recursion.
+
+    max_depth=0: only check dst_path (default, backward compat)
+    max_depth=1: check dst_path + immediate subdirectories
+    max_depth=2: check dst_path + 2 levels of subdirectories
+    include_hidden: include .dot directories (default skip per Unix convention)
+    """
+    if _check_sig_at(dst_path, sig):
+        return True
+    if max_depth <= 0:
+        return False
+    try:
+        for child in dst_path.iterdir():
+            if child.is_dir() and not include_hidden and child.name.startswith("."):
+                continue
+            if child.is_dir():
+                if _check_sig_at(child, sig):
+                    return True
+                if max_depth >= 2:
+                    for grandchild in child.iterdir():
+                        if (grandchild.is_dir()
+                                and not include_hidden
+                                and grandchild.name.startswith(".")):
+                            continue
+                        if grandchild.is_dir() and _check_sig_at(grandchild, sig):
+                            return True
+    except OSError:
+        _logger.debug("递归扫描 %s 失败", dst_path, exc_info=True)
+    return False
+
+
+def _check_sig_at(base: Path, sig: str) -> bool:
+    """Check a single directory for a signature match (no recursion)."""
     if sig.endswith("/"):
-        return (target_dir / sig).exists()
+        return (base / sig).exists()
     if "*" in sig or "?" in sig or "[" in sig:
         import fnmatch
 
         rel_dir = sig.rsplit("/", 1)[0] if "/" in sig else ""
         pattern = sig.rsplit("/", 1)[-1]
-        base = target_dir / rel_dir if rel_dir else target_dir
-        if not base.exists():
+        search_dir = base / rel_dir if rel_dir else base
+        if not search_dir.exists():
             return False
-        for entry in base.iterdir():
+        for entry in search_dir.iterdir():
             if entry.is_file() and fnmatch.fnmatch(entry.name, pattern):
                 return True
         return False
-    return (target_dir / sig).exists()
+    return (base / sig).exists()
+
+
+def find_signatures_in_tree(
+    dst_path: Path, signatures: list[str], max_depth: int = 2,
+    *, include_hidden: bool = False,
+) -> dict[str, list[Path]]:
+    """Find which subdirectories match which signatures — for workspace/monorepo detection.
+
+    Returns: {sig: [matching_directory_path, ...]}
+    """
+    result: dict[str, list[Path]] = {}
+    dirs_to_check = [dst_path]
+    if max_depth >= 1:
+        with contextlib.suppress(OSError):
+            dirs_to_check += [
+                child for child in dst_path.iterdir()
+                if child.is_dir() and (include_hidden or not child.name.startswith("."))
+            ]
+    for d in dirs_to_check:
+        for sig in signatures:
+            if _check_sig_at(d, sig):
+                result.setdefault(sig, []).append(d)
+    return result

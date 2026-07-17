@@ -1,6 +1,6 @@
 """InitWorker — 5 阶段流水线编排器（参考 Copier Worker）。
 
-v2.5 拆分（501→≤300 行）：阶段方法全部抽到 scaffold_phase_funcs.py，
+v2.5 拆分（501→≤300 行）：阶段方法全部抽到 phases/ 子模块，
 本模块只保留 InitWorker dataclass + execute() 编排器。
 
 设计：
@@ -11,47 +11,55 @@ v2.5 拆分（501→≤300 行）：阶段方法全部抽到 scaffold_phase_func
 
 from __future__ import annotations
 
+__all__ = ["InitResult", "InitWorker"]
+
+import contextlib
 import logging
 import shutil
 import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    from ._shared.prompt_backend import PromptBackend
+    from .detector_constants import DetectionResult
 
 from .answers import AnswersMap
-from .config import TemplateConfig
+from .config_types import TemplateConfig
 from .errors import InitInterruptedError
+from .phases.detect import phase_detect
+from .phases.finalize import phase_finalize, phase_post_install
+from .phases.prompt import phase_prompt
+from .phases.render import phase_render
 from .scaffold_lock import InitLock
-from .scaffold_phase_funcs import (
-    phase_detect,
-    phase_finalize,
-    phase_prompt,
-    phase_render,
-)
 from .scaffold_prereq import check_template_version
-from .scaffold_render import render_to as _render_to
-from .scaffold_tasks_runner import TaskRunner, run_builtin_hooks, run_tasks_phase
-
-# Backward-compat re-export: 测试 patch("init_engineering.init.scaffold_phases.<name>")
-# 必须仍能找到该符号 — 实际实现迁移，但语义未变。
-TaskRunner = TaskRunner
-run_builtin_hooks = run_builtin_hooks
-# 同理：测试 patch("init_engineering.init.scaffold_phases._render_to")
-_render_to = _render_to
+from .scaffold_tasks_runner import run_tasks_phase
 
 _logger = logging.getLogger(__name__)
 
 
 @dataclass
 class InitResult:
+    """InitWorker.execute() 返回值 — 目标路径、生成文件列表、answers 和项目类型。"""
+
     dst_path: Path
     files: list[Path] = field(default_factory=list)
     answers: dict = field(default_factory=dict)
     project_type: str = ""
+    mode: str = "fresh"  # "fresh" | "incremental"
+    skipped_files: int = 0  # 增量模式跳过的文件数
 
 
 @dataclass
 class InitWorker:
+    """5 阶段流水线编排器：detect → prompt → render → tasks → finalize。
+
+    内部状态按阶段设置：_lock/_detection (detect) → _template/_answers (prompt)
+    → _created_files (finalize)。cleanup 通过 __exit__ 释放锁。
+    """
+
     dst_path: Path
     project_type: str | None = None
     language: str | None = None
@@ -73,23 +81,26 @@ class InitWorker:
     strict: bool = False
     # PE-P0-1: --no-install CLI flag — 跳过 package_manager install 阶段
     no_install: bool = False
+    # --include-hidden: 检测阶段扫描隐藏目录（.qoder/.claude/ 等反向工程资产）
+    include_hidden: bool = False
     templates_suffix: str | None = None
     preserve_symlinks: bool | None = None
     template_dir_override: Path | None = None
     # PE-P1-4: 全局钩子超时(秒),None 走 TaskRunner 默认 (300s)
     hook_timeout: int | None = None
-    # PR#4 P1-4: 显式 force-unsafe-template 标记 (CLI 已硬阻断, 此处仅记录)
-    force_unsafe_template: bool = False
+    # 用户交互后端 — CLI 层注入 ClickPromptBackend, 测试层注入 mock
+    prompt_backend: PromptBackend | None = None
 
     _current_phase: str = field(init=False, default="")
-    _template: TemplateConfig = field(init=False, default=None)
+    _template: TemplateConfig | None = field(init=False, default=None)
     _answers: AnswersMap = field(init=False, default_factory=AnswersMap)
     _cleanup_hooks: list[Callable] = field(default_factory=list, init=False)
     _previous_answers: AnswersMap | None = field(init=False, default=None)
     _created_files: set[str] = field(default_factory=set, init=False)
-    _mode: str = field(init=False, default="fresh")
+    _mode: Literal["fresh", "incremental"] = field(init=False, default="fresh")
     _lock: InitLock | None = field(init=False, default=None)
-    _detection: object = field(init=False, default=None)
+    _detection: DetectionResult | None = field(init=False, default=None)
+    _skipped_files: int = field(init=False, default=0)
 
     def __enter__(self):
         return self
@@ -99,18 +110,17 @@ class InitWorker:
         return False
 
     def _cleanup(self) -> None:
-        # P2-4: cleanup logging 改用模块 logger (logging.warning 是 root logger,
-        # 无 handler 时默认吞掉, 调试时看不到错误)
         for hook in self._cleanup_hooks:
             try:
                 hook()
             except Exception as e:
-                _logger.warning("cleanup hook failed: %s", e)
+                _logger.warning("cleanup hook failed: %s", e, exc_info=True)
         if self._lock is not None:
             self._lock.release()
             self._lock = None
 
     def execute(self) -> InitResult:
+        """执行 5 阶段流水线，返回 InitResult。中途异常触发 cleanup hooks 并释放锁。"""
         if self.verbose:
             _logger.debug("InitWorker starting: dst=%s type=%s", self.dst_path, self.project_type)
         if self.pretend and not self.quiet:
@@ -130,23 +140,35 @@ class InitWorker:
         self._phase_prompt()
 
         if self.pretend:
+            # v5.6: --pretend 模式仍执行 Phase 3 渲染（到 tmpdir），输出文件清单后清理
+            tmpdir = Path(tempfile.mkdtemp(prefix="ae-init-"))
+            try:
+                self._current_phase = "render"
+                generated_tmp = self._phase_render(tmpdir)
+                if not self.quiet:
+                    _logger.info("将要生成 %d 个文件:", len(generated_tmp))
+                    for f in sorted(generated_tmp):
+                        _logger.info("  %s", f)
+            finally:
+                shutil.rmtree(tmpdir, ignore_errors=True)
             return InitResult(
                 dst_path=self.dst_path,
                 project_type=self.project_type or "",
+                files=[self.dst_path / str(f) for f in generated_tmp],
             )
 
         tmpdir = Path(tempfile.mkdtemp(prefix="ae-init-"))
         self._cleanup_hooks.append(lambda: shutil.rmtree(tmpdir, ignore_errors=True))
-        generated: list[Path] = []
+        generated_tmp: list[Path] = []
+        _error_occurred = False
 
         try:
             # Phase 3 — render
             self._current_phase = "render"
             _logger.debug("Phase: render")
             if self._template.message_before and not self.quiet:
-                # PE-AUDIT-P0-2: 模板 message_before 走 logger
                 _logger.info("%s", self._template.message_before)
-            generated = self._phase_render(tmpdir)
+            generated_tmp = self._phase_render(tmpdir)
 
             # Phase 4 — tasks
             self._current_phase = "tasks"
@@ -159,49 +181,64 @@ class InitWorker:
 
             # Phase 5 — finalize
             self._current_phase = "finalize"
-            did_create_dst = self._phase_finalize(tmpdir, generated)
+            self._phase_finalize(tmpdir, generated_tmp)
+
+            # Map tmpdir paths to dst_path for InitResult.files
+            # 增量模式：只计入实际新建的文件（跳过的已有文件不计入）
+            if self._mode == "incremental":
+                generated = [
+                    self.dst_path / f.relative_to(tmpdir)
+                    for f in generated_tmp
+                    if str(f.relative_to(tmpdir)) in self._created_files
+                ]
+            else:
+                generated = [
+                    self.dst_path / f.relative_to(tmpdir)
+                    for f in generated_tmp
+                ]
 
         except InitInterruptedError:
-            partial_path = self._answers.save_partial()
-            if not self.quiet:
-                # PE-AUDIT-P0-2: 中断消息走 logger (INFO 级别让默认输出可见)
-                _logger.info("\n已中断。部分答案已保存到: %s", partial_path)
-                _logger.info("恢复: ae init --from-answers %s", partial_path)
+            _error_occurred = True
+            try:
+                partial_path = self._answers.save_partial()
+            except OSError:
+                _logger.warning("保存部分答案失败", exc_info=True)
+            else:
+                if not self.quiet:
+                    _logger.info("\n已中断。部分答案已保存到: %s", partial_path)
+                    _logger.info("恢复: ae init --from-answers %s", partial_path)
+            raise
+
+        except (KeyboardInterrupt, SystemExit):
+            _error_occurred = True
             raise
 
         except Exception:
-            if self.cleanup_on_error and not dst_existed_before and self.dst_path.exists():
-                shutil.rmtree(self.dst_path)
+            _error_occurred = True
+            _logger.exception("InitWorker 执行失败 (phase=%s)", self._current_phase)
             raise
+
+        finally:
+            if _error_occurred and (
+                self.cleanup_on_error
+                and not dst_existed_before
+                and self.dst_path.exists()
+            ):
+                with contextlib.suppress(OSError):
+                    shutil.rmtree(self.dst_path)
 
         return InitResult(
             dst_path=self.dst_path,
             files=generated,
             answers=self._answers.to_answers_file(),
             project_type=self.project_type or "",
+            mode=self._mode,
+            skipped_files=self._skipped_files,
         )
 
-    # ─── 兼容层：原内部方法（v2.5 拆到 scaffold_prereq/scaffold_phase_funcs 后保留 thin wrapper）──
-
-    def _check_template_version(self) -> None:
-        """模板 _min_ae_version vs 已安装 __version__."""
-        if self._template is None:
-            return
-        check_template_version(self._template.min_ae_version)
-
-    def _check_prerequisites(self) -> None:
-        """基础工具链 + 语言工具链检查."""
-        from .scaffold_prereq import check_basic_tools, check_language_tools
-        check_basic_tools()
-        check_language_tools(self.language, self.skip_tasks)
-
-    # ─── 阶段方法（薄包装，monkey-patch 友好）────────────────────────
-    # 历史：原 InitWorker 拥有 _phase_* 方法。v2.5 拆到 scaffold_phase_funcs.py
-    # 后保留为 thin wrapper — 一行委托，让 monkeypatch.setattr(worker, ...)
-    # 仍能替换阶段逻辑（向后兼容测试）。
+    # ─── thin wrapper（monkey-patch 友好，向后兼容测试）──────────
 
     def _phase_detect(self) -> None:
-        # B1: 必须捕获 lock 对象 — 否则 fd 立刻被 GC,锁瞬间释放,失去并发保护。
         self.project_type, self._mode, self._detection, self._lock = phase_detect(
             project_type=self.project_type,
             dst_path=self.dst_path,
@@ -211,15 +248,18 @@ class InitWorker:
             force=self.force,
             pretend=self.pretend,
             defaults=self.defaults,
+            include_hidden=self.include_hidden,
         )
 
     def _phase_prompt(self) -> None:
-        detection_for_prompt = (
-            self._detection if hasattr(self._detection, "language") else None
-        )
+        detection_for_prompt = self._detection
+        # v5.6: --incremental 隐式非交互 — 存量项目不弹问答，
+        # 检测结果从 Phase 1 流入 AnswersMap.defaults 驱动渲染。
+        # 不依赖 --defaults CLI flag（语义不同：defaults=模板默认值，incremental=检测值）。
+        non_interactive = self.defaults or self._mode == "incremental"
         self._template, self._answers = phase_prompt(
             project_type=self.project_type,
-            defaults=self.defaults,
+            defaults=non_interactive,
             previous_answers=self._previous_answers,
             language=self.language,
             package_manager=self.package_manager,
@@ -229,8 +269,11 @@ class InitWorker:
             use_lefthook=self.use_lefthook,
             use_docker=self.use_docker,
             detection=detection_for_prompt,
+            dst_path=self.dst_path,
+            prompt_backend=self.prompt_backend,
         )
         check_template_version(self._template.min_ae_version)
+        _warn_java_version_mismatch(self._detection, self._answers)
 
     def _phase_render(self, tmpdir: Path) -> list[Path]:
         return phase_render(
@@ -242,7 +285,7 @@ class InitWorker:
             templates_suffix=self.templates_suffix,
             preserve_symlinks=self.preserve_symlinks,
             template_dir_override=self.template_dir_override,
-            strict=self.strict,
+            mode=self._mode,
         )
 
     def _phase_tasks(self, tmpdir: Path) -> None:
@@ -261,7 +304,7 @@ class InitWorker:
         )
 
     def _phase_finalize(self, tmpdir: Path, generated: list[Path]) -> bool:
-        did_create = phase_finalize(
+        did_create, skipped = phase_finalize(
             answers=self._answers,
             project_type=self.project_type,
             tmpdir=tmpdir,
@@ -271,8 +314,8 @@ class InitWorker:
             quiet=self.quiet,
             generated=generated,
         )
+        self._skipped_files = skipped
         # PE-P0-4: 在 dst_path (而非 tmpdir) 重新跑依赖安装,修复 .venv shebang 断裂
-        from .phases.finalize import phase_post_install
         phase_post_install(
             answers=self._answers,
             dst_path=self.dst_path,
@@ -282,4 +325,65 @@ class InitWorker:
             # PE-AUDIT-P0-1: 透传 hook_timeout
             timeout=self.hook_timeout,
         )
+        # B4/B5: git init in dst_path — Phase 4 在 tmpdir 执行的 git init 在增量
+        # 模式下会被 merge_incremental 跳过 (.git 在 EXCLUDED_DIRS),所以需要在
+        # dst_path 重新创建。全量模式下 .git 已被 _atomic_copytree 复制,git init
+        # 安全无副作用,git add+commit 捕获 post_install 产生的变更(如 lock 文件)。
+        from .scaffold_hooks import ensure_git_repo
+
+        if not self.pretend:
+            ensure_git_repo(self.dst_path, quiet=self.quiet)
         return did_create
+
+
+def _parse_java_version(raw: str) -> int | None:
+    """将 Java 版本字符串转为整数主版本号。
+
+    "1.8" → 8, "1.7" → 7, "21" → 21, "17" → 17。
+    解析失败返回 None。
+    """
+    if not raw or not raw.strip():
+        return None
+    raw = raw.strip()
+    try:
+        if raw.startswith("1.") and len(raw) == 3:
+            return int(raw[2:])
+        return int(raw)
+    except (ValueError, IndexError):
+        return None
+
+
+def _warn_java_version_mismatch(
+    detection: DetectionResult | None,
+    answers: AnswersMap,
+) -> None:
+    """Java 版本一致性检查：JDK 版本与编译目标版本相差过大时发出警告。
+
+    pom.xml <java.version>/<maven.compiler.source> 指定编译目标，
+    用户回答的 java_version 是实际安装的 JDK。两者相差 ≥ 4 个主版本时
+    输出警告，提醒用户确认是否有意为之。
+    """
+    if detection is None or detection._java_info is None:
+        return
+    detected_raw = detection._java_info.get("java_version")
+    if not detected_raw:
+        return
+    detected_ver = _parse_java_version(str(detected_raw))
+    if detected_ver is None:
+        return
+
+    jdk_raw = answers.get("java_version")
+    if not jdk_raw:
+        return
+    jdk_ver = _parse_java_version(str(jdk_raw))
+    if jdk_ver is None:
+        return
+
+    if abs(jdk_ver - detected_ver) >= 4:
+        _logger.warning(
+            "JDK 版本 (%s) 与 pom.xml 编译目标 (%s) 差距较大。"
+            "如果项目确实用旧版本编译，建议在 pom.xml 中更新 <java.version> "
+            "或 <maven.compiler.release>。CI 将使用 JDK %s 进行编译。",
+            jdk_raw, detected_raw, jdk_raw,
+        )
+

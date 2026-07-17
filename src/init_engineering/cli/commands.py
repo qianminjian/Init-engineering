@@ -1,86 +1,39 @@
-"""CLI 子命令 — init 命令实现 + 轻量子分支.
+"""CLI 子命令 — init 命令实现.
 
 从 cli/__init__.py 拆分 (2026-07-03 深度审计 P2-A):
 原 __init__.py 427 行超 300 行约束, 拆出:
-- _cmd_init (init 命令实现, 来自 P2-12)
-- --list-types / --list-templates / --analyze 分支 (纯函数, init() 调用)
-- update / status 命令拆分到 cli/subcommands.py (code review P2-12 follow-up)
+- cmd_init (init 命令实现)
+- --list-types / --list-templates / --analyze 已提升为独立命令 (2026-07-15 v5.5)
+- update / status 命令拆到 cli/subcommands.py
 """
 
 from __future__ import annotations
 
-import contextlib
-import os as _os
+import logging
 import time as _time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import click
 
 from init_engineering import __version__
 from init_engineering.cli._helpers import (
     configure_logging as _configure_logging,
+)
+from init_engineering.cli._helpers import (
     sanitize_error as _sanitize_error,
 )
+from init_engineering.init import InitResult
+
+if TYPE_CHECKING:
+    from typing import Any
+
+    from init_engineering.init._shared.prompt_backend import PromptBackend
+
+_logger = logging.getLogger(__name__)
 
 
-# ============================================================
-# init 命令的轻量子分支 (纯函数, init() 内部调用)
-# ============================================================
-
-
-def _cmd_list_types(templates_root: Path) -> None:
-    """--list-types: 列出所有可用的项目类型."""
-    types = sorted(
-        d.name for d in templates_root.iterdir()
-        if d.is_dir() and not d.name.startswith("_")
-    )
-    click.echo("可用的项目类型:")
-    for t in types:
-        click.echo(f"  {t}")
-
-
-def _cmd_list_templates(templates_root: Path) -> None:
-    """--list-templates: 列出每个类型的模板文件."""
-    types = sorted(
-        d.name for d in templates_root.iterdir()
-        if d.is_dir() and not d.name.startswith("_")
-    )
-    for t in types:
-        click.echo(f"\n[{t}]")
-        type_dir = templates_root / t
-        for f in sorted(type_dir.rglob("*")):
-            if f.is_file() and not f.name.startswith("."):
-                rel = f.relative_to(type_dir)
-                click.echo(f"  {rel}")
-
-
-def _cmd_analyze(dst_path: Path, project_detector_cls) -> None:
-    """--analyze: 只运行代码分析, 不初始化."""
-    detector = project_detector_cls(dst_path)
-    result = detector.analyze()
-    click.echo(f"分析目录: {dst_path}")
-    click.echo(f"项目名称: {result.project_name}")
-    if result.candidates:
-        click.echo(f"检测到的项目类型候选: {', '.join(result.candidates)}")
-        if result.project_type:
-            click.echo(f"✓ 自动检测结果: {result.project_type}")
-        else:
-            click.echo("⚠ 多个候选，无法自动确定类型")
-    else:
-        click.echo("⚠ 未检测到已知项目类型（空目录或未知类型）")
-    if result.language:
-        click.echo(f"语言: {result.language}")
-    if result.package_manager:
-        click.echo(f"包管理器: {result.package_manager}")
-    if result.test_runner:
-        click.echo(f"测试框架: {result.test_runner}")
-    if result.ci_platform:
-        click.echo(f"CI 平台: {result.ci_platform}")
-    if result.frameworks:
-        click.echo(f"框架: {', '.join(result.frameworks)}")
-
-
-def _cmd_init(
+def cmd_init(
     *,
     project: str | None,
     project_type: str | None,
@@ -102,38 +55,23 @@ def _cmd_init(
     verbose: bool,
     incremental: bool,
     strict: bool,
-    analyze_only: bool,
-    telemetry: bool,
-    list_types: bool,
-    list_templates: bool,
-    templates_suffix: str | None,
-    preserve_symlinks: bool | None,
     template_dir_override: str | None,
-    hook_timeout: int | None,
-    force_unsafe_template: bool,
-) -> None:
-    """P2-12: init 命令实现 — 从 cli/__init__.py 拆分以满足 ≤ 300 行约束.
+    include_hidden: bool = False,
+    prompt_backend: PromptBackend | None = None,
+) -> InitResult | None:
+    """init 命令实现 — 纯函数,接收已 click-解析的所有参数.
 
-    纯函数,接收已 click-解析的所有参数,执行 init 主体逻辑.
-    调用方 (init click 装饰函数) 只负责参数收集和转发.
+    v5.5: 移除 templates_suffix / preserve_symlinks / hook_timeout /
+    force_unsafe_template / telemetry CLI 选项（内部 API 仍保留默认值）。
+    --list-types / --list-templates / --analyze 已提升为独立命令。
+
+    Returns:
+        InitResult: 正常 init 流程完成时返回。
     """
     from init_engineering.init import InitWorker
-    from init_engineering.init.config import TEMPLATES_ROOT
-    from init_engineering.init.detector import ProjectDetector
+    from init_engineering.init.errors import InitError
 
-    # --list-types / --list-templates / --analyze 早返回分支
-    if list_types:
-        _cmd_list_types(TEMPLATES_ROOT)
-        return
-    if list_templates:
-        _cmd_list_templates(TEMPLATES_ROOT)
-        return
-
-    dst_path = Path(project) if project else Path.cwd()
-
-    if analyze_only:
-        _cmd_analyze(dst_path, ProjectDetector)
-        return
+    dst_path = (Path(project) if project else Path.cwd()).resolve()
 
     # --from-answers: 从 .ae-answers.yml 恢复 + 隐式非交互
     if answers_file:
@@ -143,13 +81,14 @@ def _cmd_init(
         if not quiet:
             click.echo(f"从 {answers_file} 恢复答案")
         if not project_type:
-            with contextlib.suppress(KeyError):
-                project_type = answers.get("project_type") or ""
+            project_type = answers.get("project_type", default="") or ""
+        if not language:
+            language = answers.get("language", default="") or "" or None
         defaults = True
     else:
         answers = None
 
-    # PR#4 P1-4: --template-dir 白名单硬阻断 + --force-unsafe-template 显式绕过
+    # --template-dir 白名单检查
     if template_dir_override:
         td = Path(template_dir_override).resolve()
         safe_roots = [Path.cwd(), Path.home() / ".ae-templates", Path("/tmp")]
@@ -157,58 +96,37 @@ def _cmd_init(
             str(td).startswith(str(r.resolve()) + "/") or td == r.resolve()
             for r in safe_roots if r.exists()
         )
-        if not is_safe and not force_unsafe_template:
+        if not is_safe:
             raise click.UsageError(
-                f"❌ --template-dir {td} 不在常用安全路径内 "
-                f"({[str(r) for r in safe_roots if r.exists()]})。"
-                f"使用不明来源模板可能含 RCE 风险 (Jinja 沙箱穿透攻击)。"
-                f"如确认模板来源可信, 加 --force-unsafe-template 显式绕过。"
+                f"❌ --template-dir {td} 不在安全路径内 "
+                f"({[str(r) for r in safe_roots if r.exists()]})。\n"
+                f"请将模板放入 ~/.ae-templates/ 或当前项目目录下。"
             )
-        if not is_safe and verbose:
-            click.echo(
-                f"⚠ 已用 --force-unsafe-template 绕过白名单检查: {td}",
-                err=True,
-            )
-
-    # --telemetry: 首次开启强制引导用户同意 (避免静默收集)
-    if telemetry:
-        from init_engineering.telemetry import has_consent, request_consent
-        if not has_consent():
-            if not request_consent():
-                click.echo("已禁用 telemetry (本次 init 不发送数据)", err=False)
-                telemetry = False
-            else:
-                _os.environ["AE_TELEMETRY"] = "1"
-        else:
-            _os.environ["AE_TELEMETRY"] = "1"
 
     _configure_logging(verbose=verbose)
 
-    _worker_kwargs = dict(
-        dst_path=dst_path,
-        project_type=project_type,
-        language=language,
-        package_manager=package_manager,
-        ci_platform=ci_platform,
-        test_runner=test_runner,
-        use_typescript=use_typescript,
-        use_lefthook=use_lefthook,
-        use_docker=use_docker,
-        defaults=defaults,
-        force=force,
-        pretend=pretend,
-        skip_tasks=skip_tasks,
-        no_install=no_install,
-        cleanup_on_error=cleanup_on_error,
-        quiet=quiet,
-        verbose=verbose,
-        incremental=incremental,
-        strict=strict,
-        template_dir_override=Path(template_dir_override) if template_dir_override else None,
-        force_unsafe_template=force_unsafe_template,
-        templates_suffix=templates_suffix,
-        preserve_symlinks=preserve_symlinks,
-        hook_timeout=hook_timeout,
+    # 非 TTY 环境自动启用非交互模式。
+    # --incremental 自身已隐含非交互（存量项目不弹问答），不需要 --defaults 的语义覆盖。
+    # --defaults 意味着"全部使用模板默认值"；--incremental 意味着"使用检测值驱动渲染"。
+    # 两者语义不同——incremental 走自己的 non_interactive 路径。
+    import sys as _sys
+    if (not _sys.stdin.isatty()) and not defaults and not incremental:
+        if not quiet:
+            click.echo("非 TTY 环境，自动启用 --defaults 模式", err=True)
+        defaults = True
+
+    _worker_kwargs = _build_init_worker_kwargs(
+        dst_path=dst_path, project_type=project_type, language=language,
+        package_manager=package_manager, ci_platform=ci_platform,
+        test_runner=test_runner, use_typescript=use_typescript,
+        use_lefthook=use_lefthook, use_docker=use_docker,
+        defaults=defaults, force=force, pretend=pretend,
+        skip_tasks=skip_tasks, no_install=no_install,
+        cleanup_on_error=cleanup_on_error, quiet=quiet,
+        verbose=verbose, incremental=incremental, strict=strict,
+        template_dir_override=template_dir_override,
+        prompt_backend=prompt_backend,
+        include_hidden=include_hidden,
     )
 
     # B1: 必须用 with 块 — __exit__ → _cleanup() 释放 InitLock,
@@ -218,45 +136,120 @@ def _cmd_init(
             worker._previous_answers = answers
 
         _start_ts = _time.monotonic()
+        _telemetry_error: str | None = None
         try:
             result = worker.execute()
-            elapsed_ms = int((_time.monotonic() - _start_ts) * 1000)
-            _emit_telemetry(
-                telemetry, project_type=result.project_type, language=language,
-                success=True, elapsed_ms=elapsed_ms,
+            if not quiet and not pretend:
+                _print_completion_report(result)
+            return result
+        except InitError as e:
+            _telemetry_error = type(e).__name__
+            _logger.error(
+                "init failed for %s: %s (recovery: %s)",
+                dst_path, e, e.recovery_hint or "无",
             )
+            safe_msg = _sanitize_error(str(e))
+            click.echo(f"✗ 初始化失败: {safe_msg}", err=True)
+            raise SystemExit(e.exit_code) from e
         except Exception as e:
-            elapsed_ms = int((_time.monotonic() - _start_ts) * 1000)
-            _emit_telemetry(
-                telemetry, project_type=project_type or "", language=language,
-                success=False, elapsed_ms=elapsed_ms, error_type=type(e).__name__,
-            )
-            # P2-13: 错误消息脱敏 — 替换 token/api_key/password 等为 [REDACTED]
+            _telemetry_error = type(e).__name__
+            _logger.exception("init failed unexpectedly for %s", dst_path)
             safe_msg = _sanitize_error(str(e))
             click.echo(f"✗ 初始化失败: {safe_msg}", err=True)
             raise SystemExit(1) from e
 
 
-def _emit_telemetry(
-    enabled: bool,
+def _build_init_worker_kwargs(
     *,
-    project_type: str,
+    dst_path: Path,
+    project_type: str | None,
     language: str | None,
-    success: bool,
-    elapsed_ms: int,
-    error_type: str | None = None,
-) -> None:
-    """P2-12: 提取 init 成功/失败两条 telemetry send 分支 — 消除 11 行重复."""
-    if not enabled:
-        return
-    from init_engineering.telemetry import TelemetryEvent
-    from init_engineering.telemetry import send as _send_telemetry
-    _send_telemetry(TelemetryEvent(
-        ae_version=__version__,
-        command="init",
-        project_type=project_type,
-        language=language or "",
-        success=success,
-        duration_ms=elapsed_ms,
-        error_type=error_type,
-    ))
+    package_manager: str | None,
+    ci_platform: str | None,
+    test_runner: str | None,
+    use_typescript: bool | None,
+    use_lefthook: bool | None,
+    use_docker: bool | None,
+    defaults: bool,
+    force: bool,
+    pretend: bool,
+    skip_tasks: bool,
+    no_install: bool,
+    cleanup_on_error: bool,
+    quiet: bool,
+    verbose: bool,
+    incremental: bool,
+    strict: bool,
+    template_dir_override: str | None,
+    prompt_backend: PromptBackend | None = None,
+    include_hidden: bool = False,
+) -> dict[str, Any]:
+    """构建 InitWorker 构造参数."""
+    return {
+        "dst_path": dst_path,
+        "project_type": project_type,
+        "language": language,
+        "package_manager": package_manager,
+        "ci_platform": ci_platform,
+        "test_runner": test_runner,
+        "use_typescript": use_typescript,
+        "use_lefthook": use_lefthook,
+        "use_docker": use_docker,
+        "defaults": defaults,
+        "force": force,
+        "pretend": pretend,
+        "skip_tasks": skip_tasks,
+        "no_install": no_install,
+        "cleanup_on_error": cleanup_on_error,
+        "quiet": quiet,
+        "verbose": verbose,
+        "incremental": incremental,
+        "strict": strict,
+        "template_dir_override": Path(template_dir_override) if template_dir_override else None,
+        "prompt_backend": prompt_backend,
+        "include_hidden": include_hidden,
+    }
+
+
+def _print_completion_report(result: InitResult) -> None:
+    """Print structured init completion report with stage boundary declaration.
+
+    Design: ae-init-process-analysis.md §4.3 — every successful init must
+    output a completion report that declares the stage boundary, so the agent
+    (and user) know init is done and design phase comes next.
+    """
+    file_count = len(result.files)
+    mode_label = "增量补充" if result.mode == "incremental" else "全新初始化"
+
+    lines = [
+        "",
+        "╔══════════════════════════════════════════╗",
+        "║         Init 完成报告                    ║",
+        "╚══════════════════════════════════════════╝",
+        "",
+        f"  项目类型:   {result.project_type}",
+        f"  初始化模式: {mode_label}",
+        f"  生成文件:   {file_count} 个",
+    ]
+
+    if result.mode == "incremental" and result.skipped_files > 0:
+        lines.append(f"  跳过文件:   {result.skipped_files} 个（已有）")
+
+    lines += [
+        f"  目标目录:   {result.dst_path}",
+        "",
+        "──────────────── 阶段边界 ────────────────",
+        "  ✅ init 阶段完成",
+        "  ⏭  下一步: 设计阶段",
+        "      - 确认技术选型（框架/库/工具）",
+        "      - 填充 BEACON.md 业务目标与范围",
+        "      - 产出架构方案",
+        "",
+        "  ❌ 不要直接安装业务依赖或编写业务代码",
+        "  ❌ 不要填充 BEACON.md 业务内容",
+        "  ⏸  等待用户确认后进入设计阶段",
+        "──────────────────────────────────────────",
+    ]
+
+    for line in lines:
+        click.echo(line)

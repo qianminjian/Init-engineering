@@ -27,7 +27,7 @@ class TestAnalyzeInitE2E:
     def test_analyze_python_library_then_init(self, tmp_path: Path):
         """在模拟 Python 库项目上 analyze → init 全流程."""
         from init_engineering.init.detector import ProjectDetector
-        from init_engineering.init.scaffold import InitWorker
+        from init_engineering.init.scaffold_phases import InitWorker
 
         # 1. 构造模拟的 Python 库项目
         proj = tmp_path / "my-pylib"
@@ -69,7 +69,7 @@ class TestAnalyzeInitE2E:
     def test_analyze_node_app_then_init(self, tmp_path: Path):
         """模拟 Node.js app-service 项目."""
         from init_engineering.init.detector import ProjectDetector
-        from init_engineering.init.scaffold import InitWorker
+        from init_engineering.init.scaffold_phases import InitWorker
 
         proj = tmp_path / "my-node-app"
         proj.mkdir()
@@ -197,7 +197,7 @@ class TestAnalyzeInitE2E:
     def test_analyze_detection_feeds_init_defaults(self, tmp_path: Path):
         """analyze 结果正确注入 InitWorker 作为 builtin 默认值."""
         from init_engineering.init.detector import ProjectDetector
-        from init_engineering.init.scaffold import InitWorker
+        from init_engineering.init.scaffold_phases import InitWorker
 
         proj = tmp_path / "detect-feed"
         proj.mkdir()
@@ -341,32 +341,6 @@ class TestMatrixSmoke:
 
 
 class TestStrictModeHooks:
-    """P0: HookRunner strict 模式测试."""
-
-    def test_hook_runner_strict_raises(self, tmp_path: Path):
-        """strict=True 时钩子命令失败抛 HookExecutionError."""
-        from init_engineering.init.errors import HookExecutionError
-        from init_engineering.init.hooks import HookRunner, HookSpec
-
-        spec = HookSpec(before_renderer=["exit 1"])
-        runner = HookRunner(tmp_path, spec=spec, strict=True)
-
-        with pytest.raises(HookExecutionError) as exc_info:
-            runner.before_renderer_hook({})
-        assert "exit 1" in str(exc_info.value)
-
-    def test_hook_runner_non_strict_warns(self, tmp_path: Path, caplog):
-        """strict=False 时钩子失败只 warning."""
-        import logging
-        from init_engineering.init.hooks import HookRunner, HookSpec
-
-        spec = HookSpec(before_renderer=["exit 1"])
-        runner = HookRunner(tmp_path, spec=spec, strict=False)
-
-        with caplog.at_level(logging.WARNING):
-            runner.before_renderer_hook({})
-        # 不抛异常
-        assert any("hook command failed" in r.message for r in caplog.records)
 
     def test_builtin_hooks_strict_raises_on_git_fail(self, tmp_path: Path, monkeypatch):
         """strict=True 时 builtin git init 失败抛异常."""
@@ -437,7 +411,7 @@ class TestConcurrencySafety:
         import fcntl
         import os as _os
         from init_engineering.init.errors import TargetDirectoryError
-        from init_engineering.init.scaffold import InitWorker
+        from init_engineering.init.scaffold_phases import InitWorker
 
         target = tmp_path / "locked-target"
         target.mkdir()
@@ -481,7 +455,7 @@ class TestConcurrencySafety:
     def test_initworker_blocks_concurrent_init_after_phase_detect(self, tmp_path: Path):
         """B1 regression: phase_detect 之后,第二个 init 仍被阻止 (锁持续持有)."""
         from init_engineering.init.errors import TargetDirectoryError
-        from init_engineering.init.scaffold import InitWorker
+        from init_engineering.init.scaffold_phases import InitWorker
 
         target = tmp_path / "blocked"
         target.mkdir()

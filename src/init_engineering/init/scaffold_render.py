@@ -10,11 +10,11 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from .config import TEMPLATES_ROOT
+from .config_types import TEMPLATES_ROOT, TemplateConfig, coerce_bool
+from .errors import ConfigFileError
 
 _logger = logging.getLogger(__name__)
 
@@ -29,6 +29,7 @@ _LANG_FEATURE_MAP = {
     "go": "go",
     "rust": "rust",
     "bash": "bash",
+    "java": "java",
 }
 
 # ci_platform → 模板 feature 子目录映射
@@ -45,6 +46,10 @@ _RENDER_STR_VARS = [
     "test_runner",
     "ci_platform",
     "project_type",
+    "qoder_project_title",
+    "qoder_project_description",
+    "qoder_tech_stack_summary",
+    "qoder_quickstart",
 ]
 
 
@@ -93,7 +98,7 @@ def build_template_dirs(
 
     # 3. feature 映射：lefthook / ci_platform / docker — 条件化选择
     feature_map: list[tuple[str, str]] = []
-    if context.get("use_lefthook"):
+    if coerce_bool(context.get("use_lefthook")):
         feature_map.append(("use_lefthook", "lefthook"))
 
     ci_platform = context.get("ci_platform")
@@ -102,7 +107,7 @@ def build_template_dirs(
         if feat_name:
             feature_map.append(("ci_platform", feat_name))
 
-    if context.get("use_docker"):
+    if coerce_bool(context.get("use_docker")):
         feature_map.append(("use_docker", "docker"))
 
     for answer_key, feature_name in feature_map:
@@ -146,11 +151,11 @@ def render_to(
     envops: dict,
     overwrite: bool,
     tmpdir: Path,
-    exclude_callback: str = "init_engineering.init._shared.exclude:default_match_exclude",
+    exclude_callback_spec: str | None = None,
     templates_suffix: str = ".jinja",
     preserve_symlinks: bool = True,
-    on_exists: Callable[[str], None] | None = None,
     external_template_dir: Path | None = None,
+    mode: str = "fresh",
 ) -> list[Path]:
     """Phase 渲染 — 委托给 TemplateRenderer，渲染到 tmpdir。
 
@@ -161,29 +166,26 @@ def render_to(
         folder_name: 目标目录名 (dst_path.name)
         template_dir: 模板根目录
         subdirectory: 可选子目录
-        exclude_callback: P1.2 — "module:function" 格式 spec, 渲染阶段动态排除
+        exclude_callback_spec: P1.2 — "module:function" 格式字符串, 渲染阶段动态排除
             来源: Copier _main.py:753 match_exclude
+        mode: "fresh" | "incremental" — 增量模式跳过示例源码模板
         其他: TemplateRenderer 参数
 
     Returns:
         生成的文件相对路径列表
     """
-    # 回填 builtin 变量（保持向后兼容原 _phase_render 行为）
-    answers.builtins["_folder_name"] = folder_name
+    # 准备 context 默认值（不修改传入的 AnswersMap，避免隐式副作用）
+    builtin_overrides: dict = {"_folder_name": folder_name, "_mode": mode}
     for var in _RENDER_STR_VARS:
         if var not in answers:
-            answers.builtins[var] = ""
-    # project_name 未显式设置时默认使用目录名
+            builtin_overrides[var] = ""
     if "project_name" not in answers:
-        answers.builtins["project_name"] = folder_name
-    if "use_typescript" not in answers:
-        answers.builtins["use_typescript"] = False
-    if "use_lefthook" not in answers:
-        answers.builtins["use_lefthook"] = False
-    if "use_docker" not in answers:
-        answers.builtins["use_docker"] = False
+        builtin_overrides["project_name"] = folder_name
+    for k in ("use_typescript", "use_lefthook", "use_docker"):
+        if k not in answers:
+            builtin_overrides[k] = False
 
-    context = answers.combined()
+    context = {**answers.combined(), **builtin_overrides}
     template_dirs = build_template_dirs(
         context=context,
         type_dir=template_dir,
@@ -191,18 +193,44 @@ def render_to(
         external_template_dir=external_template_dir,
     )
 
-    # P1.2: 解析 exclude_callback spec 为可调用对象
+    # v5.3: 多模块项目 — 不生成根级 src/（各子模块有自己的源码）
+    # v5.6: 增量模式 — 存量 monorepo 项目已有模块结构，
+    #        跳过 packages/**/src/main/**（不覆盖已有源码），保留 test + pom.xml 等配置
+    if context.get("is_multi_module"):
+        exclude = list(exclude) + ["src/**"]
+    if mode == "incremental" and context.get("project_type") == "monorepo":
+        exclude = list(exclude) + ["packages/**/src/main/**"]
+        # v5.6 Phase I: aggregator 不在根目录 → 项目是「独立项目容器」而非「统一 reactor」。
+        # 所有依赖根 reactor POM 的模板都应跳过（tests/ 的 pom.xml 有 <parent> 引用根 POM）。
+        # 此列表为命名常量而非 ad-hoc 字符串追加，确保同类模板一次性全审计。
+        # v5.6 Phase J: 容器项目无根 POM → 排除 tests/ 整个目录（含 pom.xml + Java 文件）。
+        # tests/ Maven 模块仅适用于拓扑 B（reactor），拓扑 C 各模块用 src/test/java/。
+        _REACTOR_ONLY_TEMPLATES = ["/pom.xml", "packages/", "tests/"]
+        if context.get("aggregator_path", ""):
+            exclude = list(exclude) + _REACTOR_ONLY_TEMPLATES
+
+    # P1.2: 解析 exclude_callback_spec → 可调用对象
     # ImportError: 模板模块不存在 → 回退(非阻断)
     # ValueError: spec 格式错误 → 抛错(阻断)
     # AttributeError: 函数不存在 → 抛错(阻断)
     from ._shared.exclude import default_match_exclude, parse_exclude_callback
 
+    if exclude_callback_spec is None:
+        exclude_callback_spec = TemplateConfig._EXCLUDE_CALLBACK_SPEC
+
     try:
-        match_exclude = parse_exclude_callback(exclude_callback)
+        match_exclude = parse_exclude_callback(exclude_callback_spec)
     except ImportError:
+        _logger.warning(
+            "exclude callback module not found, falling back to default: %s",
+            exclude_callback_spec,
+        )
         match_exclude = default_match_exclude
     except (ValueError, AttributeError) as e:
-        raise ValueError(f"exclude_callback 配置错误: {e}") from e
+        raise ConfigFileError(
+            f"exclude_callback_spec 配置错误: {e}",
+            config_path=exclude_callback_spec,
+        ) from e
 
     from .renderer import TemplateRenderer
 
@@ -217,6 +245,5 @@ def render_to(
         match_exclude=match_exclude,
         templates_suffix=templates_suffix,
         preserve_symlinks=preserve_symlinks,
-        on_exists=on_exists,
     )
     return renderer.render_to(tmpdir)

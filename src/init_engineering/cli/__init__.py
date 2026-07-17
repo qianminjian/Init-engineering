@@ -1,113 +1,125 @@
 """CLI 入口 — Click 命令注册.
 
 命令:
-    ae init <project>         项目环境初始化
-    ae init --analyze <path> 存量项目：代码分析 + 自动初始化
-    ae init-config            查看/编辑初始化配置
+    ae init <project>       项目环境初始化
+    ae analyze <path>        存量项目分析（只分析不初始化）
+    ae update <project>      增量更新已有项目
+    ae status                查看项目环境状态
+    ae list-types            列出可用项目类型
+    ae list-templates        列出模板文件
 """
 
 from __future__ import annotations
 
-import contextlib
-from pathlib import Path
-
 import click
 
 from init_engineering import __version__
-from init_engineering.cli._helpers import configure_logging as _configure_logging
-from init_engineering.cli._helpers import sanitize_error as _sanitize_error
 
+# ── Epilogs (usage examples) ──────────────────────────────────────────
+
+_EXAMPLES_INIT = """\
+使用示例:
+  ae init my-app --type app-service          新项目向导初始化
+  ae init my-app --type library --defaults   非交互初始化（跳过问答）
+  ae init . --defaults                       存量项目自动分析 + 初始化
+  ae init . --incremental                    增量模式：只补充缺失文件
+  ae init my-app --type app-service --pretend 模拟执行，查看会生成什么
+  ae init . --defaults --skip-tasks --no-install  CI 流水线模式"""
+
+_EXAMPLES_ANALYZE = """\
+使用示例:
+  ae analyze .                       分析当前目录
+  ae analyze /path/to/project        分析指定目录
+  ae analyze . --include-hidden      包含隐藏目录（.qoder/.claude/ 等）"""
+
+_EXAMPLES_UPDATE = """\
+使用示例:
+  ae update                        升级当前目录项目
+  ae update --conflict overwrite   强制覆盖用户修改
+  ae update --dry-run              只看差异，不实际写入"""
+
+
+# ── Group ─────────────────────────────────────────────────────────────
 
 @click.group()
 @click.version_option(version=__version__, prog_name="ae")
 def main():
-    """Init-Engineering — Agent Skill 模式项目环境初始化工具."""
-    pass
+    """Init-Engineering — 项目环境初始化工具.
+
+    为 Claude Code Agent 工作流提供项目脚手架能力。
+
+    \b
+    两种核心模式：
+      新项目向导：  ae init <project> --type <type>
+      存量项目分析：ae analyze <path> && ae init . --defaults
+
+    \b
+    常用命令：
+      ae init        项目初始化
+      ae analyze     存量项目分析
+      ae update      增量更新已有项目
+      ae status      查看项目环境状态
+    """
 
 
-@main.command()
+# ── ae init ───────────────────────────────────────────────────────────
+
+@main.command(epilog=_EXAMPLES_INIT)
 @click.argument("project", required=False)
+# ── 项目配置 ──
 @click.option(
-    "--type",
-    "project_type",
-    help="项目类型 (app-service/library/cli-tool/skill/hook/mcp-server/spec-doc/monorepo)",
+    "--type", "project_type",
+    help="项目类型：app-service / cli-tool / library / skill / hook / mcp-server / spec-doc / monorepo / plugin",
 )
+@click.option("--language", help="主要语言：typescript / python / go / rust / java")
+# ── 模式控制 ──
 @click.option("--defaults", is_flag=True, help="非交互模式，全部使用默认值")
 @click.option("--force", is_flag=True, help="允许覆盖非空目录")
+@click.option("--incremental", is_flag=True, help="增量模式：只补充缺失文件，不覆盖已有")
+@click.option("--pretend", is_flag=True, help="模拟执行，不产生文件（调试用）")
+# ── 配置覆盖 ──
+@click.option("--package-manager", help="包管理器：npm / pnpm / yarn / bun / uv / poetry / pip")
+@click.option("--ci", "ci_platform", help="CI 平台：github / gitlab / none")
+@click.option("--test-runner", help="测试框架：pytest / jest / vitest / go test / mvn test")
 @click.option(
-    "--from-answers", "answers_file", type=click.Path(exists=True), help="从 .ae-answers.yml 重放"
-)
-@click.option("--language", help="主要语言 (typescript/python/go/rust)")
-@click.option("--package-manager", help="包管理器 (npm/pnpm/yarn/bun/uv/poetry)")
-@click.option("--ci", "ci_platform", help="CI 平台 (github/gitlab/none)")
-@click.option("--test-runner", help="测试框架")
-@click.option(
-    "--use-typescript/--no-typescript",
-    "use_typescript",
-    default=None,
-    help="是否启用 TypeScript",
+    "--use-typescript/--no-typescript", "use_typescript", default=None,
+    help="启用/禁用 TypeScript（默认对 Node 项目自动开启）",
 )
 @click.option(
-    "--use-lefthook/--no-lefthook",
-    "use_lefthook",
-    default=None,
-    help="是否安装 Lefthook",
+    "--use-lefthook/--no-lefthook", "use_lefthook", default=None,
+    help="启用/禁用 Lefthook git hooks",
 )
 @click.option(
-    "--use-docker/--no-docker", "use_docker", default=None, help="添加 Docker 支持"
+    "--use-docker/--no-docker", "use_docker", default=None,
+    help="启用/禁用 Docker 支持",
 )
-@click.option("--pretend", is_flag=True, help="模拟执行，不产生文件")
-@click.option("--skip-tasks", is_flag=True, help="跳过钩子任务执行")
-# PE-P0-1: --no-install 跳过 package_manager install 阶段 (CI/离线场景)
-@click.option(
-    "--no-install", "no_install", is_flag=True, help="跳过依赖安装 (uv sync/npm install)"
-)
-@click.option(
-    "--no-cleanup", "cleanup_on_error", flag_value=False, default=True, help="出错时不清理目标目录"
-)
-@click.option("--template-dir", "template_dir_override", type=click.Path(exists=True, file_okay=False), help="外部模板目录路径")
-@click.option("--strict", is_flag=True, help="严格模式：钩子失败时抛出异常而非警告")
-@click.option("--quiet", is_flag=True, help="静默模式")
+@click.option("--no-install", "no_install", is_flag=True, help="跳过依赖安装（CI/离线场景）")
+# ── 流程控制 ──
+@click.option("--skip-tasks", is_flag=True, help="跳过钩子任务（git init / package install 等）")
+@click.option("--quiet", is_flag=True, help="静默模式，减少输出")
 @click.option("--verbose", "-v", is_flag=True, help="详细输出（DEBUG 级别日志）")
-@click.option("--telemetry", is_flag=True, help="启用匿名使用数据收集")
-@click.option("--incremental", is_flag=True, help="增量模式：只补充缺失文件，不覆盖已有文件")
+@click.option("--strict", is_flag=True, help="严格模式：钩子失败时报错退出而非警告")
+# ── 高级（--help 不显示，--help-advanced 或源码查阅） ──
 @click.option(
-    "--analyze", "analyze_only", is_flag=True, help="存量项目：只分析项目类型，不初始化"
+    "--from-answers", "answers_file", type=click.Path(exists=True), hidden=True,
+    help="从 .ae-answers.yml 恢复（CI 场景）",
 )
 @click.option(
-    "--list-types", "list_types", is_flag=True, help="列出所有可用的项目类型"
+    "--template-dir", "template_dir_override", type=click.Path(exists=True, file_okay=False),
+    hidden=True, help="外部模板目录（默认仅允许 ~/.ae-templates/）",
 )
 @click.option(
-    "--list-templates", "list_templates", is_flag=True, help="列出所有可用模板文件"
-)
-# P1-1: templates_suffix + preserve_symlinks CLI 透传
-@click.option(
-    "--templates-suffix",
-    "templates_suffix",
-    help="模板文件后缀 (默认: .jinja)",
+    "--include-hidden", "include_hidden", is_flag=True, default=False, hidden=True,
+    help="检测阶段扫描隐藏目录（.qoder/.claude/ 等）",
 )
 @click.option(
-    "--preserve-symlinks/--no-preserve-symlinks",
-    "preserve_symlinks",
-    default=None,
-    help="是否保留 symlink (默认: True)",
+    "--no-cleanup", "cleanup_on_error", flag_value=False, default=True, hidden=True,
+    help="错误时保留临时文件用于调试",
 )
-# PE-P1-4: 全局钩子超时(秒) — 对慢任务 (cargo build/large npm install) 显式调大
-@click.option(
-    "--hook-timeout",
-    "hook_timeout",
-    type=int,
-    default=None,
-    help="钩子命令默认超时秒数 (默认 300, 模板 Task.timeout 可逐任务覆盖)",
-)
-# PR#4 P1-4: --template-dir 安全绕过 — 显式 flag 才允许非白名单路径
-@click.option(
-    "--force-unsafe-template",
-    "force_unsafe_template",
-    is_flag=True,
-    default=False,
-    help="强制使用非白名单 --template-dir (PR#4 P1-4: 默认会被拒绝, 仅此 flag 可绕过)",
-)
+# ── 已废弃（hidden，仅向后兼容） ──
+@click.option("--list-types", "list_types_legacy", is_flag=True, hidden=True)
+@click.option("--list-templates", "list_templates_legacy", is_flag=True, hidden=True)
+@click.option("--analyze", "analyze_legacy", is_flag=True, hidden=True)
 def init(
     project: str | None,
     project_type: str | None,
@@ -129,22 +141,44 @@ def init(
     verbose: bool,
     incremental: bool,
     strict: bool,
-    analyze_only: bool,
-    telemetry: bool,
-    list_types: bool,
-    list_templates: bool,
-    templates_suffix: str | None,
-    preserve_symlinks: bool | None,
+    list_types_legacy: bool,
+    list_templates_legacy: bool,
+    analyze_legacy: bool,
     template_dir_override: str | None,
-    hook_timeout: int | None,
-    force_unsafe_template: bool,
+    include_hidden: bool,
 ):
-    """项目环境初始化."""
-    # P2-12: 函数体拆到 cli/commands.py::_cmd_init —
-    # cli/__init__.py 只保留 click 选项装饰器 + 调度, 控制在 300 行内.
-    from init_engineering.cli.commands import _cmd_init
+    """项目环境初始化 — 新项目向导或存量项目自动分析.
 
-    _cmd_init(
+    不指定 --type 时自动检测存量项目类型与配置。
+    使用 --defaults 跳过所有交互式问答（CI/Agent 模式）。
+    """
+    from init_engineering.cli._click_backend import ClickPromptBackend
+    from init_engineering.cli.commands import cmd_init
+
+    # Backward compat: --list-types / --list-templates / --analyze as init flags
+    if list_types_legacy:
+        click.echo("⚠  --list-types 已废弃，请使用 ae list-types", err=True)
+        from init_engineering.cli._list_cmds import cmd_list_types
+        from init_engineering.init.config_types import TEMPLATES_ROOT
+        cmd_list_types(TEMPLATES_ROOT)
+        return
+    if list_templates_legacy:
+        click.echo("⚠  --list-templates 已废弃，请使用 ae list-templates", err=True)
+        from init_engineering.cli._list_cmds import cmd_list_templates
+        from init_engineering.init.config_types import TEMPLATES_ROOT
+        cmd_list_templates(TEMPLATES_ROOT)
+        return
+    if analyze_legacy:
+        click.echo("⚠  --analyze 已废弃，请使用 ae analyze <path>", err=True)
+        from pathlib import Path as _Path
+        from init_engineering.cli._list_cmds import cmd_analyze
+        from init_engineering.init.detector import ProjectDetector
+        dst_path = (_Path(project) if project else _Path.cwd()).resolve()
+        cmd_analyze(dst_path, ProjectDetector, project_type=project_type, include_hidden=include_hidden)
+        return
+
+    cmd_init(
+        prompt_backend=ClickPromptBackend(),
         project=project,
         project_type=project_type,
         defaults=defaults,
@@ -165,22 +199,60 @@ def init(
         verbose=verbose,
         incremental=incremental,
         strict=strict,
-        analyze_only=analyze_only,
-        telemetry=telemetry,
-        list_types=list_types,
-        list_templates=list_templates,
-        templates_suffix=templates_suffix,
-        preserve_symlinks=preserve_symlinks,
         template_dir_override=template_dir_override,
-        hook_timeout=hook_timeout,
-        force_unsafe_template=force_unsafe_template,
+        include_hidden=include_hidden,
     )
 
 
-# P2-A: update / status 命令拆到 cli/subcommands.py (code review follow-up)
-# _cmd_init 拆到 cli/commands.py — cli/__init__.py 拆分后 ≤ 300 行
-from init_engineering.cli.commands import _cmd_init  # noqa: E402
-from init_engineering.cli.subcommands import update, status  # noqa: E402
+# ── ae analyze ────────────────────────────────────────────────────────
+
+@main.command(epilog=_EXAMPLES_ANALYZE)
+@click.argument("path", required=False, default=".")
+@click.option(
+    "--include-hidden", "include_hidden", is_flag=True, default=False,
+    help="扫描隐藏目录（.qoder/.claude/ 等反向工程资产）",
+)
+def analyze(path: str, include_hidden: bool):
+    """分析存量项目 — 检测项目类型、语言、框架、配置.
+
+    只分析不初始化，输出检测结果供后续 ae init 使用。
+    """
+    from pathlib import Path as _Path
+
+    from init_engineering.cli._list_cmds import cmd_analyze
+    from init_engineering.init.detector import ProjectDetector
+
+    dst_path = _Path(path).resolve()
+    if not dst_path.exists():
+        click.echo(f"✗ 目录不存在: {dst_path}", err=True)
+        raise SystemExit(1)
+    cmd_analyze(dst_path, ProjectDetector, include_hidden=include_hidden)
+
+
+# ── ae list-types ─────────────────────────────────────────────────────
+
+@main.command(name="list-types")
+def list_types_cmd():
+    """列出所有可用的项目类型."""
+    from init_engineering.cli._list_cmds import cmd_list_types
+    from init_engineering.init.config_types import TEMPLATES_ROOT
+    cmd_list_types(TEMPLATES_ROOT)
+
+
+# ── ae list-templates ─────────────────────────────────────────────────
+
+@main.command(name="list-templates")
+@click.option("--type", "filter_type", help="仅列出指定类型的模板")
+def list_templates_cmd(filter_type: str | None):
+    """列出模板文件 — 查看每个项目类型会生成哪些文件."""
+    from init_engineering.cli._list_cmds import cmd_list_templates
+    from init_engineering.init.config_types import TEMPLATES_ROOT
+    cmd_list_templates(TEMPLATES_ROOT, filter_type=filter_type)
+
+
+# ── ae update / ae status (imported from subcommands) ─────────────────
+
+from init_engineering.cli.subcommands import status, update  # noqa: E402
 
 main.add_command(update)
 main.add_command(status)

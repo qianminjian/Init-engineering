@@ -9,12 +9,16 @@
 
 from __future__ import annotations
 
+import logging
+
 import jinja2
 from jinja2 import StrictUndefined
 from jinja2.sandbox import SandboxedEnvironment
 
 from .answers import AnswersMap
-from .config import Question, TemplateConfig
+from .config_types import Question, TemplateConfig
+
+_logger = logging.getLogger(__name__)
 
 
 def evaluate_question_defaults(template: TemplateConfig, answers: AnswersMap) -> None:
@@ -30,7 +34,7 @@ def evaluate_question_defaults(template: TemplateConfig, answers: AnswersMap) ->
 
     for q in template.questions:
         _apply_when(q, answers, env, context)
-        _render_default(q, answers, env, context)
+        _render_default_to_answers(q, answers, env, context)
 
 
 def _apply_when(q: Question, answers: AnswersMap, env: SandboxedEnvironment, context: dict) -> None:
@@ -40,18 +44,20 @@ def _apply_when(q: Question, answers: AnswersMap, env: SandboxedEnvironment, con
             result = tpl.render(**context)
             if not result or result.strip().lower() in ("false", "no", "0", ""):
                 answers.defaults.pop(q.var_name, None)
-        except jinja2.TemplateError:
-            pass  # 渲染失败保留 question
+        except jinja2.TemplateError as e:
+            _logger.debug("when 条件渲染失败, 保留 question: %s → %s", q.when, e, exc_info=True)
     elif q.when is False:
         answers.defaults.pop(q.var_name, None)
 
 
-def _render_default(q: Question, answers: AnswersMap, env: SandboxedEnvironment, context: dict) -> None:
+def _render_default_to_answers(
+    q: Question, answers: AnswersMap, env: SandboxedEnvironment, context: dict
+) -> None:
     if isinstance(q.default, str) and "{{" in q.default:
         try:
             rendered = env.from_string(q.default).render(**context)
             if q.get_type_name() == "bool":
                 rendered = rendered.strip().lower() in ("true", "yes", "1")
             answers.defaults[q.var_name] = rendered
-        except jinja2.TemplateError:
-            pass  # 渲染失败保留原始值
+        except jinja2.TemplateError as e:
+            _logger.debug("default 渲染失败, 保留原始值: %s → %s", q.default, e, exc_info=True)

@@ -1,26 +1,58 @@
-# {{ project_name or _folder_name }}
+# {{ qoder_project_title or project_name or _folder_name }}
 
-> {{ project_description or 'Project scaffolded by ae init' }}
+> {{ qoder_project_description or project_description or 'Project scaffolded by ae init' }}
 
 ## Quick Start
 
 ```bash
-{% if package_manager %}{{ package_manager }} install
-{% endif %}{% if test_runner %}{{ test_runner }}{% endif %}
+{%- if language == 'java' %}
+mvn install
+mvn test
+{%- elif package_manager %}{{ package_manager }} install
+{%- if test_runner %}{{ test_runner }}{% endif %}
+{%- endif %}
 ```
 
 ## Architecture
 
 ```
 {{ project_name or '.' }}/
-├── src/           # Source code
-├── tests/         # Test files
-└── docs/          # Documentation
+{%- if language == 'java' %}
+├── pom.xml           # Maven build descriptor
+├── src/main/java/    # Application source
+├── src/test/java/    # Test source
+└── docs/             # Documentation
+{%- elif language == 'go' %}
+├── go.mod            # Go module definition
+├── cmd/              # Entry points
+├── internal/         # Private packages
+└── docs/             # Documentation
+{%- elif language == 'python' %}
+├── pyproject.toml    # Python project config
+├── src/              # Source packages
+├── tests/            # Test files
+└── docs/             # Documentation
+{%- elif language == 'rust' %}
+├── Cargo.toml        # Rust package manifest
+├── src/              # Source code
+├── tests/            # Integration tests
+└── docs/             # Documentation
+{%- else %}
+├── src/              # Source code
+├── tests/            # Test files
+└── docs/             # Documentation
+{%- endif %}
 ```
 
 ## Commands
 
-{% if package_manager %}
+{%- if language == 'java' %}
+- Build: `mvn install`
+- Test: `mvn test`
+- Lint: `mvn checkstyle:check`
+- Format: `mvn spotless:apply`
+{%- else %}
+{%- if package_manager %}
 - Install: `{{ package_manager }} install`
 {%- endif %}
 {%- if test_runner %}
@@ -39,10 +71,47 @@
 - Lint: `cargo clippy`
 - Format: `cargo fmt`
 {%- endif %}
+{%- endif %}
 
 ## Tech Stack
-
-{%- if language %}- Language: {{ language }}{% endif %}
-{%- if package_manager %}- Package: {{ package_manager }}{% endif %}
-{%- if test_runner %}- Test: {{ test_runner }}{% endif %}
-{%- if ci_platform and ci_platform != 'none' %}- CI: {{ ci_platform }}{% endif %}
+{% if language %}- Language: {{ language }}
+{% endif %}{% if package_manager %}- Package: {{ package_manager }}
+{% endif %}{% if test_runner %}- Test: {{ test_runner }}
+{% endif %}{% if ci_platform and ci_platform != 'none' %}- CI: {{ ci_platform }}
+{% endif %}
+{%- if qoder_tech_stack_summary is defined and qoder_tech_stack_summary %}
+{{ qoder_tech_stack_summary }}
+{%- endif %}
+{%- if frameworks is defined and frameworks %}
+## Frameworks
+{% for f in frameworks %}
+- {{ f }}
+{%- endfor %}
+{%- endif %}
+{%- if java_modules is defined and java_modules | trim %}
+## Modules
+{% for m in java_modules.split(",") | map("trim") | list %}
+- {{ m }}
+{%- endfor %}
+{%- elif qoder_module_details is defined and qoder_module_details %}
+## Modules
+{% for m in qoder_module_details %}
+- **{{ m.key }}** — {{ m.title }}{% if m.overview %}: {{ m.overview }}{% endif %}
+{%- endfor %}
+{%- endif %}
+{%- if java_dependencies is defined and java_dependencies %}
+## Key Dependencies
+{% for d in java_dependencies.split(",") | map("trim") | list %}{% if not d.startswith("module:") %}
+- {{ d }}
+{%- endif %}{%- endfor %}
+{%- endif %}
+{%- if python_dependencies is defined and python_dependencies %}
+## Key Dependencies
+{% for d in python_dependencies %}
+- {{ d }}
+{%- endfor %}
+{%- endif %}
+{%- if _external_data is defined and _external_data %}
+{{ _external_data.architecture or '' }}
+{{ _external_data.conventions or '' }}
+{%- endif %}

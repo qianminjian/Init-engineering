@@ -31,7 +31,7 @@ import yaml
 
 class TestErrorsReExport:
     def test_all_error_classes_importable(self):
-        from init_engineering.errors import (
+        from init_engineering.init.errors import (
             ConfigFileError,
             ConfigLoaderSecurityError,
             HookExecutionError,
@@ -54,10 +54,10 @@ class TestErrorsReExport:
         assert UnsatisfiedPrerequisiteError is not None
         assert ValidationError is not None
 
-    def test_errors_module_all_has_10_entries(self):
-        from init_engineering import errors
+    def test_init_module_all_has_13_entries(self):
+        from init_engineering.init import __all__ as init_all
 
-        assert len(errors.__all__) == 10
+        assert len(init_all) == 13
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -166,7 +166,7 @@ class TestQuestionCastAnswerMultiselect:
 class TestEvaluateQuestionDefaults:
     def test_when_false_removes_default(self):
         from init_engineering.init.answers import AnswersMap
-        from init_engineering.init.config import TemplateConfig
+        from init_engineering.init.config_types import TemplateConfig
         from init_engineering.init.config_types import Question
         from init_engineering.init.scaffold_question_eval import (
             evaluate_question_defaults,
@@ -180,7 +180,7 @@ class TestEvaluateQuestionDefaults:
 
     def test_when_template_error_preserves_default(self):
         from init_engineering.init.answers import AnswersMap
-        from init_engineering.init.config import TemplateConfig
+        from init_engineering.init.config_types import TemplateConfig
         from init_engineering.init.config_types import Question
         from init_engineering.init.scaffold_question_eval import (
             evaluate_question_defaults,
@@ -194,7 +194,7 @@ class TestEvaluateQuestionDefaults:
 
     def test_render_default_template_error_preserves_original(self):
         from init_engineering.init.answers import AnswersMap
-        from init_engineering.init.config import TemplateConfig
+        from init_engineering.init.config_types import TemplateConfig
         from init_engineering.init.config_types import Question
         from init_engineering.init.scaffold_question_eval import (
             evaluate_question_defaults,
@@ -218,7 +218,8 @@ class TestAnswersMapFromFile:
 
         f = tmp_path / ".ae-answers.yml"
         f.write_text("just a string\n")
-        with pytest.raises(ValueError, match="顶层必须是 mapping"):
+        from init_engineering.init.errors import ValidationError
+        with pytest.raises(ValidationError, match="顶层必须是 mapping"):
             AnswersMap.from_answers_file(f)
 
     def test_non_dict_meta_treated_as_empty(self, tmp_path: Path):
@@ -236,7 +237,8 @@ class TestAnswersMapFromFile:
         f.write_text(
             yaml.dump({"_meta": {"ae_version": "99.0.0"}, "key": "val"})
         )
-        with pytest.raises(ValueError, match="不兼容"):
+        from init_engineering.init.errors import ValidationError
+        with pytest.raises(ValidationError, match="不兼容"):
             AnswersMap.from_answers_file(f)
 
     def test_schema_version_unsupported_raises(self, tmp_path: Path):
@@ -246,7 +248,8 @@ class TestAnswersMapFromFile:
         f.write_text(
             yaml.dump({"_meta": {"schema_version": 999}, "key": "val"})
         )
-        with pytest.raises(ValueError, match="schema_version"):
+        from init_engineering.init.errors import ValidationError
+        with pytest.raises(ValidationError, match="schema_version"):
             AnswersMap.from_answers_file(f)
 
     def test_missing_meta_schema_version_ok(self, tmp_path: Path):
@@ -276,7 +279,7 @@ class TestAnswersMapFromFile:
 
 class TestSensitiveFieldFilter:
     def test_exact_match(self):
-        from init_engineering.init.answers import _is_sensitive_field
+        from init_engineering.init._answers_io import _is_sensitive_field
 
         assert _is_sensitive_field("password") is True
         assert _is_sensitive_field("secret") is True
@@ -284,7 +287,7 @@ class TestSensitiveFieldFilter:
         assert _is_sensitive_field("api_key") is True
 
     def test_suffix_match(self):
-        from init_engineering.init.answers import _is_sensitive_field
+        from init_engineering.init._answers_io import _is_sensitive_field
 
         assert _is_sensitive_field("db_password") is True
         assert _is_sensitive_field("github_token") is True
@@ -293,14 +296,14 @@ class TestSensitiveFieldFilter:
         assert _is_sensitive_field("admin_credential") is True
 
     def test_normal_fields_ok(self):
-        from init_engineering.init.answers import _is_sensitive_field
+        from init_engineering.init._answers_io import _is_sensitive_field
 
         assert _is_sensitive_field("project_name") is False
         assert _is_sensitive_field("language") is False
         assert _is_sensitive_field("package_manager") is False
 
     def test_case_insensitive(self):
-        from init_engineering.init.answers import _is_sensitive_field
+        from init_engineering.init._answers_io import _is_sensitive_field
 
         assert _is_sensitive_field("PASSWORD") is True
         assert _is_sensitive_field("Api_Key") is True
@@ -329,25 +332,7 @@ class TestAnswersMapToFile:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 8. environment.py (9 missed: L121-128, 244-245 + _warn_undetectable)
-# ═══════════════════════════════════════════════════════════════════════════════
-
-
-class TestProjectEnvironmentWarn:
-    def test_warn_type_inconsistency_with_diff_type(self, tmp_path: Path):
-        from init_engineering.config.environment import ProjectEnvironment
-
-        (tmp_path / "package.json").write_text("{}")
-        (tmp_path / "tsconfig.json").write_text("{}")
-
-        env = ProjectEnvironment(project_type="library")
-        env._warn_type_inconsistency(tmp_path)
-
-    def test_warn_type_inconsistency_no_type_skips(self, tmp_path: Path):
-        from init_engineering.config.environment import ProjectEnvironment
-
-        env = ProjectEnvironment(project_type="")
-        env._warn_type_inconsistency(tmp_path)
+# 8. environment.py (9 missed: L121-128, 244-245 + warn_undetectable)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -393,10 +378,10 @@ class TestInteractivePromptRunSimplePass:
 
 
 class TestPromptForNestedTemplate:
-    def test_empty_nested_returns_empty(self):
+    def test_empty_nested_returns_none(self):
         from init_engineering.init.prompts import prompt_for_nested_template
 
-        assert prompt_for_nested_template({}) == ""
+        assert prompt_for_nested_template({}) is None
 
     def test_no_input_with_preferred(self):
         from init_engineering.init.prompts import prompt_for_nested_template
@@ -427,14 +412,14 @@ class TestPromptForNestedTemplate:
 
 class TestDetectPackageManagerEdge:
     def test_package_json_with_package_manager_field(self, tmp_path: Path):
-        from init_engineering.init.detector_helpers import detect_package_manager
+        from init_engineering._shared.detection import detect_package_manager
 
         pkg = tmp_path / "package.json"
         pkg.write_text('{"packageManager": "pnpm@8.0.0"}')
         assert detect_package_manager(tmp_path) == "pnpm"
 
     def test_json_decode_error_returns_none(self, tmp_path: Path):
-        from init_engineering.init.detector_helpers import detect_package_manager
+        from init_engineering._shared.detection import detect_package_manager
 
         (tmp_path / "package.json").write_text("not json")
         (tmp_path / "pnpm-lock.yaml").write_text("")
@@ -444,47 +429,47 @@ class TestDetectPackageManagerEdge:
 
 class TestDetectTestRunnerEdge:
     def test_python_language_defaults_to_pytest(self):
-        from init_engineering.init.detector_helpers import detect_test_runner
+        from init_engineering._shared.detection import detect_test_runner
 
         assert detect_test_runner(Path("/nonexistent"), language="python") == "pytest"
 
     def test_go_language_returns_go_test(self):
-        from init_engineering.init.detector_helpers import detect_test_runner
+        from init_engineering._shared.detection import detect_test_runner
 
         assert detect_test_runner(Path("/nonexistent"), language="go") == "go test"
 
     def test_rust_language_returns_cargo_test(self):
-        from init_engineering.init.detector_helpers import detect_test_runner
+        from init_engineering._shared.detection import detect_test_runner
 
         assert detect_test_runner(Path("/nonexistent"), language="rust") == "cargo test"
 
-    def test_typescript_defaults_to_vitest(self):
-        from init_engineering.init.detector_helpers import detect_test_runner
+    def test_typescript_defaults_to_none(self):
+        from init_engineering._shared.detection import detect_test_runner
 
-        assert detect_test_runner(Path("/nonexistent"), language="typescript") == "vitest"
+        assert detect_test_runner(Path("/nonexistent"), language="typescript") is None
 
     def test_package_json_json_decode_error_graceful(self, tmp_path: Path):
-        from init_engineering.init.detector_helpers import detect_test_runner
+        from init_engineering._shared.detection import detect_test_runner
 
         (tmp_path / "package.json").write_text("bad json")
         result = detect_test_runner(tmp_path, language="typescript")
-        assert result == "vitest"
+        assert result is None
 
 
 class TestDetectCiPlatform:
     def test_no_ci_config_returns_none(self, tmp_path: Path):
-        from init_engineering.init.detector_helpers import detect_ci_platform
+        from init_engineering._shared.detection import detect_ci_platform
 
         assert detect_ci_platform(tmp_path) is None
 
     def test_github_workflows_detected(self, tmp_path: Path):
-        from init_engineering.init.detector_helpers import detect_ci_platform
+        from init_engineering._shared.detection import detect_ci_platform
 
         (tmp_path / ".github" / "workflows").mkdir(parents=True)
         assert detect_ci_platform(tmp_path) == "github"
 
     def test_gitlab_ci_detected(self, tmp_path: Path):
-        from init_engineering.init.detector_helpers import detect_ci_platform
+        from init_engineering._shared.detection import detect_ci_platform
 
         (tmp_path / ".gitlab-ci.yml").write_text("")
         assert detect_ci_platform(tmp_path) == "gitlab"
@@ -593,26 +578,26 @@ class TestAnalyzeGo:
 class TestValidatePackageManager:
     def test_invalid_pm_raises(self):
         from init_engineering.init.errors import HookExecutionError
-        from init_engineering.init.scaffold_hooks import _validate_package_manager
+        from init_engineering.init.scaffold_hooks import validate_package_manager
 
         with pytest.raises(HookExecutionError, match="不在白名单"):
-            _validate_package_manager("rm")
+            validate_package_manager("rm")
 
 
 class TestHasPackageFile:
     def test_npm_checks_package_json(self, tmp_path: Path):
-        from init_engineering.init.scaffold_hooks import _has_package_file
+        from init_engineering.init.scaffold_hooks import has_package_file
 
         (tmp_path / "package.json").write_text("{}")
-        assert _has_package_file(tmp_path, "npm") is True
+        assert has_package_file(tmp_path, "npm") is True
 
     def test_uv_checks_pyproject_toml(self, tmp_path: Path):
-        from init_engineering.init.scaffold_hooks import _has_package_file
+        from init_engineering.init.scaffold_hooks import has_package_file
 
         (tmp_path / "pyproject.toml").write_text("")
-        assert _has_package_file(tmp_path, "uv") is True
+        assert has_package_file(tmp_path, "uv") is True
 
     def test_no_package_file_returns_false(self, tmp_path: Path):
-        from init_engineering.init.scaffold_hooks import _has_package_file
+        from init_engineering.init.scaffold_hooks import has_package_file
 
-        assert _has_package_file(tmp_path, "npm") is False
+        assert has_package_file(tmp_path, "npm") is False

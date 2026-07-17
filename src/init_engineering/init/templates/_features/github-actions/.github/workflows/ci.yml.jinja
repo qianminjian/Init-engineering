@@ -51,4 +51,20 @@ jobs:
       - run: cargo fmt --check
       - run: cargo clippy -- -D warnings
       - run: cargo test
+    {% elif language == 'java' -%}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '{{ java_version | default(detected_java_version) }}'
+          distribution: 'temurin'
+          cache: 'maven'
+      - run: mvn {% if aggregator_path is defined and aggregator_path %}-f {{ aggregator_path }}/pom.xml {% endif %}compile --batch-mode
+      - run: mvn {% if aggregator_path is defined and aggregator_path %}-f {{ aggregator_path }}/pom.xml {% endif %}test --batch-mode
+    {%- if java_extra_modules is defined and java_extra_modules %}
+    {%- for m in java_extra_modules.split(",") | map("trim") | list %}
+      - run: mvn -f {{ m }}/pom.xml test --batch-mode
+    {%- endfor %}
+    {%- endif %}
     {% endif -%}

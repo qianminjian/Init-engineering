@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
@@ -13,7 +13,12 @@ import yaml
 
 @dataclass
 class ProjectEnvironment:
-    """项目工程环境。由 init 写入,其他工具按需读取。"""
+    """项目工程环境。由 init 写入, 其他工具按需读取。
+
+    use_typescript / use_lefthook / has_git 是检测结果的持久化快照,
+    同时被 init 流水线 (scaffold_render / scaffold_hooks) 和 ae status 命令消费,
+    不是 status-only 属性。
+    """
 
     project_name: str = ""
     project_description: str = ""
@@ -24,8 +29,6 @@ class ProjectEnvironment:
     use_lefthook: bool = False
     ci_platform: str | None = None
     has_git: bool = True
-    # v2.5 P1-3: sandbox_roots — !include 路径必须在 sandbox 内
-    sandbox_roots: list[str] = field(default_factory=list)
 
     @classmethod
     def resolve(cls, project_root: Path) -> ProjectEnvironment:
@@ -35,7 +38,6 @@ class ProjectEnvironment:
         if answers_file.exists():
             env = cls._from_answers_file(answers_file)
             changed = env._sync_detectable(project_root)
-            env._warn_type_inconsistency(project_root)
             if changed:
                 env.save(project_root)
             return env
@@ -46,7 +48,9 @@ class ProjectEnvironment:
 
     @classmethod
     def _from_answers_file(cls, path: Path) -> ProjectEnvironment:
-        data = yaml.safe_load(path.read_text()) or {}
+        from init_engineering._shared.io import read_yaml
+
+        data = read_yaml(path)
         data.pop("_meta", {})
         field_names = {f.name for f in cls.__dataclass_fields__.values()}
         return cls(**{k: v for k, v in data.items() if k in field_names})
@@ -66,17 +70,17 @@ class ProjectEnvironment:
 
     @staticmethod
     def _detect_package_manager(root: Path) -> str | None:
-        from init_engineering.init.detector_helpers import detect_package_manager as _detect_pm
+        from init_engineering._shared.detection import detect_package_manager as _detect_pm
         return _detect_pm(root)
 
     @staticmethod
     def _detect_test_runner(root: Path) -> str | None:
-        from init_engineering.init.detector_helpers import detect_test_runner as _detect_tr
+        from init_engineering._shared.detection import detect_test_runner as _detect_tr
         return _detect_tr(root)
 
     @staticmethod
     def _detect_ci(root: Path) -> str | None:
-        from init_engineering.init.detector_helpers import detect_ci_platform as _detect_ci_plat
+        from init_engineering._shared.detection import detect_ci_platform as _detect_ci_plat
         return _detect_ci_plat(root)
 
     # 6 个可客观判定的字段 — _sync_detectable 只处理这些
@@ -100,33 +104,18 @@ class ProjectEnvironment:
             "use_lefthook": (root / "lefthook.yml").exists(),
             "has_git": (root / ".git").exists(),
         }
+        if set(detections.keys()) != set(self._DETECTABLE_FIELDS):
+            raise ValueError(
+                f"_sync_detectable keys {set(detections.keys())} "
+                f"!= _DETECTABLE_FIELDS {set(self._DETECTABLE_FIELDS)}"
+            )
         for field_name, detected in detections.items():
             if detected is not None and getattr(self, field_name) != detected:
                 setattr(self, field_name, detected)
                 changed = True
         return changed
 
-    def _warn_type_inconsistency(self, root: Path) -> None:
-        """project_type 与检测结果不一致时打印警告（不改值）。
-
-        设计: Section 10.3 — project_type 不可客观判定，有冲突时提示用户，不改。
-        """
-        if not self.project_type:
-            return
-        from init_engineering.init.detector import ProjectDetector
-
-        detector = ProjectDetector(root)
-        candidates = detector.list_candidates()
-        detected = detector.detect()
-        if detected and detected != self.project_type:
-            import sys
-            print(
-                f"warning: 记录的 project_type={self.project_type!r}, "
-                f"当前代码检测为 {detected!r}。保持记录值。",
-                file=sys.stderr,
-            )
-
-    def _warn_undetectable(self, root: Path) -> list[str]:
+    def warn_undetectable(self, root: Path) -> list[str]:
         """A5: 列出当前无法自动判定的字段 (供 CLI 层 warning 提示).
 
         Returns:
@@ -158,10 +147,12 @@ class ProjectEnvironment:
             if not f.name.startswith("_")
         }
         if answers_file.exists():
-            existing = yaml.safe_load(answers_file.read_text()) or {}
+            from init_engineering._shared.io import read_yaml
+
+            existing = read_yaml(answers_file)
             meta = existing.get("_meta", {})
         else:
             meta = {}
         meta["updated_at"] = datetime.now().astimezone().isoformat()  # PR#5 P2-10: 加 tz
         data["_meta"] = meta
-        answers_file.write_text(yaml.dump(data, allow_unicode=True))
+        answers_file.write_text(yaml.dump(data, allow_unicode=True), encoding="utf-8")

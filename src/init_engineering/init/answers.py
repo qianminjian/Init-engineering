@@ -3,6 +3,10 @@
 来源：Copier _user_data.py:70-133 AnswersMap + _external_data + LazyDict
 """
 
+from __future__ import annotations
+
+import json
+import logging
 import os as _os
 import sys
 import tempfile
@@ -18,22 +22,24 @@ from typing import Any
 
 import yaml
 
-from ._lazy_external import _LazyExternalDict, _load_external_file
+from .. import __version__ as _ae_version
+from ._answers_io import (
+    _build_answers_data,
+    _load_answers_file,
+    _save_partial_answers,
+    _write_answers_file,
+)
+from ._shared.path_utils import is_path_under_any_root
+
+_logger = logging.getLogger(__name__)
 
 BUILTIN_VARS: MappingProxyType = MappingProxyType({
-    # v1.0: 与 __version__ 同步 — 单版本号策略 (BEACON.md 决策 #5)。
-    # 模板中可用 {{ _ae_version }} 判断引擎能力，向后兼容字段名 `_ae_version`。
-    "_ae_version": "1.0.0",
     "_folder_name": "",
-    # P2-2: _ae_python 不再 import 时冻结 — 在 combined() 动态计算 (与 current_year 同模式)
+    # P2-2: _ae_python/_ae_version 在 combined() 动态计算 (与 current_year 同模式),
+    # 避免 import 时硬编码导致跨升级版本号不同步。
     "sep": _os.sep,
     "os": {"linux": "linux", "darwin": "macos", "win32": "windows"}.get(sys.platform, "linux"),
 })
-
-
-def _current_year_builtin() -> str:
-    """动态计算 current_year — 避免 import 时 frozen 跨年任务."""
-    return str(datetime.now().year)
 
 
 def _python_executable_builtin() -> str:
@@ -71,27 +77,51 @@ class AnswersMap:
     external_sandbox_roots: list[str] = field(default_factory=list)
     _external_cache: dict[str, Any] = field(default_factory=dict, init=False)
 
-    def get(self, key: str) -> Any:
-        for layer in [
-            self.cli_overrides,
-            self.interactive,
-            self.previous,
-            self.defaults,
-            self.builtins,
-        ]:
-            val = layer.get(key)
-            if val is not None:
-                return val
-        if key in self.external:
-            return self._load_external(key)
-        raise KeyError(key)
+    _MISSING = object()
 
-    def combined(self) -> dict[str, Any]:
+    def get(self, key: str, default: Any = _MISSING) -> Any:
+        """按优先级链查找变量：cli → interactive → previous → defaults → builtins → external。
+
+        行为与 dict.get() 一致：未找到时返回 default，default 未传时返回 None。
+
+        ⚠ 隐式 IO: external 层 key 会触发 _load_external() 磁盘读取。
+
+        Args:
+            key: 变量名
+            default: 未找到时返回此值（默认 None）。
+        """
+        try:
+            for layer in [
+                self.cli_overrides,
+                self.interactive,
+                self.previous,
+                self.defaults,
+                self.builtins,
+            ]:
+                if key in layer:
+                    val = layer[key]
+                    if val is not None:
+                        return val
+                    # key 存在但值为 None: 返回 None, 不继续查低优先级层。
+                    # 注意: 这与标准 dict.get() 语义不同 — dict.get() 返回存储值
+                    # (包括 None), 本实现将 None 视为"已找到,停在这里"的信号。
+                    return None
+            if key in self.external:
+                return self._load_external(key)
+            raise KeyError(key)
+        except KeyError:
+            if default is not self._MISSING:
+                return default
+            return None
+
+    def combined(self, now: datetime | None = None) -> dict[str, Any]:
         """全量合并。用于 Jinja2 渲染上下文。外挂 _external_data 键（懒加载）。
 
         B3: current_year 在此方法调用时动态计算 (跨年 daemon / agent 任务场景)。
         P2-2: _ae_python 同模式 — 避免 import 时 frozen, 跨进程 Python 升级后失效。
+        now: 可注入时钟 — 测试 freeze time 时传入, 默认当前时间。
         """
+        dt = now or datetime.now()
         result = dict(
             ChainMap(
                 self.cli_overrides,
@@ -101,10 +131,14 @@ class AnswersMap:
                 self.builtins,
             )
         )
-        # B3: 动态注入 current_year — 每次调用重新计算, 避免 frozen 在 import 时的年份
-        result["current_year"] = _current_year_builtin()
+        # B3: 动态注入日期变量 — 每次调用重新计算, 避免 frozen 在 import 时
+        result["current_year"] = str(dt.year)
+        result["current_month"] = f"{dt.month:02d}"
+        result["current_day"] = f"{dt.day:02d}"
         # P2-2: 动态注入 _ae_python — 同 current_year 模式, 防止跨升级失效
         result["_ae_python"] = _python_executable_builtin()
+        # P2-10: _ae_version — 与 __version__ 同步, 避免硬编码 (IN-09: 已提升到模块级)
+        result["_ae_version"] = _ae_version
         if self.external:
             result["_external_data"] = _LazyExternalDict(
                 self.external,
@@ -142,154 +176,166 @@ class AnswersMap:
             )
         return self._external_cache[key]
 
-    def hide(self, key: str) -> None:
-        """标记字段不写入 .ae-answers.yml。来源：Copier AnswersMap.hide()"""
-        self.hidden.add(key)
-
     def save_partial(self, path: Path | None = None) -> Path:
-        """保存已收集的部分答案。Ctrl-C 时调用。
-
-        P2-3: 写文件前显式 chmod 0o600 (仅 owner 可读写) — 答案可能含
-        project_name 推断 / 业务描述 / package_manager 等,虽然不直接是
-        secret,但尽量收窄可见性。0o600 缺省安全姿态, 同一用户其他进程
-        (无 root) 仍可读, 不影响 replay 使用。
-        """
+        """保存已收集的部分答案。Ctrl-C 时调用。"""
         if path is None:
             path = Path.home() / ".ae-partial-answers.yml"
-        import os as _os
-
-        old_umask = _os.umask(0o077)
-        try:
-            path.write_text(
-                yaml.dump(
-                    {
-                        "_meta": {
-                            # PR#5 P2-10: 加 UTC tz — 跨时区复用无歧义
-                            "saved_at": datetime.now().astimezone().isoformat(),
-                            "partial": True,
-                        },
-                        **self.interactive,
-                    }
-                )
-            )
-            _os.chmod(path, 0o600)
-        finally:
-            _os.umask(old_umask)
-        return path
+        return _save_partial_answers(self.interactive, path)
 
     @classmethod
-    def from_answers_file(cls, path: Path) -> "AnswersMap":
+    def from_answers_file(cls, path: Path) -> AnswersMap:
         """从 .ae-answers.yml 加载 previous 层。
 
         SE-P1-2: 来源校验 — 拒绝 _meta.ae_version 与当前引擎主版本不兼容的
-        文件 (防恶意/损坏的 answers 注入),并 warning 显示真实来源路径。
+        文件 (防恶意/损坏的 answers 注入)。
+
+        Raises:
+            ValidationError: 文件无法读取或格式错误。
         """
-        from .. import __version__
+        from .errors import ValidationError
 
-        data = yaml.safe_load(path.read_text()) or {}
-        if not isinstance(data, dict):
-            raise ValueError(
-                f"answers 文件 {path} 顶层必须是 mapping, 实际是 {type(data).__name__}"
-            )
-        _meta = data.pop("_meta", {}) or {}
-        if not isinstance(_meta, dict):
-            _meta = {}
-
-        # SE-P1-2: 版本兼容性检查 — _meta.ae_version 缺失 → 警告但不拒绝
-        # (旧文件可能没有 _meta); 存在但主版本不匹配 → 拒绝加载
-        meta_version = _meta.get("ae_version")
-        if meta_version:
-            try:
-                current_major = __version__.split(".")[0]
-                file_major = str(meta_version).split(".")[0]
-                if file_major != current_major:
-                    raise ValueError(
-                        f"answers 文件 {path} ae_version='{meta_version}' "
-                        f"与当前引擎主版本 '{__version__}' 不兼容。"
-                        f"主版本变化时 answers 字段可能不兼容, 拒绝加载以防误用。"
-                        f"如确认来源可信, 请删除 _meta.ae_version 后重试。"
-                    )
-            except (IndexError, AttributeError):
-                pass
-
-        # DI-P1-2: schema_version 检查 — _meta.schema_version 是文件格式版本,
-        # 必须等于当前支持的 schema 版本 (1)。schema 字段重命名/类型变更时 bump。
-        # 缺失 schema_version → 警告但不拒绝 (旧 v1.0 文件无此字段)
-        meta_schema = _meta.get("schema_version")
-        if meta_schema is not None and meta_schema != 1:
-            raise ValueError(
-                f"answers 文件 {path} schema_version='{meta_schema}' 不受支持。"
-                f"当前引擎仅支持 schema_version=1。"
-                f"请升级 ae 或使用旧版本重新生成 answers。"
-            )
-
-        return cls(previous=data)
+        try:
+            return cls(previous=_load_answers_file(path))
+        except OSError as e:
+            raise ValidationError(
+                f"无法读取 answers 文件 {path}: {e}",
+                field_name="answers_file",
+            ) from e
+        except ValueError as e:
+            raise ValidationError(
+                f"answers 文件 {path} 格式或版本不兼容: {e}",
+                field_name="answers_file",
+            ) from e
 
     def to_answers_file(self) -> dict:
-        """生成要写入 .ae-answers.yml 的数据。过滤 hidden 和 _ 前缀内部字段。
-
-        DI-P1-2: _meta 新增 schema_version 字段 — 标记 .ae-answers.yml 文件格式
-        版本, 与 ae_version (引擎版本) 分离。引擎小版本变化不破坏格式兼容性,
-        schema_version 必须显式 bump 才能引入不兼容字段 (如字段重命名/类型变更)。
-
-        P2-11: 敏感字段过滤 — 含 password/secret/token/api_key/private_key
-        的字段自动跳过, 防止 .ae-answers.yml 不慎 commit 到 git 后泄露凭据。
-        """
-        result = {}
-        result["_meta"] = {
-            "ae_version": self.builtins.get("_ae_version", "1.0.0"),
-            "schema_version": 1,  # DI-P1-2: .ae-answers.yml 格式 schema 版本
-            # PR#5 P2-10: 加 UTC tz — datetime.now() 无时区信息, 跨时区复用易混淆
-            "created_at": datetime.now().astimezone().isoformat(),
-        }
-        combined = self.combined()
-        for key, value in combined.items():
-            if key.startswith("_") or key in self.hidden:
-                continue
-            # P2-11: 敏感字段过滤 — 不写入 .ae-answers.yml
-            if _is_sensitive_field(key):
-                continue
-            if isinstance(value, (str, int, float, bool, list, dict, type(None))):
-                result[key] = value
-        return result
+        """生成要写入 .ae-answers.yml 的数据。过滤 hidden 和 _ 前缀内部字段。"""
+        return _build_answers_data(self.combined(), self.hidden)
 
     def write_to(self, dst: Path) -> None:
         """写入 .ae-answers.yml 到目标路径。
 
-        P2-16: 显式 utf-8 encoding — 防止 Windows GBK 默认编码破坏中文 answers。
+        Raises:
+            OSError: 写入失败（目录权限/磁盘满等）。
         """
-        with open(dst, "w", encoding="utf-8") as f:
-            yaml.dump(self.to_answers_file(), f, allow_unicode=True)
+        _write_answers_file(self.to_answers_file(), dst)
 
     def __getitem__(self, key: str) -> Any:
-        try:
-            return self.get(key)
-        except KeyError:
-            raise KeyError(key) from None
+        if key not in self:
+            raise KeyError(
+                f"'{key}' 不在 answers 中。请确认该变量已在 ae-template.yml 的 questions "
+                f"中定义，或在 CLI 中通过对应 flag 提供。"
+            ) from None
+        return self.get(key)
 
     def __contains__(self, key: str) -> bool:
-        try:
-            self.get(key)
-            return True
-        except KeyError:
-            return False
+        """检查 key 是否在任一优先级层中。
+
+        ⚠ 隐式 IO: external 层 key 会触发 _load_external() 磁盘读取。
+        对性能敏感的热路径应优先检查内层 (in cli_overrides/interactive/previous/defaults/builtins)。
+        """
+        for layer in [
+            self.cli_overrides,
+            self.interactive,
+            self.previous,
+            self.defaults,
+            self.builtins,
+        ]:
+            if key in layer:
+                return True
+        return key in self.external
 
 
-# P2-11: 敏感字段名白名单 (含常见 secret 命名约定, 跨语言通用)
-_SENSITIVE_FIELD_PATTERNS = frozenset({
-    "password", "passwd", "secret", "token", "api_key", "apikey",
-    "access_token", "refresh_token", "private_key", "secret_key",
-    "auth", "authorization", "credential", "credentials",
-})
+# ─── external_data 懒加载 (从 _lazy_external.py 折叠) ──────────
 
 
-def _is_sensitive_field(key: str) -> bool:
-    """P2-11: 判断字段名是否暗示敏感数据 (大小写不敏感)."""
-    k = key.lower()
-    if k in _SENSITIVE_FIELD_PATTERNS:
-        return True
-    # 含常见 secret 后缀 (e.g. db_password, github_token)
-    for suffix in ("_password", "_secret", "_token", "_key", "_credential"):
-        if k.endswith(suffix):
-            return True
-    return False
+def _load_external_file(
+    file_path: Path,
+    effective_roots: list[Path],
+    var_key: str = "",
+) -> Any:
+    """共享 external_data 文件加载 + sandbox 校验."""
+    if effective_roots and not is_path_under_any_root(file_path, effective_roots):
+        key_hint = f" (key='{var_key}')" if var_key else ""
+        raise ValueError(
+            f"external_data path '{file_path}'{key_hint} "
+            f"not under sandbox roots {effective_roots}."
+        )
+    if not file_path.exists():
+        return None
+    try:
+        raw = file_path.read_text(encoding="utf-8")
+    except (UnicodeDecodeError, OSError) as e:
+        _logger.debug("无法读取 external_data 文件 %s: %s", file_path, e, exc_info=True)
+        return None
+    if file_path.suffix == ".json":
+        return json.loads(raw)
+    return yaml.safe_load(raw)
+
+
+class _LazyExternalDict:
+    """Lazy-loading dictionary for external data files.
+
+    来源：Copier _external_data + LazyDict 模式。
+    Supports YAML (.yml/.yaml) and JSON (.json) files.
+    """
+
+    def __init__(
+        self,
+        external_map: dict[str, str],
+        sandbox_roots: list[Path] | None = None,
+    ) -> None:
+        import tempfile
+
+        self._external_map = external_map
+        # PR#4 P1-5 fallback: 与 _load_external() 一致，sandbox_roots 为空时
+        # 用 [cwd, home, tempdir] 作为最小安全边界，防止路径穿越。
+        self._sandbox_roots = sandbox_roots or [
+            Path.cwd(), Path.home(), Path(tempfile.gettempdir())
+        ]
+        self._cache: dict[str, Any] = {}
+
+    def get(self, key: str, default: Any = None) -> Any:
+        """dict.get() 风格 — 懒加载文件内容，key 不存在时返回 default。"""
+        if key not in self._external_map:
+            return default
+        if key not in self._cache:
+            self._cache[key] = _load_external_file(
+                Path(self._external_map[key]),
+                effective_roots=self._sandbox_roots,
+                var_key=key,
+            )
+        return self._cache[key]
+
+    def __getitem__(self, key: str) -> Any:
+        if key not in self._cache:
+            if key not in self._external_map:
+                raise KeyError(
+                    f"external_data key '{key}' 不存在。"
+                    f"已配置的 external_data: {sorted(self._external_map.keys())}"
+                )
+            self._cache[key] = _load_external_file(
+                Path(self._external_map[key]),
+                effective_roots=self._sandbox_roots,
+                var_key=key,
+            )
+        return self._cache[key]
+
+    def __contains__(self, key: str) -> bool:
+        return key in self._external_map
+
+    def __iter__(self):
+        return iter(self._external_map)
+
+    def __len__(self) -> int:
+        return len(self._external_map)
+
+    def keys(self):
+        return self._external_map.keys()
+
+    def items(self):
+        """⚠ 隐式 I/O: 每次迭代触发 _load_external_file() 磁盘读取 YAML/JSON。"""
+        for k in self._external_map:
+            yield (k, self[k])
+
+    def __repr__(self) -> str:
+        return f"_LazyExternalDict(keys={list(self._external_map.keys())})"

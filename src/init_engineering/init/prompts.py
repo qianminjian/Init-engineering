@@ -1,4 +1,4 @@
-"""InteractivePrompt — 交互式问答.
+"""InteractivePrompt — 交互式问答 + 项目类型/嵌套模板选择.
 
 来源：
 - copier/_user_data.py:297-460 — Question.get_default_rendered() + render_value()
@@ -6,60 +6,27 @@
 - cookiecutter/prompt.py:61-80 — read_user_yes_no() 灵活的布尔解析
 
 接口：
-  InteractivePrompt(questions, answers) -> .run() -> AnswersMap
-  prompt_for_project_type(available_types) -> str  (当 --type 未指定且无法自动检测时)
+  InteractivePrompt(questions, answers, backend=None) -> .run() -> AnswersMap
+  prompt_for_project_type / prompt_for_nested_template — 独立选择函数
+
+架构: 核心层不直接依赖 click, 通过 PromptBackend 协议注入用户交互实现。
 """
 
+from __future__ import annotations
+
+import logging
+from collections.abc import Callable
 from typing import Any
 
-import click
-import jinja2
+import jinja2.sandbox
 from jinja2 import StrictUndefined
 
+from ._shared.prompt_backend import BasicPromptBackend, PromptBackend, UserAbort
 from .answers import AnswersMap
-from .config import Question
+from .errors import ValidationError
 
-# 问题类型 → click 方法映射
-# 来源：Copier CAST_STR_TO_NATIVE + Cookiecutter read_user_* 系列
-_PROMPT_DISPATCH = {
-    "str": lambda q, ctx: click.prompt(q.help, default=q.default or ""),
-    "bool": lambda q, ctx: click.confirm(
-        q.help,
-        default=q.default if isinstance(q.default, bool) else True,
-    ),
-    "int": lambda q, ctx: click.prompt(
-        q.help,
-        type=int,
-        default=q.default or 0,
-    ),
-    "float": lambda q, ctx: click.prompt(
-        q.help,
-        type=float,
-        default=q.default or 0.0,
-    ),
-    "choice": lambda q, ctx: click.prompt(
-        q.help,
-        type=click.Choice(
-            list(q.choices) if isinstance(q.choices, list) else list(q.choices.keys()),
-            case_sensitive=False,
-        ),
-        default=q.default,
-        show_choices=True,
-    ),
-    "secret": lambda q, ctx: click.prompt(
-        q.help,
-        hide_input=True,
-        default=q.default or "",
-    ),
-    "json": lambda q, ctx: click.prompt(
-        q.help,
-        default=str(q.default or "{}"),
-    ),
-    "yaml": lambda q, ctx: click.prompt(
-        q.help,
-        default=str(q.default or ""),
-    ),
-}
+_logger = logging.getLogger(__name__)
+from .config_types import Question  # noqa: E402
 
 
 class InteractivePrompt:
@@ -77,13 +44,22 @@ class InteractivePrompt:
         result = prompt.run()  # 返回更新后的 AnswersMap
     """
 
-    def __init__(self, questions: list[Question], answers: AnswersMap):
+    def __init__(
+        self,
+        questions: list[Question],
+        answers: AnswersMap,
+        backend: PromptBackend | None = None,
+    ):
         self.questions = questions
         self.answers = answers
-        self._jinja_env = jinja2.Environment(undefined=StrictUndefined)
+        self._backend = backend or BasicPromptBackend()
+        self._jinja_env = jinja2.sandbox.SandboxedEnvironment(undefined=StrictUndefined)
 
     def run(self) -> AnswersMap:
         """执行交互式问答。返回更新后的 AnswersMap。
+
+        ⚠ 副作用: 返回的是构造时传入的 self.answers 对象 (原地修改),
+        非新拷贝。调用者应据此处理引用语义。
 
         两遍循环：
         1. 第一遍：简单类型 → 收集基础变量
@@ -103,15 +79,102 @@ class InteractivePrompt:
 
         return self.answers
 
+    # ── 类型分发 (替代 _PROMPT_DISPATCH dict) ──────────────
+
+    def _prompt_str(self, q: Question, _ctx: dict) -> str:
+        return self._backend.prompt(q.help, default=q.default or "")
+
+    def _prompt_bool(self, q: Question, _ctx: dict) -> bool:
+        return self._backend.confirm(
+            q.help,
+            default=q.default if isinstance(q.default, bool) else True,
+        )
+
+    def _prompt_int(self, q: Question, _ctx: dict) -> int:
+        return self._backend.prompt(q.help, type=int, default=q.default or 0)
+
+    def _prompt_float(self, q: Question, _ctx: dict) -> float:
+        return self._backend.prompt(q.help, type=float, default=q.default or 0.0)
+
+    def _prompt_choice(self, q: Question, _ctx: dict) -> str:
+        choices = list(q.choices) if isinstance(q.choices, list) else list(q.choices.keys())
+        while True:
+            raw = self._backend.prompt(
+                q.help,
+                default=q.default,
+                show_default=True,
+            )
+            if raw in choices:
+                return raw
+            self._backend.echo(f"  ✗ 无效选项: {raw}，有效选项: {choices}", err=True)
+
+    def _prompt_secret(self, q: Question, _ctx: dict) -> str:
+        if hasattr(self._backend, "hide_input"):
+            return self._backend.hide_input(q.help, default=str(q.default or ""))
+        return self._backend.prompt(q.help, default=str(q.default or ""))
+
+    def _prompt_json(self, q: Question, _ctx: dict) -> str:
+        return self._backend.prompt(q.help, default=str(q.default or "{}"))
+
+    def _prompt_yaml(self, q: Question, _ctx: dict) -> str:
+        return self._backend.prompt(q.help, default=str(q.default or ""))
+
+    def _make_multiselect_prompter(self, q: Question) -> Callable:
+        """构建 multiselect 类型的 prompt 函数."""
+        choices_list = (
+            list(q.choices)
+            if isinstance(q.choices, list)
+            else list(q.choices.keys())
+        )
+        default_str = (
+            ",".join(q.default)
+            if isinstance(q.default, list)
+            else q.default or ""
+        )
+
+        def _prompt(_q, _ctx, _choices=choices_list, _default=default_str):
+            while True:
+                raw = self._backend.prompt(
+                    _q.help,
+                    default=_default,
+                    show_default=True,
+                )
+                selected = [s.strip() for s in raw.split(",") if s.strip()]
+                invalid = [s for s in selected if s not in _choices]
+                if invalid:
+                    self._backend.echo(
+                        f"  ✗ 无效选项: {invalid}，有效选项: {_choices}", err=True
+                    )
+                    continue
+                if not selected:
+                    self._backend.echo("  ✗ 请至少选择一个选项", err=True)
+                    continue
+                return "\n".join(f"- {v}" for v in selected)
+
+        return _prompt
+
+    def _get_prompt_fn(self, type_name: str) -> Callable:
+        dispatch = {
+            "str": self._prompt_str,
+            "bool": self._prompt_bool,
+            "int": self._prompt_int,
+            "float": self._prompt_float,
+            "choice": self._prompt_choice,
+            "secret": self._prompt_secret,
+            "json": self._prompt_json,
+            "yaml": self._prompt_yaml,
+        }
+        return dispatch.get(type_name, self._prompt_str)
+
     def _ask_one(self, q: Question, context: dict, progress: str = "") -> None:
         """询问单个问题。
 
-        流程：
+        流程（6 步）：
         1. CLI flag 已提供 → 跳过
-        2. when 条件不满足 → 跳过
-        3. 类型推导 → 选择 Click 方法
+        2. when 条件检查 → 不满足则跳过
+        3. 类型推导 + multiselect 分发
         4. 渲染默认值（Jinja2 模板）
-        5. 循环：prompt → cast → validate → 重试或通过
+        5. 循环 prompt → cast → validate（最多 5 次重试）
         6. 存入 answers.interactive
         """
         # CLI flag 已提供 → 跳过
@@ -122,37 +185,11 @@ class InteractivePrompt:
         if not q.render_when(context, self._jinja_env):
             return
 
-        # 类型推导 → 选择 Click 方法
-        # multiselect choice: click 8.x 不支持 prompt(multiple=) / Choice(multiple=)
-        # 使用逗号分隔输入 + 手动验证，转换为 YAML list 字符串给 cast_answer
         type_name = q.get_type_name()
         if q.multiselect:
-            choices_list = list(q.choices) if isinstance(q.choices, list) else list(q.choices.keys())
-            default_str = ",".join(q.default) if isinstance(q.default, list) else (q.default or "")
-
-            def _multiselect_prompt(_q, _ctx, _choices=choices_list, _default=default_str):
-                while True:
-                    raw = click.prompt(
-                        _q.help,
-                        default=_default,
-                        show_default=True,
-                    )
-                    # 解析逗号分隔的输入
-                    selected = [s.strip() for s in raw.split(",") if s.strip()]
-                    # 验证每个选择都在 choices 中
-                    invalid = [s for s in selected if s not in _choices]
-                    if invalid:
-                        click.echo(f"  ✗ 无效选项: {invalid}，有效选项: {_choices}", err=True)
-                        continue
-                    if not selected:
-                        click.echo("  ✗ 请至少选择一个选项", err=True)
-                        continue
-                    # 转换为 YAML list 字符串给 cast_answer
-                    return "\n".join(f"- {v}" for v in selected)
-
-            prompt_fn = _multiselect_prompt
+            prompt_fn = self._make_multiselect_prompter(q)
         else:
-            prompt_fn = _PROMPT_DISPATCH.get(type_name, _PROMPT_DISPATCH["str"])
+            prompt_fn = self._get_prompt_fn(type_name)
 
         # 渲染 default（来源：Copier Question.get_default_rendered()）
         rendered_default = self._render_default(q, context)
@@ -161,48 +198,62 @@ class InteractivePrompt:
         orig_default = q.default
         q.default = rendered_default
 
-        prefix = f"  {progress} " if progress else "  "
-        click.echo(f"{prefix}{q.help}", err=False)
+        try:
+            prefix = f"  {progress} " if progress else "  "
+            self._backend.echo(f"{prefix}{q.help}")
 
-        max_retries = 5
-        for _ in range(max_retries):
-            raw_value = prompt_fn(q, context)
-            # multiselect 返回 tuple → 转为 YAML 列表字符串给 cast_answer
-            if isinstance(raw_value, tuple):
-                raw_value = "\n".join(f"- {v}" for v in raw_value)
-            try:
-                value = q.cast_answer(raw_value)
-            except (ValueError, TypeError) as e:
-                click.echo(f"  ✗ 类型转换失败: {e}", err=True)
-                continue
+            max_retries = 5
+            for attempt in range(max_retries):
+                try:
+                    raw_value = prompt_fn(q, context)
+                except UserAbort as e:
+                    raise ValidationError(
+                        "非 TTY 环境无法交互，请使用 --defaults 非交互模式",
+                        field_name=q.var_name,
+                    ) from e
+                if isinstance(raw_value, tuple):
+                    raw_value = "\n".join(f"- {v}" for v in raw_value)
+                try:
+                    value = q.cast_answer(raw_value)
+                except TypeError as e:
+                    _logger.debug(
+                        "cast_answer TypeError (var=%s, raw=%r): %s",
+                        q.var_name, raw_value, e,
+                        exc_info=True,
+                    )
+                    if attempt == max_retries - 1:
+                        raise ValidationError(
+                            f"类型转换失败 (已达最大重试 {max_retries}): {e}",
+                            field_name=q.var_name,
+                        ) from e
+                    self._backend.echo(f"  ✗ 类型转换失败: {e}", err=True)
+                    continue
+                except ValueError as e:
+                    if attempt == max_retries - 1:
+                        raise ValidationError(
+                            f"类型转换失败 (已达最大重试 {max_retries}): {e}",
+                            field_name=q.var_name,
+                        ) from e
+                    self._backend.echo(f"  ✗ 类型转换失败: {e}", err=True)
+                    continue
 
-            error = q.render_validator(value, context, self._jinja_env)
-            if error:
-                click.echo(f"  ✗ {error}", err=True)
-                continue
-            break
-        else:
-            # 达到最大重试次数，使用默认值（防止无限循环）
-            click.echo(
-                f"  ⚠ 已达到最大重试次数 ({max_retries})，使用默认值: {rendered_default!r}",
-                err=True,
-            )
-            value = q.default if q.default is not None else ""
+                error = q.render_validator(value, context, self._jinja_env)
+                if error:
+                    if attempt == max_retries - 1:
+                        raise ValidationError(
+                            f"校验失败 (已达最大重试 {max_retries}): {error}",
+                            field_name=q.var_name,
+                        )
+                    self._backend.echo(f"  ✗ {error}", err=True)
+                    continue
+                break
+        finally:
+            q.default = orig_default
 
-        q.default = orig_default
         self.answers.interactive[q.var_name] = value
 
     def _visible_questions(self, pass_name: str) -> list[Question]:
-        """过滤出当前遍应展示的问题。
-
-        过滤规则：
-        - 跳过 cli_overrides 中已提供的变量
-        - pass_name="simple" → 排除 json/yaml 类型
-        - pass_name="complex" → 仅包含 json/yaml 类型
-
-        注：when 条件过滤延迟到 _ask_one() 中处理，
-        因为 when 可能依赖同 pass 中先收集的变量。
-        """
+        """过滤出当前遍应展示的问题。"""
         result = []
         for q in self.questions:
             if q.var_name in self.answers.cli_overrides:
@@ -217,14 +268,7 @@ class InteractivePrompt:
         return result
 
     def _render_default(self, q: Question, context: dict) -> Any:
-        """渲染 Jinja2 模板默认值。
-
-        来源：Copier Question.get_default_rendered()
-        - None → None
-        - bool/int/float → 原样返回（非模板类型）
-        - str 含 {{ → 作为 Jinja2 模板渲染
-        - 其他 → 原样返回
-        """
+        """渲染 Jinja2 模板默认值。"""
         if q.default is None:
             return None
         if isinstance(q.default, (bool, int, float)):
@@ -235,57 +279,86 @@ class InteractivePrompt:
         return q.default
 
 
-def prompt_for_project_type(available_types: list[str]) -> str:
-    """当无法自动检测项目类型且非 --defaults 模式时调用。
+# ─── 项目类型 + 嵌套模板选择 (从 _prompt_select.py 折叠) ──────────
 
-    来源：Cookiecutter main.py choose_nested_template() 的交互式选择。
-    """
-    return click.prompt(
-        "请选择项目类型",
-        type=click.Choice(available_types),
-        show_choices=True,
-    )
+
+def prompt_for_project_type(
+    available_types: list[str],
+    *,
+    _input_fn=None,
+    backend: PromptBackend | None = None,
+) -> str:
+    """当无法自动检测项目类型且非 --defaults 模式时调用。"""
+    be = backend or BasicPromptBackend()
+    if _input_fn is None:
+        _input_fn = be.prompt
+    types_list = ", ".join(available_types)
+    max_retries = 5
+    attempts = 0
+    while True:
+        attempts += 1
+        if attempts > max_retries:
+            raise ValidationError(
+                f"超过最大重试次数 ({max_retries})，请使用 --type 指定项目类型",
+                field_name="project_type",
+            )
+        try:
+            choice = _input_fn(
+                f"请选择项目类型 (可选: {types_list})",
+                type=None,
+                show_default=False,
+            )
+        except UserAbort as e:
+            raise ValidationError(
+                "非 TTY 环境无法交互选择项目类型，请使用 --type 指定",
+                field_name="project_type",
+            ) from e
+        if choice in available_types:
+            return choice
+        be.echo(f"  ✗ 无效类型: {choice}，有效类型: {types_list}", err=True)
 
 
 def prompt_for_nested_template(
     nested: dict[str, dict[str, str]],
     no_input: bool = False,
     preferred: str | None = None,
+    *,
+    _input_fn: Callable | None = None,
+    backend: PromptBackend | None = None,
 ) -> str | None:
-    """交互式选择嵌套模板变体。
-
-    来源：Cookiecutter main.py:144-146 choose_nested_template()。
-    nested = {"typescript": {"path": "./ts", "title": "TypeScript 版本"}, ...}
-
-    Args:
-        nested: 模板变体字典 {key: {path, title}}
-        no_input: True 时跳过交互，按 preferred → first 顺序选择
-        preferred: 优先选中的 key（用于 CLI --language 透传场景）
-
-    Returns:
-        选中的模板路径（相对于当前配置文件的目录）。
-        兜底：nested 为空时返回 ""（让调用方使用 template.template_dir 根）。
-
-    Raises:
-        ValueError: nested 非空但首选/preferred 都不存在 (no_input=True 时)
-    """
+    """交互式选择嵌套模板变体。"""
     if not nested:
-        return ""
-
+        return None
     choices = {label: cfg.get("title", label) for label, cfg in nested.items()}
     if no_input:
         if preferred and preferred in nested:
-            return nested[preferred].get("path", "")
-        # A3 兜底: 第一个变体, 而不是返回 None 让后续用 template.template_dir 渲染空目录
+            return nested[preferred].get("path")
+        if preferred:
+            _logger.warning(
+                "非交互模式下 preferred template '%s' 不在 nested 选项 (%s) 中，回退到第一个",
+                preferred, ", ".join(nested.keys()),
+            )
         first_key = next(iter(nested.keys()))
-        return nested[first_key].get("path", "")
+        return nested[first_key].get("path")
     if preferred and preferred in nested:
-        # 已知 preferred → 直接返回，不询问
-        return nested[preferred].get("path", "")
-    choice = click.prompt(
-        "请选择模板变体",
-        type=click.Choice(list(choices.keys())),
-        default=next(iter(choices.keys())),
-        show_choices=True,
-    )
-    return nested.get(choice, {}).get("path", "")
+        return nested[preferred].get("path")
+    be = backend or BasicPromptBackend()
+    prompt_fn = _input_fn if _input_fn is not None else be.prompt
+    try:
+        choice = prompt_fn(
+            "请选择模板变体",
+            default=next(iter(choices.keys())),
+            show_default=True,
+        )
+    except UserAbort as e:
+        raise ValidationError(
+            "非 TTY 环境无法交互选择模板变体，请使用 --defaults 或 --language 指定",
+            field_name="nested_template",
+        ) from e
+    if choice not in nested:
+        # 如果 prompt 返回不在 nested 中的值，尝试 fallback
+        for key, cfg in nested.items():
+            if cfg.get("title", key) == choice:
+                return cfg.get("path")
+        return None
+    return nested.get(choice, {}).get("path")

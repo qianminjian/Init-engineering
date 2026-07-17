@@ -6,9 +6,15 @@ commands.py 330 行超 300 行约束, 拆出 update/status Click 命令.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import click
+
+from init_engineering.cli._helpers import sanitize_error as _sanitize_error
+from init_engineering.init.scaffold_update import ConflictStrategy
+
+_logger = logging.getLogger(__name__)
 
 
 @click.command()
@@ -16,12 +22,16 @@ import click
 @click.option(
     "--conflict",
     "conflict_strategy",
-    type=click.Choice(["skip", "overwrite", "prompt"]),
-    default="skip",
+    type=click.Choice([s.value for s in ConflictStrategy]),
+    default=ConflictStrategy.SKIP.value,
     help="文件冲突处理策略 (默认 skip — 保护用户修改)",
 )
 @click.option("--dry-run", is_flag=True, help="只计算 diff 不写入")
-@click.option("--force", is_flag=True, help="无 .ae-answers.yml 时强制升级（自动推断 project_type）")
+@click.option(
+    "--force",
+    is_flag=True,
+    help="无 .ae-answers.yml 时强制升级（自动推断 project_type）",
+)
 @click.option("--quiet", is_flag=True, help="静默模式")
 def update(
     project: str | None,
@@ -34,15 +44,25 @@ def update(
 
     默认策略: skip (保护用户手动修改).  可选: overwrite / prompt.
     """
+    from init_engineering.init.errors import InitError
     from init_engineering.init.scaffold_update import run_update
 
     dst_path = Path(project) if project else Path.cwd()
-    result = run_update(
-        dst_path=dst_path,
-        force=force,
-        dry_run=dry_run,
-        conflict_strategy=conflict_strategy,
-    )
+    try:
+        result = run_update(
+            dst_path=dst_path,
+            auto_detect=force,
+            dry_run=dry_run,
+            conflict_strategy=conflict_strategy,
+        )
+    except InitError as e:
+        click.echo(f"✗ 升级失败: {_sanitize_error(str(e))}", err=True)
+        if e.recovery_hint:
+            click.echo(f"  恢复建议: {_sanitize_error(e.recovery_hint)}", err=True)
+        raise SystemExit(e.exit_code) from e
+    except (FileNotFoundError, ValueError) as e:
+        click.echo(f"✗ 升级失败: {_sanitize_error(str(e))}", err=True)
+        raise SystemExit(1) from e
     if not quiet:
         click.echo(result.summary())
         for f in result.files_added:
@@ -57,6 +77,7 @@ def update(
 def status():
     """查看当前项目环境配置."""
     from init_engineering.config.environment import ProjectEnvironment
+    from init_engineering.init.errors import InitError
 
     cwd = Path.cwd()
     click.echo(f"当前目录: {cwd}")
@@ -71,8 +92,16 @@ def status():
         click.echo(f"  Lefthook: {'是' if env.use_lefthook else '否'}")
         click.echo(f"  CI: {env.ci_platform or '无'}")
         click.echo(f"  Git: {'是' if env.has_git else '否'}")
-        undetectable = env._warn_undetectable(cwd)
+        undetectable = env.warn_undetectable(cwd)
         if undetectable:
             click.echo(f"  ⚠ 不可自动判定: {', '.join(undetectable)}", err=True)
+    except FileNotFoundError:
+        click.echo("  (未初始化 — 运行 ae init 创建项目)")
+    except InitError as e:
+        _logger.warning("status command failed: %s", e, exc_info=True)
+        click.echo(f"  读取项目环境失败: {_sanitize_error(str(e))}")
+        if e.recovery_hint:
+            click.echo(f"  恢复建议: {_sanitize_error(e.recovery_hint)}")
     except Exception as e:
-        click.echo(f"  读取项目环境失败: {e}")
+        _logger.warning("status command failed unexpectedly", exc_info=True)
+        click.echo(f"  读取项目环境失败: {_sanitize_error(str(e))}")

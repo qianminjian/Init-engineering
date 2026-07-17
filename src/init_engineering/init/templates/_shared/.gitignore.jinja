@@ -1,28 +1,48 @@
-# Byte-compiled / optimized / DLL files
+# Dependencies
+{% if language in ('typescript', 'javascript') %}node_modules/
+{% endif %}{% if language == 'python' %}.venv/
+{% elif language == 'rust' %}target/
+{% endif -%}
+{% if language == 'typescript' or language == 'python' %}
+# Build output
+dist/
+build/
+{% if language == 'typescript' %}.vite/
+{% endif -%}
+{% endif -%}
+{% if language == 'python' %}
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
-
-# C extensions
-*.so
-
-# Distribution / packaging
-dist/
-build/
 *.egg-info/
-
-# Unit test / coverage reports
-htmlcov/
-coverage/
-.coverage
-.coverage.*
 .pytest_cache/
+{% endif -%}
+{% if language == 'java' %}
+# Java
+target/
+*.class
+*.jar
+*.war
+# Maven Wrapper — 项目通过 mvn wrapper:wrapper 生成，不提交 jar
+.mvn/wrapper/maven-wrapper.jar
+*.iml
+.classpath
+.project
+.settings/
+{% endif %}
 
-# Environments
+# Environment
 .env
 .env.*
 !.env.example
 !.env.sample
+
+# Coverage
+coverage/
+.coverage
+.coverage.*
+htmlcov/
 
 # IDE
 .vscode/
@@ -34,12 +54,12 @@ coverage/
 .DS_Store
 Thumbs.db
 
-# Dependencies
-node_modules/
-{% if language == 'python' %}.venv/
-{% endif %}
-{% if language == 'rust' %}target/
-{% endif %}
-
 # Logs
 *.log
+logs/
+
+# Scratch / work-in-progress
+_scratch/
+
+# ae-init state
+.ae-state/

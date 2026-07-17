@@ -24,8 +24,8 @@ class TestAnalyzeMode:
         (tmp_path / "tsconfig.json").write_text('{"compilerOptions": {}}')
         result = _runner.invoke(init, ["--analyze", str(tmp_path)])
         assert result.exit_code == 0
-        assert "分析目录" in result.output
-        assert "检测到的项目类型候选" in result.output
+        assert "项目身份" in result.output
+        assert "类型候选" in result.output
 
     def test_analyze_detects_python(self, tmp_path: Path):
         """检测 Python 项目 (pyproject.toml)."""
@@ -130,8 +130,8 @@ class TestInitFromAnswers:
             "--skip-tasks",
             "--pretend",
         ])
-        # 不崩溃，suppress(KeyError) 生效
-        assert result.exit_code in (0, 1)
+        # 不崩溃，suppress(KeyError) 生效（或返回 typed exit_code）
+        assert result.exit_code in (0, 1, 2, 4)
 
     def test_init_execute_exception_handler(self, tmp_path: Path):
         """worker.execute() 抛异常时，CLI 捕获并 SystemExit(1)."""

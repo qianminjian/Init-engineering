@@ -459,7 +459,7 @@ class TestPostInstall:
             called_kwargs.append({"cmd": cmd, "cwd": kwargs.get("cwd")})
             return result
 
-        with patch("init_engineering.init.phases.finalize.subprocess.run", mock_run):
+        with patch("init_engineering.init.scaffold_hooks.subprocess.run", mock_run):
             phase_post_install(answers, dst)
 
         uv_runs = [k for k in called_kwargs if k["cmd"][0] == "uv"]
@@ -480,7 +480,7 @@ class TestPostInstall:
 
         answers = AnswersMap(defaults={"package_manager": "uv"})
 
-        with patch("init_engineering.init.phases.finalize.subprocess.run") as mr:
+        with patch("init_engineering.init.scaffold_hooks.subprocess.run") as mr:
             phase_post_install(answers, dst, no_install=True)
             mr.assert_not_called()
 
@@ -495,7 +495,7 @@ class TestPostInstall:
 
         answers = AnswersMap(defaults={"package_manager": "uv"})
 
-        with patch("init_engineering.init.phases.finalize.subprocess.run") as mr:
+        with patch("init_engineering.init.scaffold_hooks.subprocess.run") as mr:
             phase_post_install(answers, dst, quiet=True)
             mr.assert_not_called()
 
@@ -597,7 +597,7 @@ class TestPyprojectHatchPackages:
     def test_pyproject_template_has_hatch_packages(self):
         """pyproject.toml.jinja 应包含 [tool.hatch.build.targets.wheel] packages 配置."""
         from pathlib import Path
-        from init_engineering.init.config import TEMPLATES_ROOT
+        from init_engineering.init.config_types import TEMPLATES_ROOT
 
         tmpl_path = (
             TEMPLATES_ROOT / "_features" / "python" / "pyproject.toml.jinja"
@@ -615,7 +615,7 @@ class TestPyprojectHatchPackages:
     def test_pyproject_template_has_pytest_timeout(self):
         """pyproject.toml.jinja 应声明 pytest-timeout 依赖 (Bug 3)."""
         from pathlib import Path
-        from init_engineering.init.config import TEMPLATES_ROOT
+        from init_engineering.init.config_types import TEMPLATES_ROOT
 
         tmpl_path = (
             TEMPLATES_ROOT / "_features" / "python" / "pyproject.toml.jinja"
@@ -715,7 +715,7 @@ class TestSubprocessTimeout:
             called_timeouts.append(kwargs.get("timeout"))
             return result
 
-        with patch("init_engineering.init.phases.finalize.subprocess.run", mock_run):
+        with patch("init_engineering.init.scaffold_hooks.subprocess.run", mock_run):
             phase_post_install(answers, dst, timeout=120)
 
         # uv sync 应收到 timeout=120

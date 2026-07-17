@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>{{ java_group_id }}</groupId>
+    <artifactId>{{ repo_name }}</artifactId>
+    <version>{{ java_version_num | default('0.1.0') }}</version>
+    <packaging>pom</packaging>
+
+    <name>{{ repo_name }}</name>
+    <description>{{ repo_description }}</description>
+{%- if java_modules and java_modules | trim %}
+    <!--
+    ⚠ 注意：此 <modules> 假定统一 reactor POM 聚合所有子模块。
+    如果子目录已有独立 pom.xml 且通过 parent POM 引用（而非 reactor 聚合），
+    请手动调整或删除此 <modules> 段，改为在子模块 pom.xml 中添加 <parent> 引用。
+    -->
+    <modules>
+{% for module in java_modules.split(",") | map("trim") | list %}
+        <module>{{ module }}</module>
+{% endfor %}
+    </modules>
+{%- endif %}
+
+    <properties>
+        <java.version>{{ detected_java_version | default(java_version) }}</java.version>
+        <maven.compiler.source>${java.version}</maven.compiler.source>
+        <maven.compiler.target>${java.version}</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+
+{%- set _djv = detected_java_version | default('') -%}
+{%- set _dsbv = detected_spring_boot_version | default('') -%}
+{%- set is_java8 = (_djv and (_djv == '8' or _djv == '1.8')) or (_dsbv and _dsbv[:2] == '2.') -%}
+    <dependencyManagement>
+        <dependencies>
+{% if is_java8 %}
+            <dependency>
+                <groupId>junit</groupId>
+                <artifactId>junit</artifactId>
+                <version>4.13.2</version>
+                <scope>test</scope>
+            </dependency>
+{% else %}
+            <dependency>
+                <groupId>org.junit.jupiter</groupId>
+                <artifactId>junit-jupiter</artifactId>
+                <version>5.12.0</version>
+                <scope>test</scope>
+            </dependency>
+{% endif %}
+        </dependencies>
+    </dependencyManagement>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <version>3.13.0</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <version>3.5.2</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-checkstyle-plugin</artifactId>
+                    <version>3.6.0</version>
+                    <configuration>
+                        <configLocation>google_checks.xml</configLocation>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>com.diffplug.spotless</groupId>
+                    <artifactId>spotless-maven-plugin</artifactId>
+                    <version>2.44.4</version>
+                    <configuration>
+                        <java>
+                            <googleJavaFormat/>
+                        </java>
+                    </configuration>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
+</project>

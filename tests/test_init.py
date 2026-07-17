@@ -24,29 +24,36 @@ class TestInitHelp:
         assert "--force" in result.stdout
         assert "--pretend" in result.stdout
         assert "--skip-tasks" in result.stdout
-        assert "--no-cleanup" in result.stdout
+        assert "--incremental" in result.stdout
 
     def test_all_flags_present(self):
-        """Verify all 14 flags appear in help."""
+        """Verify core flags appear in help (hidden/advanced excluded)."""
         result = run_ae(["init", "--help"])
         flags = [
             "--type",
+            "--language",
             "--defaults",
             "--force",
-            "--from-answers",
+            "--incremental",
+            "--pretend",
             "--package-manager",
             "--ci",
             "--test-runner",
             "--no-typescript",
             "--no-lefthook",
-            "--pretend",
+            "--no-docker",
+            "--no-install",
             "--skip-tasks",
-            "--no-cleanup",
             "--quiet",
-            "--incremental",
+            "--verbose",
+            "--strict",
         ]
         for flag in flags:
             assert flag in result.stdout, f"Missing flag: {flag}"
+        # Hidden/advanced flags should NOT appear in normal --help
+        assert "--no-cleanup" not in result.stdout
+        assert "--from-answers" not in result.stdout
+        assert "--include-hidden" not in result.stdout
 
 
 class TestInitPretend:
@@ -130,14 +137,14 @@ class TestInitMultiLayerTemplates:
         assert result.returncode == 0
         ts_files = [
             "tsconfig.json",
-            "index.ts",
-            "index.test.ts",
             "package.json",
             "eslint.config.js",
             "prettier.config.js",
         ]
         for fname in ts_files:
             assert (target / fname).exists(), f"Missing TS file: {fname}"
+        assert (target / "src" / "index.ts").exists(), "Missing TS file: src/index.ts"
+        assert (target / "tests" / "index.test.ts").exists(), "Missing TS file: tests/index.test.ts"
 
     def test_all_project_types_generate_shared(self):
         """All 8 project types generate shared templates."""
@@ -250,7 +257,7 @@ class TestBuiltinHooksErrorPropagation:
         import pytest
 
         from init_engineering.init.errors import TaskExecutionError
-        from init_engineering.init.scaffold import InitWorker
+        from init_engineering.init.scaffold_phases import InitWorker
 
         worker = InitWorker(
             dst_path=Path("/nonexistent/path/that/cannot/be/created"),
@@ -339,21 +346,21 @@ class TestDetectorSpecDocGlob:
 
 
 class TestProjectEnvironmentWarnUndetectable:
-    """A5: ProjectEnvironment._warn_undetectable 列出无法自动判定的字段."""
+    """A5: ProjectEnvironment.warn_undetectable 列出无法自动判定的字段."""
 
-    def test_warn_undetectable_returns_undetectable_fields(self):
+    def testwarn_undetectable_returns_undetectable_fields(self):
         """RED: 缺必要文件时,返回不可判定字段列表."""
         from init_engineering.config.environment import ProjectEnvironment
 
         # 用 _from_detection 但 root 是空目录 → 多数字段无法判定
         env = ProjectEnvironment._from_detection(Path("/nonexistent-root"))
-        undetectable = env._warn_undetectable(Path("/nonexistent-root"))
+        undetectable = env.warn_undetectable(Path("/nonexistent-root"))
         # 至少应包含 package_manager 和 test_runner (空目录无法判定)
         assert isinstance(undetectable, list)
         assert "package_manager" in undetectable
         assert "test_runner" in undetectable
 
-    def test_warn_undetectable_partial_when_some_files_present(self):
+    def testwarn_undetectable_partial_when_some_files_present(self):
         """RED: 部分文件存在时,只列出仍未判定的字段."""
         import tempfile
 
@@ -365,7 +372,7 @@ class TestProjectEnvironmentWarnUndetectable:
             (tmp_path / "package-lock.json").write_text("{}")
             (tmp_path / "pytest.ini").write_text("[pytest]")
             env = ProjectEnvironment._from_detection(tmp_path)
-            undetectable = env._warn_undetectable(tmp_path)
+            undetectable = env.warn_undetectable(tmp_path)
             # package_manager + test_runner 已被判定 → 不在列表
             assert "package_manager" not in undetectable
             assert "test_runner" not in undetectable
@@ -604,7 +611,7 @@ class TestBuiltinHooksGitCommitNonBlocking:
         """RED: _run_builtin_hooks 中 git commit 失败不应抛 TaskExecutionError."""
         from unittest.mock import MagicMock, patch
 
-        from init_engineering.init.scaffold import InitWorker
+        from init_engineering.init.scaffold_phases import InitWorker
 
         worker = InitWorker(
             dst_path=Path("/tmp/test-a3"),
@@ -652,7 +659,7 @@ class TestInitPhaseTasksCurrentPhase:
         """RED: TaskRunner 必须收到 current_phase='tasks'."""
         from unittest.mock import MagicMock, patch
 
-        from init_engineering.init.scaffold import InitWorker
+        from init_engineering.init.scaffold_phases import InitWorker
 
         worker = InitWorker(
             dst_path=Path("/tmp/test-phase"),
@@ -759,7 +766,7 @@ class TestInitIncrementalMode:
         assert (target / "LICENSE").exists()
 
     def test_incremental_skips_git_dir(self):
-        """RED: 增量模式下 .git/ 始终跳过（已有仓库不被覆盖）."""
+        """增量模式下 .git/ 始终跳过（已有仓库不被覆盖）."""
 
         tmp = Path(tempfile.mkdtemp())
         target = tmp / "git-target"
@@ -770,6 +777,9 @@ class TestInitIncrementalMode:
         # 写一个 commit 对象验证 .git/HEAD 等文件
         head_file = target / ".git" / "HEAD"
         original_head = head_file.read_text() if head_file.exists() else ""
+
+        # 增量模式需要 .ae-answers.yml 基线文件
+        (target / ".ae-answers.yml").write_text("project_type: app-service\nlanguage: typescript\n")
 
         # 跑 --incremental
         result = run_ae(
@@ -807,7 +817,7 @@ class TestInitIncrementalMode:
             ]
         )
         assert result1.returncode == 0
-        files_after_first = sorted(p.relative_to(target) for p in target.rglob("*") if p.is_file())
+        files_after_first = sorted(p.relative_to(target) for p in target.rglob("*") if p.is_file() and ".git" not in p.parts)
 
         # 第二次
         result2 = run_ae(
@@ -822,7 +832,7 @@ class TestInitIncrementalMode:
             ]
         )
         assert result2.returncode == 0
-        files_after_second = sorted(p.relative_to(target) for p in target.rglob("*") if p.is_file())
+        files_after_second = sorted(p.relative_to(target) for p in target.rglob("*") if p.is_file() and ".git" not in p.parts)
 
         # 文件列表必须一致
         assert files_after_first == files_after_second
@@ -841,32 +851,53 @@ class TestAeStatus:
 
 
 class TestScaffoldPrerequisites:
-    """覆盖 scaffold.py:220-223 _check_prerequisites."""
+    """覆盖 scaffold_prereq 前置条件检查 — _check_prerequisites 已移除 (v1.0 audit P0#3)."""
 
     def test_missing_git_raises(self, monkeypatch, tmp_path):
         from init_engineering.init.errors import UnsatisfiedPrerequisiteError
-        from init_engineering.init.scaffold import InitWorker
+        from init_engineering.init.scaffold_prereq import check_basic_tools
 
-        # 模拟 git 不存在
         monkeypatch.setattr("shutil.which", lambda cmd: None if cmd == "git" else "/usr/bin/" + cmd)
 
-        worker = InitWorker(
-            dst_path=tmp_path / "p",
-            project_type="library",
-            defaults=True,
-        )
         with pytest.raises(UnsatisfiedPrerequisiteError):
-            worker._check_prerequisites()
+            check_basic_tools()
 
     def test_prerequisites_ok_when_git_and_python_present(self, tmp_path):
-        from init_engineering.init.scaffold import InitWorker
+        from init_engineering.init.scaffold_prereq import check_basic_tools
 
-        worker = InitWorker(
-            dst_path=tmp_path / "p",
-            project_type="library",
+        check_basic_tools()  # 不抛
+
+
+class TestPhaseDetectWithProjectType:
+    """P2: 即使 project_type 已提供，检测仍运行以获取 language/PM/test_runner."""
+
+    def test_phase_detect_runs_analysis_when_project_type_given(self, tmp_path):
+        """P2: project_type via CLI → detection 仍运行，analysis 非 None."""
+        from init_engineering.init.phases.detect import phase_detect
+
+        project = tmp_path / "pyplugin"
+        project.mkdir()
+        (project / ".claude-plugin").mkdir()
+        (project / "pyproject.toml").write_text("[project]\nname = 'test'\n")
+        # 增量模式需要基线文件
+        (project / ".ae-answers.yml").write_text("project_type: plugin\nlanguage: python\n")
+
+        ptype, mode, analysis, lock = phase_detect(
+            project_type="plugin",
+            dst_path=project,
+            language=None,
+            skip_tasks=True,
+            incremental=True,
+            force=False,
+            pretend=False,
             defaults=True,
         )
-        worker._check_prerequisites()  # 不抛
+        assert ptype == "plugin"
+        # P2: analysis 不应该是 None — 检测仍然运行
+        assert analysis is not None
+        # Python 语言应该被正确检测到（不再默认为 bash）
+        assert analysis.language == "python"
+        assert analysis.project_name == "pyplugin"
 
 
 class TestScaffoldNonEmptyDir:
@@ -874,7 +905,7 @@ class TestScaffoldNonEmptyDir:
 
     def test_non_empty_dir_without_force_or_incremental_raises(self, tmp_path):
         from init_engineering.init.errors import TargetDirectoryError
-        from init_engineering.init.scaffold import InitWorker
+        from init_engineering.init.scaffold_phases import InitWorker
 
         existing = tmp_path / "existing"
         existing.mkdir()
@@ -889,7 +920,30 @@ class TestScaffoldNonEmptyDir:
             worker._phase_detect()
 
     def test_non_empty_dir_with_incremental_sets_mode(self, tmp_path):
-        from init_engineering.init.scaffold import InitWorker
+        from init_engineering.init.scaffold_phases import InitWorker
+
+        existing = tmp_path / "existing"
+        existing.mkdir()
+        (existing / "file.txt").write_text("data")
+        # 增量模式需要基线文件
+        (existing / ".ae-answers.yml").write_text("project_type: library\nlanguage: typescript\n")
+
+        worker = InitWorker(
+            dst_path=existing,
+            project_type="library",
+            defaults=True,
+            incremental=True,
+        )
+        worker._phase_detect()
+        assert worker._mode == "incremental"
+
+    def test_incremental_without_baseline_allowed(self, tmp_path):
+        """v5.6: 增量模式无需 .ae-answers.yml 基线 — 首次存量项目直接可用。
+
+        merge_incremental() 基于文件系统对比（tmpdir vs dst_path），
+        逐文件判断存在性。基线文件是 init 产出物，不是前提条件。
+        """
+        from init_engineering.init.scaffold_phases import InitWorker
 
         existing = tmp_path / "existing"
         existing.mkdir()
@@ -901,11 +955,12 @@ class TestScaffoldNonEmptyDir:
             defaults=True,
             incremental=True,
         )
+        # v5.6: 不再抛出 TargetDirectoryError — 缺基线文件时正常进入增量模式
         worker._phase_detect()
         assert worker._mode == "incremental"
 
     def test_empty_dir_sets_fresh_mode(self, tmp_path):
-        from init_engineering.init.scaffold import InitWorker
+        from init_engineering.init.scaffold_phases import InitWorker
 
         empty = tmp_path / "empty"
         empty.mkdir()
@@ -919,7 +974,7 @@ class TestScaffoldNonEmptyDir:
         assert worker._mode == "fresh"
 
     def test_nonexistent_dir_sets_fresh_mode(self, tmp_path):
-        from init_engineering.init.scaffold import InitWorker
+        from init_engineering.init.scaffold_phases import InitWorker
 
         worker = InitWorker(
             dst_path=tmp_path / "nonexistent",
@@ -931,10 +986,10 @@ class TestScaffoldNonEmptyDir:
 
 
 class TestScaffoldPretendMode:
-    """覆盖 scaffold.py:75-90 pretend 模式返回空 InitResult."""
+    """v5.6: --pretend 模式渲染到 tmpdir 输出文件清单，不写入 dst."""
 
-    def test_pretend_returns_empty_files_list(self, tmp_path):
-        from init_engineering.init.scaffold import InitWorker
+    def test_pretend_renders_and_lists_files(self, tmp_path):
+        from init_engineering.init.scaffold_phases import InitWorker
 
         dst = tmp_path / "pretend-project"
         worker = InitWorker(
@@ -945,16 +1000,17 @@ class TestScaffoldPretendMode:
             quiet=True,
         )
         result = worker.execute()
-        assert result.files == []
+        # v5.6: --pretend 执行 Phase 3 渲染，输出文件清单
+        assert len(result.files) > 0, "pretend 应列出将要生成的文件"
         assert result.project_type == "library"
-        assert not dst.exists()  # pretend 不创建文件
+        assert not dst.exists()  # pretend 不创建目标目录
 
 
 class TestScaffoldCleanupOnError:
     """覆盖 scaffold.py:139-142 异常处理 cleanup_on_error 行为."""
 
     def test_cleanup_removes_created_dst_on_exception(self, tmp_path, monkeypatch):
-        from init_engineering.init.scaffold import InitWorker
+        from init_engineering.init.scaffold_phases import InitWorker
 
         dst = tmp_path / "cleanup-test"
         worker = InitWorker(
@@ -981,12 +1037,14 @@ class TestScaffoldCleanupOnError:
         设计: did_create_dst = not self.dst_path.exists() → 预先存在 → False
         即使 cleanup_on_error=True,也不会清理已有目录。
         """
-        from init_engineering.init.scaffold import InitWorker
+        from init_engineering.init.scaffold_phases import InitWorker
 
         dst = tmp_path / "pre-existing"
         dst.mkdir()
         user_file = dst / "user-data.txt"
         user_file.write_text("user content — must survive")
+        # 增量模式需要基线文件
+        (dst / ".ae-answers.yml").write_text("project_type: library\nlanguage: typescript\n")
 
         worker = InitWorker(
             dst_path=dst,
@@ -1020,7 +1078,7 @@ class TestHooksTaskRunner:
         runner.run([], context={})  # 不抛
 
     def test_when_false_skips_task(self, tmp_path, monkeypatch):
-        from init_engineering.init.config import Task
+        from init_engineering.init.config_types import Task
         from init_engineering.init.hooks import TaskRunner
 
         called = []
@@ -1036,7 +1094,7 @@ class TestHooksTaskRunner:
         assert called == []  # 跳过了
 
     def test_list_cmd_renders_without_shell(self, tmp_path, monkeypatch):
-        from init_engineering.init.config import Task
+        from init_engineering.init.config_types import Task
         from init_engineering.init.hooks import TaskRunner
 
         captured = {}
@@ -1095,19 +1153,18 @@ class TestV22PhaseIModuleSplit:
 
     def test_legacy_config_path_still_works(self):
         """旧路径 init.config 仍可导入 Question/Task/TemplateConfig (兼容)。"""
-        from init_engineering.init.config import Question, Task, TemplateConfig
+        from init_engineering.init.config_types import Question, Task, TemplateConfig
 
         assert Question is not None
         assert Task is not None
         assert TemplateConfig is not None
 
     def test_legacy_scaffold_path_still_works(self):
-        """旧路径 init.scaffold 仍可导入 InitResult/InitWorker/init_project (兼容)。"""
-        from init_engineering.init.scaffold import InitResult, InitWorker, init_project
+        """旧路径 init.scaffold_phases 可导入 InitResult/InitWorker."""
+        from init_engineering.init.scaffold_phases import InitResult, InitWorker
 
         assert InitResult is not None
         assert InitWorker is not None
-        assert init_project is not None
 
 
 # ─── v2.3 Phase F: Copier match_exclude 回调机制 (P1.2) ─────────────────────────
@@ -1200,7 +1257,7 @@ class TestExcludeCallback:
     def test_template_config_exclude_callback_field_default(self):
         """TemplateConfig 暴露 exclude_callback 字段, 默认指向 default_match_exclude."""
         from init_engineering.init._shared.exclude import default_match_exclude
-        from init_engineering.init.config import TemplateConfig
+        from init_engineering.init.config_types import TemplateConfig
 
         cfg = TemplateConfig(template_dir=Path("/tmp/none"))
         assert hasattr(cfg, "exclude_callback")
@@ -1260,9 +1317,7 @@ class TestExcludeCallback:
         from init_engineering.init.scaffold_render import render_to
 
         sig = inspect.signature(render_to)
-        assert "exclude_callback" in sig.parameters
-        # 默认值
-        param = sig.parameters["exclude_callback"]
-        assert param.default == (
-            "init_engineering.init._shared.exclude:default_match_exclude"
-        )
+        assert "exclude_callback_spec" in sig.parameters
+        # 默认值 None：函数内部回退到 TemplateConfig._EXCLUDE_CALLBACK_SPEC
+        param = sig.parameters["exclude_callback_spec"]
+        assert param.default is None

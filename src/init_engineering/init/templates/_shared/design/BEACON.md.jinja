@@ -1,40 +1,51 @@
-> 来源：@design/INDEX.md | 创建：{{ current_year }}-01-01 | 更新：{{ current_year }}-01-01 | 阶段：初始化
+> 来源：@design/INDEX.md | 创建：{{ current_year }}-{{ current_month }}-{{ current_day }} | 更新：{{ current_year }}-{{ current_month }}-{{ current_day }} | 阶段：初始化
+> <!-- ⚠ STAGE BOUNDARY: 本文档由 ae init 生成骨架，业务内容由设计阶段填充。详见 SKILL.md §Init Stage Contract -->
 
 ## 目标与成功标准
+<!-- ⚠ DESIGN-STAGE: 设计阶段填充 — 不要在 init 阶段填写业务目标 -->
 
-1. **{{ project_name | default("项目名称") }}**：{{ project_description | default("项目描述") }}
-2. （根据实际项目填写具体目标）
+1. **{{ project_name }}** — {{ project_description or '（待补充项目描述）' }}
+2. （根据实际项目填写具体目标与可验证的成功标准）
 
 ## 范围边界
+<!-- ⚠ DESIGN-STAGE: 设计阶段填充 — 不要在 init 阶段填写业务范围 -->
 
 **做：**
--
+- {{ project_name }} 核心功能开发{% if language == 'typescript' %} — TypeScript + {{ test_runner }} 测试{% elif language == 'python' %} — Python + {{ test_runner }} 测试{% endif %}
 
 **不做：**
 -
 
 ## 设计决策
+<!-- ✅ INIT-FILLED: ae init 已填充基础决策。后续设计决策由设计阶段追加。 -->
 
 | # | 决策 | 理由 | 日期 |
 |---|------|------|------|
+| 1 | 项目类型: {{ project_type }} | ae init 初始化 | {{ current_year }}-{{ current_month }}-{{ current_day }} |
+| 2 | 语言: {{ language }}{% if use_typescript %} (TypeScript){% endif %} | ae init 默认 | {{ current_year }}-{{ current_month }}-{{ current_day }} |
+{% if package_manager %}| 3 | 包管理器: {{ package_manager }} | ae init 默认 | {{ current_year }}-{{ current_month }}-{{ current_day }} |{% endif %}
 
 ## 当前状态
+<!-- ✅ INIT-FILLED: 阶段初始值。设计阶段更新阶段和下一步。 -->
 
 **阶段：** 初始化
 
-**下一步：**
+**下一步：** 进入设计阶段 — 确认技术选型和架构方案
 
-**阻塞项：**
+**阻塞项：** 无
 
 ## 设计演进日志
 
 | 日期 | 变更 | 原因 |
 |------|------|------|
+| {{ current_year }}-{{ current_month }}-{{ current_day }} | 项目初始化 | ae init 脚手架生成 |
 
 ## 待解决问题
+<!-- ⚠ DESIGN-STAGE: 设计阶段逐步解决并勾选 -->
 
-[Q?] （待补充）
+[Q?] 项目目标与成功标准待确认 — 设计阶段
+[Q?] 技术选型细节待评审 — 设计阶段
 
 ## 引用文件
 
-@design/INDEX.md — 文档索引
+@design/INDEX.md — 文档索引{% if language == 'python' %}@.claude/rules/pytest-memory-management.md — pytest 16G 内存约束{% endif %}

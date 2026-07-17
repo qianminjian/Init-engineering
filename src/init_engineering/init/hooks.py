@@ -5,17 +5,19 @@
 - cookiecutter/hooks.py:80-128 — run_script_with_context()
 """
 
+from __future__ import annotations
+
 import logging
-import os as subprocess_os
+import os
 import shlex
-import subprocess
 from pathlib import Path
 
 import jinja2
 from jinja2.sandbox import SandboxedEnvironment
 
-from .config import Task
-from .errors import HookExecutionError, TaskExecutionError
+from .config_types import Task
+from .errors import PathTraversalError, TaskExecutionError
+from .scaffold_hooks import subprocess_run
 
 _logger = logging.getLogger(__name__)
 
@@ -32,12 +34,16 @@ class TaskRunner:
         project_dir: Path,
         current_phase: str = "",
         default_timeout: int | None = None,
+        strict: bool = False,
+        base_env: dict | None = None,
     ):
         self.project_dir = project_dir
         self._current_phase = current_phase
         self._default_timeout = (
             default_timeout if default_timeout is not None else self.DEFAULT_TIMEOUT
         )
+        self._strict = strict
+        self._base_env = base_env
 
     def run(
         self,
@@ -45,6 +51,7 @@ class TaskRunner:
         context: dict,
         jinja_env: jinja2.Environment | None = None,
     ) -> None:
+        """渲染并执行任务列表，单任务超时抛 TaskExecutionError，不中断后续任务。"""
         if not tasks:
             return
         # A4: TaskRunner 必须用 SandboxedEnvironment — 防止恶意模板
@@ -61,11 +68,14 @@ class TaskRunner:
                         tpl.render(**context).strip().lower() not in ("false", "no", "0", "")
                     )
                 except jinja2.UndefinedError as e:
+                    if self._strict:
+                        raise
                     _logger.warning(
                         "task when 条件引用了未定义变量 '%s' (task=%r): %s",
                         task.when,
                         task.cmd,
                         e,
+                        exc_info=True,
                     )
                     should_run = False
             else:
@@ -83,9 +93,9 @@ class TaskRunner:
             try:
                 wd.relative_to(self.project_dir.resolve())
             except ValueError as e:
-                raise ValueError(
+                raise PathTraversalError(
                     f"task working_directory '{wd}' escapes project_dir "
-                    f"'{self.project_dir}' (path traversal blocked)"
+                    f"'{self.project_dir}'"
                 ) from e
             wd.mkdir(parents=True, exist_ok=True)
 
@@ -127,26 +137,22 @@ class TaskRunner:
                             f"task.cmd string 模式 shlex.split 失败 (引号/转义不匹配): "
                             f"{e}。建议改用 list cmd 明确每个 argv 元素。"
                         ),
-                    )
+                    ) from e
                 use_shell = False
 
             # 5. 执行
-            env = {**subprocess_os.environ, **extra_env}
+            env = {**(self._base_env or os.environ), **extra_env}
             # PE-P1-4: task 级 timeout 覆盖 default_timeout — 模板作者可对
             # cargo build / large npm install 等慢任务显式设大值
             effective_timeout = (
                 task.timeout if task.timeout is not None else self._default_timeout
             )
-            result = subprocess.run(
+            result = subprocess_run(
                 cmd,
-                shell=use_shell,
-                cwd=str(wd),
-                capture_output=True,
-                text=True,
+                cwd=Path(wd),
                 timeout=effective_timeout,
-                encoding="utf-8",
-                errors="replace",
                 env=env,
+                shell=use_shell,
             )
             if result.returncode != 0:
                 raise TaskExecutionError(
@@ -156,142 +162,4 @@ class TaskRunner:
                 )
 
 
-# ─── HookSpec — 渲染生命周期钩子规范 ─────────────────────────────────────────
-
-
-from dataclasses import dataclass
-
-
-@dataclass
-class HookSpec:
-    """5 类渲染生命周期钩子规范.
-
-    来源: design/v5.0-Design-Init.md §5.2
-
-    钩子用途:
-    - before_renderer: 渲染开始前调用，可用于准备环境、检查前置条件
-    - after_renderer:  渲染结束后调用，可用于后处理生成的文件
-    - before_copy_file: 复制单个文件前调用
-    - after_copy_file:  复制单个文件后调用
-    - on_exists:        目标文件已存在时调用
-
-    每个字段为 Jinja2 模板命令列表，渲染时传入 context。
-    """
-
-    before_renderer: list[str] | None = None
-    after_renderer: list[str] | None = None
-    before_copy_file: list[str] | None = None
-    after_copy_file: list[str] | None = None
-    on_exists: list[str] | None = None
-
-
-# ─── HookRunner — 渲染生命周期钩子执行器 ───────────────────────────────────────
-
-
-class HookRunner:
-    """执行 5 类渲染生命周期钩子.
-
-    来源: Copier 钩子模式 + Cookiecutter hooks.py
-
-    设计原则:
-    - 钩子执行失败 log warning + 继续（不阻断渲染主流程）
-    - 每个钩子方法接收 (context, ...) 参数，context 用于 Jinja2 渲染
-    - before_renderer_hook(context)
-    - after_renderer_hook(context, generated_files)
-    - before_copy_file_hook(src, dst, context)
-    - after_copy_file_hook(src, dst, context)
-    - on_exists_hook(dst_rel_path)
-    """
-
-    def __init__(self, project_dir: Path, spec: HookSpec | None = None, strict: bool = True):
-        self.project_dir = project_dir
-        self.spec = spec or HookSpec()
-        self.strict = strict
-
-    def _run_hook_commands(
-        self,
-        commands: list[str],
-        context: dict,
-        extra: dict | None = None,
-    ) -> None:
-        """执行钩子命令列表。strict=True 时失败抛异常，否则 log warning 继续。"""
-        if not commands:
-            return
-
-        render_context = {**context, **(extra or {})}
-
-        for cmd in commands:
-            try:
-                env = {**subprocess_os.environ}
-                tpl = SandboxedEnvironment().from_string(cmd)
-                rendered_cmd = tpl.render(**render_context)
-                result = subprocess.run(
-                    rendered_cmd,
-                    shell=False,
-                    cwd=str(self.project_dir),
-                    capture_output=True,
-                    text=True,
-                    timeout=60,
-                    encoding="utf-8",
-                    errors="replace",
-                    env=env,
-                )
-                if result.returncode != 0 and self.strict:
-                    raise HookExecutionError(
-                        command=rendered_cmd,
-                        exit_code=result.returncode,
-                        stderr=result.stderr,
-                    )
-            except HookExecutionError:
-                raise
-            except Exception as e:
-                if self.strict:
-                    raise HookExecutionError(command=cmd, stderr=str(e)) from e
-                _logger.warning("hook command failed: %s — %s", cmd, e)
-
-    def before_renderer_hook(self, context: dict) -> None:
-        """渲染开始前调用."""
-        if self.spec.before_renderer:
-            self._run_hook_commands(self.spec.before_renderer, context)
-
-    def after_renderer_hook(self, context: dict, generated_files: list[Path]) -> None:
-        """渲染结束后调用，传入生成的文件列表."""
-        if self.spec.after_renderer:
-            # 将 generated_files 转为字符串列表传给钩子
-            extra = {
-                "generated_files": " ".join(str(f) for f in generated_files),
-                "_generated_files_list": [str(f) for f in generated_files],
-            }
-            self._run_hook_commands(self.spec.after_renderer, context, extra)
-
-    def before_copy_file_hook(
-        self, src: Path, dst: Path, context: dict
-    ) -> None:
-        """复制单个文件前调用."""
-        if self.spec.before_copy_file:
-            extra = {
-                "src": str(src),
-                "dst": str(dst),
-                "dst_rel_path": dst.name,
-            }
-            self._run_hook_commands(self.spec.before_copy_file, context, extra)
-
-    def after_copy_file_hook(
-        self, src: Path, dst: Path, context: dict
-    ) -> None:
-        """复制单个文件后调用."""
-        if self.spec.after_copy_file:
-            extra = {
-                "src": str(src),
-                "dst": str(dst),
-                "dst_rel_path": dst.name,
-            }
-            self._run_hook_commands(self.spec.after_copy_file, context, extra)
-
-    def on_exists_hook(self, dst_rel_path: str) -> None:
-        """目标文件已存在时调用."""
-        if self.spec.on_exists:
-            # on_exists 只需要文件路径，不需要完整 context
-            extra = {"dst_rel_path": dst_rel_path}
-            self._run_hook_commands(self.spec.on_exists, {}, extra)
 

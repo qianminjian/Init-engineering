@@ -14,14 +14,13 @@ from init_engineering.init.answers import BUILTIN_VARS, AnswersMap, _LazyExterna
 class TestBuiltinVars:
     """BUILTIN_VARS 常量."""
 
-    def test_has_ae_version(self):
-        assert BUILTIN_VARS["_ae_version"] == "1.0.0"
+    def test_ae_version_not_in_builtins(self):
+        """_ae_version 不再硬编码在 BUILTIN_VARS 中，由 combined() 动态注入."""
+        assert "_ae_version" not in BUILTIN_VARS
 
     def test_is_dict_like(self):
-        # B3: BUILTIN_VARS 是 MappingProxyType(只读视图) — 支持 dict-like 访问但非 dict 子类
         from collections.abc import Mapping
         assert isinstance(BUILTIN_VARS, Mapping)
-        assert BUILTIN_VARS["_ae_version"] == "1.0.0"
         assert "_folder_name" in BUILTIN_VARS
 
     def test_is_immutable(self):
@@ -109,16 +108,16 @@ class TestGet:
         assert am.get("name") == "defaults"
 
     def test_builtins_as_last_resort(self):
-        am = AnswersMap(builtins={"_ae_version": "1.0.0"})
-        assert am.get("_ae_version") == "1.0.0"
+        am = AnswersMap(builtins={"_folder_name": "test"})
+        assert am.get("_folder_name") == "test"
 
     def test_skips_none_values_in_layer(self):
-        """None 值的键视为"未设置"，继续查找下一层."""
+        """key 存在但值为 None 时返回 None，不继续查低优先级层（显式 None = 故意清空）."""
         am = AnswersMap(
             cli_overrides={"name": None},
             interactive={"name": "interactive"},
         )
-        assert am.get("name") == "interactive"
+        assert am.get("name") is None
 
     def test_external_fallback_when_not_in_layers(self):
         """external 中的 key 在所有层都找不到时，通过 _load_external 懒加载 YAML 文件内容."""
@@ -135,10 +134,9 @@ class TestGet:
         finally:
             Path(tmp_path).unlink(missing_ok=True)
 
-    def test_raises_keyerror_when_not_found(self):
+    def test_returns_none_when_not_found(self):
         am = AnswersMap()
-        with pytest.raises(KeyError):
-            am.get("nonexistent")
+        assert am.get("nonexistent") is None
 
     def test_external_takes_precedence_over_raises(self):
         """external 中的 key 如果在所有层都找不到，会尝试 external."""
@@ -271,21 +269,6 @@ class TestLoadExternal:
         am._load_external("key")
         assert "key" in am._external_cache
         assert am._external_cache["key"] is None
-
-
-class TestHide:
-    """hide() 标记敏感字段."""
-
-    def test_adds_key_to_hidden_set(self):
-        am = AnswersMap()
-        am.hide("secret_key")
-        assert "secret_key" in am.hidden
-
-    def test_multiple_hides(self):
-        am = AnswersMap()
-        am.hide("a")
-        am.hide("b")
-        assert am.hidden == {"a", "b"}
 
 
 class TestSavePartial:
@@ -488,7 +471,9 @@ class TestLazyExternalDict:
             Path(tmp_path).unlink(missing_ok=True)
 
     def test_getitem_returns_none_for_missing_file(self):
-        d = _LazyExternalDict({"key": "/nonexistent/file.yml"})
+        import tempfile
+        missing = Path(tempfile.gettempdir()) / "ae-test-nonexistent-file.yml"
+        d = _LazyExternalDict({"key": str(missing)})
         result = d["key"]
         assert result is None
 
@@ -547,6 +532,65 @@ class TestLazyExternalDict:
         d = _LazyExternalDict({"a": "/tmp/a.yml", "b": "/tmp/b.yml"})
         r = repr(d)
         assert "_LazyExternalDict" in r
+
+
+class TestSensitiveFieldFilter:
+    """_is_sensitive_field + to_answers_file 敏感字段过滤."""
+
+    def test_exact_match_patterns(self):
+        from init_engineering.init._answers_io import _is_sensitive_field
+
+        assert _is_sensitive_field("password") is True
+        assert _is_sensitive_field("secret") is True
+        assert _is_sensitive_field("token") is True
+        assert _is_sensitive_field("api_key") is True
+        assert _is_sensitive_field("access_token") is True
+        assert _is_sensitive_field("private_key") is True
+        assert _is_sensitive_field("credential") is True
+        assert _is_sensitive_field("credentials") is True
+
+    def test_suffix_match_patterns(self):
+        from init_engineering.init._answers_io import _is_sensitive_field
+
+        assert _is_sensitive_field("db_password") is True
+        assert _is_sensitive_field("github_token") is True
+        assert _is_sensitive_field("aws_secret") is True
+        assert _is_sensitive_field("admin_credential") is True
+        assert _is_sensitive_field("api_secret_key") is True
+
+    def test_non_sensitive_fields_pass(self):
+        from init_engineering.init._answers_io import _is_sensitive_field
+
+        assert _is_sensitive_field("project_name") is False
+        assert _is_sensitive_field("language") is False
+        assert _is_sensitive_field("package_manager") is False
+        assert _is_sensitive_field("ci_platform") is False
+        assert _is_sensitive_field("test_runner") is False
+
+    def test_case_insensitive(self):
+        from init_engineering.init._answers_io import _is_sensitive_field
+
+        assert _is_sensitive_field("PASSWORD") is True
+        assert _is_sensitive_field("Api_Key") is True
+        assert _is_sensitive_field("SECRET_TOKEN") is True
+        assert _is_sensitive_field("DB_PASSWORD") is True
+
+    def test_to_answers_file_filters_sensitive_keys(self):
+        """to_answers_file 自动过滤含敏感字段名的 key."""
+        am = AnswersMap(
+            cli_overrides={
+                "project_name": "my-project",
+                "db_password": "should-be-filtered",
+                "api_token": "also-filtered",
+                "language": "python",
+            },
+            builtins={"_ae_version": "1.0.0"},
+        )
+        result = am.to_answers_file()
+        assert "project_name" in result
+        assert "language" in result
+        assert "db_password" not in result
+        assert "api_token" not in result
 
 
 class TestExternalDataSandbox:

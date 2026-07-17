@@ -66,4 +66,25 @@ lint:
   script:
     - cargo fmt --check
     - cargo clippy -- -D warnings
+{% elif language == 'java' %}
+test:
+  image: maven:3-eclipse-temurin-{{ java_version | default(detected_java_version) }}
+  stage: test
+  script:
+    - mvn {% if aggregator_path is defined and aggregator_path %}-f {{ aggregator_path }}/pom.xml {% endif %}test --batch-mode
+{%- if java_extra_modules is defined and java_extra_modules %}
+{%- for m in java_extra_modules.split(",") | map("trim") | list %}
+    - mvn -f {{ m }}/pom.xml test --batch-mode
+{%- endfor %}
+{%- endif %}
+lint:
+  image: maven:3-eclipse-temurin-{{ java_version | default(detected_java_version) }}
+  stage: lint
+  script:
+    - mvn {% if aggregator_path is defined and aggregator_path %}-f {{ aggregator_path }}/pom.xml {% endif %}checkstyle:check --batch-mode
+{%- if java_extra_modules is defined and java_extra_modules %}
+{%- for m in java_extra_modules.split(",") | map("trim") | list %}
+    - mvn -f {{ m }}/pom.xml checkstyle:check --batch-mode
+{%- endfor %}
+{%- endif %}
 {% endif %}

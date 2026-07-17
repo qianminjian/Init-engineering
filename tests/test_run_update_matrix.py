@@ -19,9 +19,10 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
+
+from tests.conftest import MockPromptBackend
 
 
 @pytest.fixture
@@ -62,7 +63,7 @@ def _mock_render_to(content_for_file: str):
 def test_skip_with_missing_file(project_with_answers: Path, monkeypatch: pytest.MonkeyPatch):
     """S0: dst 不存在 → skip 策略应添加文件."""
     monkeypatch.setattr(
-        "init_engineering.init.scaffold_update._render_to",
+        "init_engineering.init.scaffold_update.render_to",
         _mock_render_to("NEW\n"),
     )
     from init_engineering.init.scaffold_update import run_update
@@ -80,7 +81,7 @@ def test_skip_with_unchanged_file(project_with_answers: Path, monkeypatch: pytes
     """S1: dst 存在 + 内容相同 → skip 策略应保留."""
     (project_with_answers / "target.txt").write_text("SAME\n")
     monkeypatch.setattr(
-        "init_engineering.init.scaffold_update._render_to",
+        "init_engineering.init.scaffold_update.render_to",
         _mock_render_to("SAME\n"),
     )
     from init_engineering.init.scaffold_update import run_update
@@ -99,7 +100,7 @@ def test_skip_with_changed_file(project_with_answers: Path, monkeypatch: pytest.
     """S2: dst 存在 + 内容不同 → skip 策略应保留用户版本."""
     (project_with_answers / "target.txt").write_text("USER\n")
     monkeypatch.setattr(
-        "init_engineering.init.scaffold_update._render_to",
+        "init_engineering.init.scaffold_update.render_to",
         _mock_render_to("GENERATED\n"),
     )
     from init_engineering.init.scaffold_update import run_update
@@ -116,7 +117,7 @@ def test_skip_with_changed_file(project_with_answers: Path, monkeypatch: pytest.
 def test_overwrite_with_missing_file(project_with_answers: Path, monkeypatch: pytest.MonkeyPatch):
     """S0: dst 不存在 → overwrite 应添加文件."""
     monkeypatch.setattr(
-        "init_engineering.init.scaffold_update._render_to",
+        "init_engineering.init.scaffold_update.render_to",
         _mock_render_to("NEW\n"),
     )
     from init_engineering.init.scaffold_update import run_update
@@ -134,7 +135,7 @@ def test_overwrite_with_unchanged_file(project_with_answers: Path, monkeypatch: 
     """S1: dst 存在 + 内容相同 → overwrite 应跳过(无意义)."""
     (project_with_answers / "target.txt").write_text("SAME\n")
     monkeypatch.setattr(
-        "init_engineering.init.scaffold_update._render_to",
+        "init_engineering.init.scaffold_update.render_to",
         _mock_render_to("SAME\n"),
     )
     from init_engineering.init.scaffold_update import run_update
@@ -152,7 +153,7 @@ def test_overwrite_with_changed_file(project_with_answers: Path, monkeypatch: py
     """S2: dst 存在 + 内容不同 → overwrite 应替换."""
     (project_with_answers / "target.txt").write_text("USER\n")
     monkeypatch.setattr(
-        "init_engineering.init.scaffold_update._render_to",
+        "init_engineering.init.scaffold_update.render_to",
         _mock_render_to("GENERATED\n"),
     )
     from init_engineering.init.scaffold_update import run_update
@@ -169,7 +170,7 @@ def test_overwrite_with_changed_file(project_with_answers: Path, monkeypatch: py
 def test_prompt_with_missing_file(project_with_answers: Path, monkeypatch: pytest.MonkeyPatch):
     """S0: dst 不存在 → prompt 策略应直接添加(无需询问)."""
     monkeypatch.setattr(
-        "init_engineering.init.scaffold_update._render_to",
+        "init_engineering.init.scaffold_update.render_to",
         _mock_render_to("NEW\n"),
     )
     from init_engineering.init.scaffold_update import run_update
@@ -189,17 +190,16 @@ def test_prompt_with_changed_file_accept(
     """S2 + 用户回答 y → 应更新."""
     (project_with_answers / "target.txt").write_text("USER\n")
     monkeypatch.setattr(
-        "init_engineering.init.scaffold_update._render_to",
+        "init_engineering.init.scaffold_update.render_to",
         _mock_render_to("GENERATED\n"),
     )
-    # mock click.confirm 返回 True
-    monkeypatch.setattr("click.confirm", lambda *a, **kw: True)
     from init_engineering.init.scaffold_update import run_update
 
     result = run_update(
         dst_path=project_with_answers,
         dry_run=False,
         conflict_strategy="prompt",
+        backend=MockPromptBackend(confirm_responses=[True]),
     )
     assert (project_with_answers / "target.txt").read_text() == "GENERATED\n"
     assert any("target.txt" in str(f) for f in result.files_updated)
@@ -211,16 +211,16 @@ def test_prompt_with_changed_file_reject(
     """S2 + 用户回答 n → 应跳过(保留用户版本)."""
     (project_with_answers / "target.txt").write_text("USER\n")
     monkeypatch.setattr(
-        "init_engineering.init.scaffold_update._render_to",
+        "init_engineering.init.scaffold_update.render_to",
         _mock_render_to("GENERATED\n"),
     )
-    monkeypatch.setattr("click.confirm", lambda *a, **kw: False)
     from init_engineering.init.scaffold_update import run_update
 
     result = run_update(
         dst_path=project_with_answers,
         dry_run=False,
         conflict_strategy="prompt",
+        backend=MockPromptBackend(confirm_responses=[False]),
     )
     assert (project_with_answers / "target.txt").read_text() == "USER\n"
     assert any("target.txt" in str(f) for f in result.files_skipped)
@@ -232,7 +232,7 @@ def test_prompt_dry_run_marks_conflict(
     """prompt + dry_run → 冲突文件标记为 conflicted 而非更新."""
     (project_with_answers / "target.txt").write_text("USER\n")
     monkeypatch.setattr(
-        "init_engineering.init.scaffold_update._render_to",
+        "init_engineering.init.scaffold_update.render_to",
         _mock_render_to("GENERATED\n"),
     )
     from init_engineering.init.scaffold_update import run_update

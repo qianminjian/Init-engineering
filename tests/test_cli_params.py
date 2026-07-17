@@ -1,46 +1,73 @@
-"""CLI 参数透传测试 — templates_suffix + preserve_symlinks.
+"""CLI 参数测试 — v5.5 精简后.
 
-覆盖:
-- InitWorker.__init__ 接收 templates_suffix + preserve_symlinks 参数
-- InitWorker._phase_render() 透传这些参数到 render_to()
-- CLI --templates-suffix 和 --preserve-symlinks 选项透传到 InitWorker
-
-TDD: RED(失败) → GREEN(实现) → REFACTOR
+v5.5 移除的 CLI 选项:
+- --templates-suffix / --preserve-symlinks (内部 API 保留，CLI 不暴露)
+- --hook-timeout / --force-unsafe-template / --telemetry
 """
 
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 from click.testing import CliRunner
-
-from init_engineering.cli import init
 
 
 _runner = CliRunner()
 
 
-class TestTemplatesSuffixCliOption:
-    """--templates-suffix CLI 选项存在且可透传."""
+class TestRemovedCliOptions:
+    """v5.5: 确认已移除的选项不出现在 --help 中."""
 
-    def test_init_help_shows_templates_suffix_option(self):
-        """ae init --help 显示 --templates-suffix 选项."""
+    def test_help_does_not_show_templates_suffix(self):
+        """--templates-suffix 已从 CLI 移除."""
+        from init_engineering.cli import init
         result = _runner.invoke(init, ["--help"])
         assert result.exit_code == 0
-        assert "--templates-suffix" in result.output
+        assert "--templates-suffix" not in result.output
 
-    def test_init_help_shows_preserve_symlinks_option(self):
-        """ae init --help 显示 --preserve-symlinks 选项."""
+    def test_help_does_not_show_preserve_symlinks(self):
+        """--preserve-symlinks 已从 CLI 移除."""
+        from init_engineering.cli import init
         result = _runner.invoke(init, ["--help"])
         assert result.exit_code == 0
-        assert "--preserve-symlinks" in result.output
+        assert "--preserve-symlinks" not in result.output
+
+    def test_help_does_not_show_hook_timeout(self):
+        """--hook-timeout 已从 CLI 移除."""
+        from init_engineering.cli import init
+        result = _runner.invoke(init, ["--help"])
+        assert result.exit_code == 0
+        assert "--hook-timeout" not in result.output
+
+    def test_help_does_not_show_telemetry(self):
+        """--telemetry 已从 CLI 移除."""
+        from init_engineering.cli import init
+        result = _runner.invoke(init, ["--help"])
+        assert result.exit_code == 0
+        assert "--telemetry" not in result.output
+
+    def test_new_standalone_commands_exist(self):
+        """ae analyze / list-types / list-templates 作为独立命令存在."""
+        from init_engineering.cli import main
+        result = _runner.invoke(main, ["--help"])
+        assert result.exit_code == 0
+        assert "analyze" in result.output
+        assert "list-types" in result.output
+        assert "list-templates" in result.output
+
+    def test_analyze_command_has_help(self):
+        """ae analyze --help 正常显示."""
+        from init_engineering.cli import main
+        result = _runner.invoke(main, ["analyze", "--help"])
+        assert result.exit_code == 0
+        assert "分析存量项目" in result.output
+        assert "--include-hidden" in result.output
 
 
-class TestTemplatesSuffixPassthrough:
-    """templates_suffix 透传到 render_to()."""
+class TestInitWorkerInternalParams:
+    """InitWorker 内部 API 保留 templates_suffix / preserve_symlinks（不通过 CLI 暴露）."""
 
     def test_initworker_accepts_templates_suffix_param(self):
-        """InitWorker.__init__ 接受 templates_suffix 参数."""
+        """InitWorker.__init__ 仍接受 templates_suffix 参数（内部 API）."""
         from init_engineering.init.scaffold_phases import InitWorker
 
         with InitWorker(
@@ -51,7 +78,7 @@ class TestTemplatesSuffixPassthrough:
             assert worker.templates_suffix == ".j2"
 
     def test_initworker_accepts_preserve_symlinks_param(self):
-        """InitWorker.__init__ 接受 preserve_symlinks 参数."""
+        """InitWorker.__init__ 仍接受 preserve_symlinks 参数（内部 API）."""
         from init_engineering.init.scaffold_phases import InitWorker
 
         with InitWorker(
@@ -60,67 +87,3 @@ class TestTemplatesSuffixPassthrough:
             preserve_symlinks=False,
         ) as worker:
             assert worker.preserve_symlinks is False
-
-    def test_cli_passes_templates_suffix_to_initworker(self, tmp_path: Path):
-        """CLI --templates-suffix 透传到 InitWorker.
-
-        通过验证 InitWorker 实例属性来确认参数被正确接收。
-        """
-        from init_engineering.init.scaffold_phases import InitWorker
-
-        target = tmp_path / "proj"
-        target.mkdir()
-
-        # 直接创建 InitWorker 验证参数透传
-        with InitWorker(
-            dst_path=target,
-            project_type="app-service",
-            templates_suffix=".custom",
-            preserve_symlinks=False,
-        ) as worker:
-            # 验证参数被正确接收
-            assert worker.templates_suffix == ".custom"
-            assert worker.preserve_symlinks is False
-
-    def test_phase_render_uses_worker_templates_suffix(self, tmp_path: Path):
-        """_phase_render 使用 worker.templates_suffix 而非仅用 TemplateConfig 值."""
-        from init_engineering.init.scaffold_phases import InitWorker
-        from init_engineering.init.config import TemplateConfig
-
-        # 创建测试模板配置
-        template_config = TemplateConfig(
-            template_dir=tmp_path / "templates",
-            templates_suffix=".jinja",  # 模板默认值
-        )
-
-        worker = InitWorker(
-            dst_path=tmp_path / "proj",
-            project_type="app-service",
-            templates_suffix=".custom",  # worker 传入值
-        )
-        # 直接设置 _template 以避免 _phase_detect
-        worker._template = template_config
-
-        # 验证 worker 有 templates_suffix 属性
-        assert hasattr(worker, "templates_suffix")
-        assert worker.templates_suffix == ".custom"
-
-    def test_phase_render_uses_worker_preserve_symlinks(self, tmp_path: Path):
-        """_phase_render 使用 worker.preserve_symlinks 而非仅用 TemplateConfig 值."""
-        from init_engineering.init.scaffold_phases import InitWorker
-        from init_engineering.init.config import TemplateConfig
-
-        template_config = TemplateConfig(
-            template_dir=tmp_path / "templates",
-            preserve_symlinks=True,  # 模板默认值
-        )
-
-        worker = InitWorker(
-            dst_path=tmp_path / "proj",
-            project_type="app-service",
-            preserve_symlinks=False,  # worker 传入值
-        )
-        worker._template = template_config
-
-        assert hasattr(worker, "preserve_symlinks")
-        assert worker.preserve_symlinks is False

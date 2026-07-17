@@ -31,4 +31,14 @@ repos:
       - id: fmt
       - id: cargo-check
       - id: clippy
+{%- elif language == 'java' %}
+  - repo: local
+    hooks:
+      - id: spotless-check
+        name: spotless check
+        entry: mvn
+        args: [{% if aggregator_path is defined and aggregator_path %}-f, {{ aggregator_path }}/pom.xml, {% endif %}spotless:check]
+        language: system
+        pass_filenames: false
+        types: [java]
 {%- endif %}

@@ -6,11 +6,71 @@
 
 - 名称：{{ project_name }}
 - 类型：{{ project_type }}
+- 语言：{{ language }}{% if use_typescript %} (TypeScript){% endif %}
 
 ## 架构
 
 ## 核心命令
 
-## 管理约束
+{% if language == 'java' %}
+- 构建: `mvn install`
+- 运行测试: `mvn test`
+- Lint: `mvn checkstyle:check`
+- Format: `mvn spotless:apply`
+{% else %}
+{% if package_manager %}
+- 安装依赖: `{{ package_manager }} install`
+{% endif %}
+{% if test_runner %}
+- 运行测试: `{{ test_runner }}`
+{% endif %}
+{% if language == 'typescript' %}
+- Lint: `npx eslint .`
+- Format: `npx prettier --write .`
+{% elif language == 'python' %}
+- Lint: `ruff check .`
+- Format: `ruff format .`
+{% elif language == 'go' %}
+- Lint: `go vet ./...`
+- Format: `gofmt -w .`
+{% elif language == 'rust' %}
+- Lint: `cargo clippy`
+- Format: `cargo fmt`
+{% endif %}
+{% endif %}
 
-- 测试运行遵守 `@.claude/rules/pytest-memory-management.md`
+{%- if frameworks is defined and frameworks %}
+## 框架
+{% for f in frameworks %}
+- {{ f }}
+{%- endfor %}
+{%- endif %}
+{%- if java_modules is defined and java_modules | trim %}
+## 模块
+{% for m in java_modules.split(",") | map("trim") | list %}
+- {{ m }}
+{%- endfor %}
+{%- endif %}
+{%- if java_dependencies is defined and java_dependencies %}
+## 关键依赖
+{% for d in java_dependencies.split(",") | map("trim") | list %}{% if not d.startswith("module:") %}
+- {{ d }}
+{%- endif %}{%- endfor %}
+{%- endif %}
+{%- if python_dependencies is defined and python_dependencies %}
+## 关键依赖
+{% for d in python_dependencies %}
+- {{ d }}
+{%- endfor %}
+{%- endif %}
+{%- if _external_data is defined and _external_data %}
+{{ _external_data.architecture or '' }}
+{{ _external_data.conventions or '' }}
+{%- endif %}
+
+## 管理约束
+{% if language == 'python' %}
+- 测试运行遵守 `@.claude/rules/pytest-memory-management.md`（16G 内存约束）
+{% elif language == 'typescript' %}
+- 测试运行: `{{ test_runner }} --no-cov`
+{% endif %}
