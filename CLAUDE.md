@@ -115,12 +115,11 @@ Init-Engineering
 | 文档 | 内容 | 读取条件 |
 |------|------|---------|
 | `design/BEACON.md` | 设计基线（目标/范围/决策/当前状态） | 任何设计讨论时先读 |
-| `design/INDEX.md` | 文档索引（含合并日志/归档清单） | 检索文档时 |
-| `design/v5.0-Design-Init.md` | v5.0 Init Engineering 完整设计 | 开发 init 子系统时 |
-| `design/v1.0-Design-Init.md` | v1.0 init 子系统设计 + 实现偏差审计 | 开发 `ae init` 时 |
-| `design/v1.0-Design-Templates.md` | 43 个模板文件 + 8 个 ae-template.yml | 实现 `init/templates/` 时 |
+| `design/his_bak/v5.0-Design-Init.md` | v5.0 Init Engineering 完整设计 | 开发 init 子系统时 |
+| `design/his_bak/v1.0-Design-Init.md` | v1.0 init 子系统设计 + 实现偏差审计 | 开发 `ae init` 时 |
+| `design/his_bak/v1.0-Design-Templates.md` | 43 个模板文件 + 8 个 ae-template.yml | 实现 `init/templates/` 时 |
 | `design/his_bak/v1.0-Design-Shared.md` | 共享架构、CLI 设计、共享契约 | Init/Loop 共享契约参考 |
-| `design/audit-backlog.md` | 已知但暂不修复的审计发现（避免重复报） | **任何审计前必须先读** |
+| `design/his_bak/audit-backlog.md` | 已知但暂不修复的审计发现（避免重复报） | **任何审计前必须先读** |
 
 ## 安装
 
