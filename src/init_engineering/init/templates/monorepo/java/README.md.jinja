@@ -5,12 +5,16 @@
 ## Quick Start
 
 ```bash
+# 设置 Maven Wrapper（首次）
+mvn wrapper:wrapper
+
+# 之后可用 ./mvnw 替代 mvn，无需安装 Maven
 {%- if aggregator_path is defined and aggregator_path %}
-cd {{ aggregator_path }} && mvn install
-mvn -f {{ aggregator_path }}/pom.xml test
+cd {{ aggregator_path }} && ./mvnw install
+./mvnw -f {{ aggregator_path }}/pom.xml test
 {%- else %}
-mvn install
-mvn test
+./mvnw install
+./mvnw test
 {%- endif %}
 ```
 

@@ -273,6 +273,7 @@ class InitWorker:
             prompt_backend=self.prompt_backend,
         )
         check_template_version(self._template.min_ae_version)
+        _warn_java_version_mismatch(self._detection, self._answers)
 
     def _phase_render(self, tmpdir: Path) -> list[Path]:
         return phase_render(
@@ -334,4 +335,55 @@ class InitWorker:
             ensure_git_repo(self.dst_path, quiet=self.quiet)
         return did_create
 
+
+def _parse_java_version(raw: str) -> int | None:
+    """将 Java 版本字符串转为整数主版本号。
+
+    "1.8" → 8, "1.7" → 7, "21" → 21, "17" → 17。
+    解析失败返回 None。
+    """
+    if not raw or not raw.strip():
+        return None
+    raw = raw.strip()
+    try:
+        if raw.startswith("1.") and len(raw) == 3:
+            return int(raw[2:])
+        return int(raw)
+    except (ValueError, IndexError):
+        return None
+
+
+def _warn_java_version_mismatch(
+    detection: DetectionResult | None,
+    answers: AnswersMap,
+) -> None:
+    """Java 版本一致性检查：JDK 版本与编译目标版本相差过大时发出警告。
+
+    pom.xml <java.version>/<maven.compiler.source> 指定编译目标，
+    用户回答的 java_version 是实际安装的 JDK。两者相差 ≥ 4 个主版本时
+    输出警告，提醒用户确认是否有意为之。
+    """
+    if detection is None or detection._java_info is None:
+        return
+    detected_raw = detection._java_info.get("java_version")
+    if not detected_raw:
+        return
+    detected_ver = _parse_java_version(str(detected_raw))
+    if detected_ver is None:
+        return
+
+    jdk_raw = answers.get("java_version")
+    if not jdk_raw:
+        return
+    jdk_ver = _parse_java_version(str(jdk_raw))
+    if jdk_ver is None:
+        return
+
+    if abs(jdk_ver - detected_ver) >= 4:
+        _logger.warning(
+            "JDK 版本 (%s) 与 pom.xml 编译目标 (%s) 差距较大。"
+            "如果项目确实用旧版本编译，建议在 pom.xml 中更新 <java.version> "
+            "或 <maven.compiler.release>。CI 将使用 JDK %s 进行编译。",
+            jdk_raw, detected_raw, jdk_raw,
+        )
 

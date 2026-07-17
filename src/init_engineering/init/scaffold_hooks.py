@@ -160,10 +160,11 @@ def _run_pm_install_with_retry(
     max_attempts: int = 2,
     retry_delay: float = 2.0,
 ) -> subprocess.CompletedProcess:
-    """执行 PM install，非零退出码时重试一次（网络抖动兜底）。
+    """执行 PM install，非零退出码时自动修复并重试。
 
-    首次失败后等待 retry_delay 秒再重试。重试也失败则返回第二次的结果，
-    由调用方按正常失败路径处理（warning / _fail / 继续）。
+    pnpm v10+ 场景：ERR_PNPM_IGNORED_BUILDS → 自动 approve-builds → 重试 install。
+    网络抖动场景：等待 retry_delay 秒后重试一次。
+    重试也失败则返回最后一次的结果，由调用方按正常失败路径处理。
     """
     import time as _time
 
@@ -171,6 +172,24 @@ def _run_pm_install_with_retry(
     if result.returncode == 0:
         return result
 
+    # P0: pnpm v10+ ignored builds — 自动 approve 后重试，而非让用户手动处理
+    if pm == "pnpm" and _is_pnpm_ignored_builds(result.stderr or ""):
+        _logger.info("pnpm 阻止了构建脚本，自动执行 pnpm approve-builds...")
+        try:
+            approve_result = subprocess_run(
+                ["pnpm", "approve-builds"],
+                cwd=target_dir, timeout=timeout,
+            )
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+            _logger.debug("pnpm approve-builds 失败", exc_info=True)
+        else:
+            if approve_result.returncode == 0:
+                result = run_pm_install_cmd(pm, target_dir, timeout=timeout)
+                if result.returncode == 0:
+                    _logger.info("pnpm approve-builds + install 成功")
+                return result
+
+    # 网络抖动兜底：等待后重试一次
     cmd_str = " ".join(PM_INSTALL_CMD[pm])
     _logger.warning("首次 %s 失败 (exit=%d)，%ds 后重试...", cmd_str, result.returncode, int(retry_delay))
     _time.sleep(retry_delay)
