@@ -303,6 +303,12 @@ def analyze_java(pom_path: Path, result: DetectionResult, project_root: Path | N
             for dep in dependencies
         ]
 
+    # P1-2: 校验 spring_boot_version 是否为官方版本格式 (x.y.z)
+    # 非标准版本（如 "JIANGSU.SR1" 来自非官方 parent POM）会被舍弃
+    if spring_boot_version and not re.match(r'^\d+\.\d+\.\d+$', spring_boot_version):
+        _logger.debug("Non-standard Spring Boot version ignored: %s", spring_boot_version)
+        spring_boot_version = None
+
     # Store extra detection info for downstream use
     if result._java_info is None:
         result._java_info = {}

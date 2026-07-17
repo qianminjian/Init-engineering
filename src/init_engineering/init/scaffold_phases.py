@@ -184,10 +184,18 @@ class InitWorker:
             self._phase_finalize(tmpdir, generated_tmp)
 
             # Map tmpdir paths to dst_path for InitResult.files
-            generated = [
-                self.dst_path / f.relative_to(tmpdir)
-                for f in generated_tmp
-            ]
+            # 增量模式：只计入实际新建的文件（跳过的已有文件不计入）
+            if self._mode == "incremental":
+                generated = [
+                    self.dst_path / f.relative_to(tmpdir)
+                    for f in generated_tmp
+                    if str(f.relative_to(tmpdir)) in self._created_files
+                ]
+            else:
+                generated = [
+                    self.dst_path / f.relative_to(tmpdir)
+                    for f in generated_tmp
+                ]
 
         except InitInterruptedError:
             _error_occurred = True
