@@ -89,6 +89,15 @@ def phase_detect(
             ]
             project_type = prompt_for_project_type(available)
 
+    # 增量模式下检测置信度低时输出警告，让调用方（如 Claude Code agent）
+    # 有机会介入纠正，而非静默推进到渲染阶段。
+    if incremental and analysis and analysis.confidence == "low":
+        _logger.warning(
+            "项目类型检测置信度为 low（%s），--incremental 模式将跳过交互确认。"
+            "如果类型不正确，请用 --type 显式指定。信号来源: candidates=%s, language=%s",
+            project_type, analysis.candidates, analysis.language,
+        )
+
     check_basic_tools()
     check_language_tools(language, skip_tasks)
     return project_type, mode, analysis, lock

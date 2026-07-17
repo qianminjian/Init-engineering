@@ -216,17 +216,39 @@ class ProjectDetector:
             result.project_type = "monorepo"
 
         # ── v5.6 Phase H: 内容感知类型推断 ──
-        # spec-doc 签名 + 无构建系统 → 扫描 *.md 推断项目意图。
-        # 也覆盖无签名匹配 + 无构建系统的项目（设计文档可能在根目录，不在 design/ 下）。
-        if result.language is None and result.project_type in (None, "spec-doc"):
-            inferred = _infer_type_from_design_docs(self.dst_path)
-            if inferred:
-                result.project_type = inferred
-                if inferred not in result.candidates:
-                    result.candidates.append(inferred)
-                _logger.info(
-                    "从 Markdown 文档推断项目类型 → %s (关键词匹配)", inferred,
-                )
+        # 增量模式或有设计文档的项目：从文档内容推断项目意图，作为补充信号。
+        # 增量模式时即使已有语言信号也运行（设计文档可能提供更准确的项目类型）。
+        content_type = _infer_type_from_design_docs(self.dst_path)
+        if content_type:
+            _logger.info("从 Markdown 文档推断项目类型 → %s (关键词匹配)", content_type)
+            if result.language is None and result.project_type in (None, "spec-doc"):
+                # 无代码信号时，内容推断作为主要判定依据
+                result.project_type = content_type
+                if content_type not in result.candidates:
+                    result.candidates.append(content_type)
+            elif content_type not in result.candidates:
+                # 有代码信号时，内容推断作为补充参考
+                result.candidates.append(content_type)
+
+        # ── 增量模式基线校准：读取已有 BEACON.md 和 .ae-answers.yml ──
+        _baseline_type = _read_design_baseline(self.dst_path)
+        if _baseline_type:
+            _logger.info("从设计基线读取项目类型 → %s", _baseline_type)
+            if _baseline_type not in result.candidates:
+                result.candidates.append(_baseline_type)
+            # 基线类型优先于检测结果（用户/设计已声明过的类型）
+            if result.project_type is None or result.project_type != _baseline_type:
+                result.project_type = _baseline_type
+                result.confidence = "high"  # 设计基线明确声明 → 高置信度
+
+        # ── 置信度判定 ──
+        # high: 设计基线声明 OR（签名匹配 + 语言分析器确认了语言）
+        # low: 纯签名匹配未确认语言 / 纯内容推断 / 没有任何信号
+        if result.confidence != "high":
+            if result.project_type and result.language:
+                result.confidence = "high"
+            else:
+                result.confidence = "low"
 
         # ── 隐藏目录元数据提取 ──
         if self.include_hidden:
@@ -277,6 +299,19 @@ def _infer_type_from_design_docs(dst_path: Path) -> str | None:
                     continue
         except OSError:
             pass
+    # styles/ 目录 — 风格文件也承载项目意图信息
+    styles_dir = dst_path / "styles"
+    if styles_dir.is_dir():
+        try:
+            for f in styles_dir.iterdir():
+                if f.is_file() and f.suffix in (".md", ".txt", ".css", ".yaml", ".yml"):
+                    try:
+                        text = f.read_text(encoding="utf-8")
+                        parts.append(text[:2000])
+                    except (OSError, UnicodeDecodeError):
+                        continue
+        except OSError:
+            pass
 
     if not parts:
         return None
@@ -294,3 +329,41 @@ def _infer_type_from_design_docs(dst_path: Path) -> str | None:
         return None
 
     return max(scores, key=scores.get)
+
+
+def _read_design_baseline(dst_path: Path) -> str | None:
+    """从已有设计基线（BEACON.md / .ae-answers.yml）读取 project_type。
+
+    增量模式下作为强信号：用户或设计文档已声明过的 project_type 优先于自动检测。
+
+    Returns:
+        project_type 字符串，或 None（基线不存在/无法解析）。
+    """
+    import yaml
+
+    # 1. 尝试 .ae-answers.yml（结构明确，优先）
+    answers_file = dst_path / ".ae-answers.yml"
+    if answers_file.exists():
+        try:
+            data = yaml.safe_load(answers_file.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                pt = data.get("project_type") or data.get("_meta", {}).get("project_type")
+                if pt and isinstance(pt, str) and pt.strip():
+                    return pt.strip()
+        except (OSError, yaml.YAMLError):
+            pass
+
+    # 2. 尝试 BEACON.md（从头部提取 project_type 或阶段信息）
+    beacon = dst_path / "design" / "BEACON.md"
+    if beacon.exists():
+        try:
+            text = beacon.read_text(encoding="utf-8")[:2000]
+            import re
+            # 匹配 "项目类型: xxx" 或 "project_type: xxx" 或 "类型: xxx"
+            m = re.search(r'(?:项目类型|project.type|类型)[:：]\s*(\S+)', text)
+            if m:
+                return m.group(1)
+        except OSError:
+            pass
+
+    return None

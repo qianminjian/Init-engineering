@@ -60,6 +60,6 @@ jobs:
           java-version: '{{ java_version | default(detected_java_version) }}'
           distribution: 'temurin'
           cache: 'maven'
-      - run: mvn compile --batch-mode
-      - run: mvn test --batch-mode
+      - run: mvn {% if aggregator_path is defined and aggregator_path %}-f {{ aggregator_path }}/pom.xml {% endif %}compile --batch-mode
+      - run: mvn {% if aggregator_path is defined and aggregator_path %}-f {{ aggregator_path }}/pom.xml {% endif %}test --batch-mode
     {% endif -%}

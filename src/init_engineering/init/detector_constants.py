@@ -18,6 +18,7 @@ class DetectionResult:
 
     project_type: str | None = None
     candidates: list[str] = field(default_factory=list)
+    confidence: str = "low"  # "high" | "low" — 检测信号强度
     language: str | None = None
     package_manager: str | None = None
     test_runner: str | None = None
@@ -42,6 +43,8 @@ class DetectionResult:
         # ── 公共字段 ──
         if self.project_type:
             result["project_type"] = self.project_type
+        if self.confidence:
+            result["_detection_confidence"] = self.confidence
         if self.language:
             result["language"] = self.language
         if self.package_manager:
@@ -97,6 +100,9 @@ class DetectionResult:
             mods = self._java_info.get("modules")
             if mods:
                 result["java_modules"] = ", ".join(mods)
+            extra = self._java_info.get("module_extra_dirs")
+            if extra:
+                result["java_extra_modules"] = ", ".join(extra)
         # ── _python_info 展平 ──
         if self._python_info:
             if self._python_info.get("build_backend"):
