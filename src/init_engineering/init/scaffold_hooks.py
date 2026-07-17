@@ -152,6 +152,35 @@ def _is_pnpm_ignored_builds(stderr: str) -> bool:
     return "ERR_PNPM_IGNORED_BUILDS" in stderr
 
 
+def _run_pm_install_with_retry(
+    pm: str,
+    target_dir: Path,
+    timeout: int,
+    *,
+    max_attempts: int = 2,
+    retry_delay: float = 2.0,
+) -> subprocess.CompletedProcess:
+    """执行 PM install，非零退出码时重试一次（网络抖动兜底）。
+
+    首次失败后等待 retry_delay 秒再重试。重试也失败则返回第二次的结果，
+    由调用方按正常失败路径处理（warning / _fail / 继续）。
+    """
+    import time as _time
+
+    result = run_pm_install_cmd(pm, target_dir, timeout=timeout)
+    if result.returncode == 0:
+        return result
+
+    cmd_str = " ".join(PM_INSTALL_CMD[pm])
+    _logger.warning("首次 %s 失败 (exit=%d)，%ds 后重试...", cmd_str, result.returncode, int(retry_delay))
+    _time.sleep(retry_delay)
+
+    retry_result = run_pm_install_cmd(pm, target_dir, timeout=timeout)
+    if retry_result.returncode == 0:
+        _logger.info("重试 %s 成功", cmd_str)
+    return retry_result
+
+
 def _ensure_git_config(project_dir: Path) -> None:
     """确保 git user.email/user.name 在 project_dir 仓库内配置（不污染 --global）。
 
@@ -233,7 +262,7 @@ def run_pm_install_and_report(
             _logger.info("  (skipping %s install: no separate install phase)", pm)
         return
     try:
-        result = run_pm_install_cmd(pm, target_dir, timeout=timeout)
+        result = _run_pm_install_with_retry(pm, target_dir, timeout)
         if result.returncode != 0:
             cmd_str = " ".join(PM_INSTALL_CMD[pm])
             if _is_pnpm_ignored_builds(result.stderr or ""):
@@ -325,3 +354,44 @@ def run_builtin_hooks(
             _fail("lefthook install", result.returncode, result.stderr)
 
     _git_add_commit_step(tmpdir, git_ok, _fail)
+
+
+def ensure_git_repo(project_dir: Path, quiet: bool = False) -> bool:
+    """B4/B5: 在目标目录初始化 git 仓库并创建初始提交。
+
+    用于 Phase 5 在 dst_path 创建 git 仓库——Phase 4 的 git init 在 tmpdir
+    执行，增量模式 merge_incremental 会跳过 .git（EXCLUDED_DIRS），导致 dst_path
+    没有 git 仓库。本函数在文件复制到 dst_path 后调用，确保最终目录有 git 仓库。
+
+    全量模式下 .git 已被 _atomic_copytree 复制,dst_path 已有 git 仓库;
+    git init 安全无副作用,有未提交变更时才创建新提交,无变更则跳过。
+
+    Returns:
+        True 如果 git 仓库初始化并提交成功，False 如果有步骤失败。
+    """
+    _ensure_git_config(project_dir)
+
+    def _fail(cmd: str, rc: int, stderr: str) -> bool:
+        if not quiet:
+            _logger.warning("%s failed: %s", cmd, stderr.strip())
+        return True
+
+    git_ok = _git_init(project_dir, _fail)
+    if not git_ok:
+        return False
+
+    # Check if there's anything to commit — skip commit if working tree is
+    # already clean (e.g., fresh mode where .git was copied from tmpdir and
+    # post_install didn't produce any changes).
+    try:
+        status_result = subprocess_run(
+            ["git", "-C", str(project_dir), "status", "--porcelain"],
+            cwd=project_dir, timeout=10,
+        )
+    except subprocess.TimeoutExpired:
+        _logger.debug("git status --porcelain timed out", exc_info=True)
+        return git_ok
+    if not status_result.stdout.strip():
+        return True  # Nothing to commit, repo is clean
+
+    return _git_add_commit_step(project_dir, git_ok, _fail)

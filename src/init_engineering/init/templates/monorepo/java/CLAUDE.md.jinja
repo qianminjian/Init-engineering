@@ -98,19 +98,18 @@ mvn test
 ## Tech Stack
 {% if language %}- Language: {{ language }}
 {% endif %}{% if java_version is defined and java_version %}- JDK: {{ java_version }}{% if detected_java_version is defined and detected_java_version and detected_java_version != java_version %}（编译目标 {{ detected_java_version }}）{% endif %}
-{% elif java_version_num is defined and java_version_num %}- JDK: {{ java_version_num }}{% if detected_java_version is defined and detected_java_version and detected_java_version != java_version_num %}（编译目标 {{ detected_java_version }}）{% endif %}
-{% elif detected_java_version is defined and detected_java_version %}- Java 编译目标: {{ detected_java_version }}
+{% elif detected_java_version is defined and detected_java_version %}- JDK: {{ detected_java_version }}
 {% endif %}
 {% if detected_spring_boot_version is defined and detected_spring_boot_version %}- Spring Boot: {{ detected_spring_boot_version }}
-{% endif %}- Build: Maven
+{% endif %}- Build: {{ java_build_tool or 'Maven' }}
 {% if ci_platform and ci_platform != 'none' %}- CI: {{ ci_platform }}
-{% endif %}
-{%- if qoder_tech_stack_summary is defined and qoder_tech_stack_summary %}
-{{ qoder_tech_stack_summary }}
-{%- endif %}
+{% endif %}{%- if qoder_tech_stack_summary is defined and qoder_tech_stack_summary %}
+- 项目分析: {{ qoder_tech_stack_summary }}{% endif %}
+
 {% if java_dependencies is defined and java_dependencies %}
 ## Key Dependencies
-{% for d in java_dependencies.split(",") | map("trim") | list %}{% if not d.startswith("module:") %}
+
+{%- for d in java_dependencies.split(",") | map("trim") | list %}{% if not d.startswith("module:") %}
 - {{ d }}{% if ':' in d and d.split(':') | length == 2 and java_group_id is defined and d.split(':')[0] == java_group_id %} (内部模块){% endif %}
-{% endif %}{% endfor %}
+{% endif %}{%- endfor %}
 {% endif %}

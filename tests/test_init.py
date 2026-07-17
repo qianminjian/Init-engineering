@@ -817,7 +817,7 @@ class TestInitIncrementalMode:
             ]
         )
         assert result1.returncode == 0
-        files_after_first = sorted(p.relative_to(target) for p in target.rglob("*") if p.is_file())
+        files_after_first = sorted(p.relative_to(target) for p in target.rglob("*") if p.is_file() and ".git" not in p.parts)
 
         # 第二次
         result2 = run_ae(
@@ -832,7 +832,7 @@ class TestInitIncrementalMode:
             ]
         )
         assert result2.returncode == 0
-        files_after_second = sorted(p.relative_to(target) for p in target.rglob("*") if p.is_file())
+        files_after_second = sorted(p.relative_to(target) for p in target.rglob("*") if p.is_file() and ".git" not in p.parts)
 
         # 文件列表必须一致
         assert files_after_first == files_after_second

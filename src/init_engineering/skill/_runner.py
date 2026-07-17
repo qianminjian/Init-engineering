@@ -151,7 +151,10 @@ def _run_init(
 
     try:
         worker = worker_cls(dst_path=dst_path, **kwargs)
-        result = worker.execute()
+        try:
+            result = worker.execute()
+        finally:
+            worker._cleanup()
         return SkillResult(
             success=True,
             message=f"项目已初始化: {result.dst_path}",

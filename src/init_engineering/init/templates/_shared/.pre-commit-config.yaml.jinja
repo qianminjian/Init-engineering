@@ -32,9 +32,13 @@ repos:
       - id: cargo-check
       - id: clippy
 {%- elif language == 'java' %}
-  - repo: https://github.com/macisamuele/language-formatters-pre-commit-hooks
-    rev: v2.14.0
+  - repo: local
     hooks:
-      - id: pretty-format-java
-        args: [--autofix]
+      - id: spotless-check
+        name: spotless check
+        entry: mvn
+        args: [{% if aggregator_path is defined and aggregator_path %}-f, {{ aggregator_path }}/pom.xml, {% endif %}spotless:check]
+        language: system
+        pass_filenames: false
+        types: [java]
 {%- endif %}

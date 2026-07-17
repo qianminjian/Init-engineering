@@ -62,4 +62,9 @@ jobs:
           cache: 'maven'
       - run: mvn {% if aggregator_path is defined and aggregator_path %}-f {{ aggregator_path }}/pom.xml {% endif %}compile --batch-mode
       - run: mvn {% if aggregator_path is defined and aggregator_path %}-f {{ aggregator_path }}/pom.xml {% endif %}test --batch-mode
+    {%- if java_extra_modules is defined and java_extra_modules %}
+    {%- for m in java_extra_modules.split(",") | map("trim") | list %}
+      - run: mvn -f {{ m }}/pom.xml test --batch-mode
+    {%- endfor %}
+    {%- endif %}
     {% endif -%}

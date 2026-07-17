@@ -324,6 +324,14 @@ class InitWorker:
             # PE-AUDIT-P0-1: 透传 hook_timeout
             timeout=self.hook_timeout,
         )
+        # B4/B5: git init in dst_path — Phase 4 在 tmpdir 执行的 git init 在增量
+        # 模式下会被 merge_incremental 跳过 (.git 在 EXCLUDED_DIRS),所以需要在
+        # dst_path 重新创建。全量模式下 .git 已被 _atomic_copytree 复制,git init
+        # 安全无副作用,git add+commit 捕获 post_install 产生的变更(如 lock 文件)。
+        from .scaffold_hooks import ensure_git_repo
+
+        if not self.pretend:
+            ensure_git_repo(self.dst_path, quiet=self.quiet)
         return did_create
 
 

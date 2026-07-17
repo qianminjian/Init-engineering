@@ -1,0 +1,86 @@
+# {{ project_name or _folder_name }}
+
+{{ project_description }}
+
+## Quick Start
+
+```bash
+{%- if aggregator_path is defined and aggregator_path %}
+cd {{ aggregator_path }} && mvn install
+mvn -f {{ aggregator_path }}/pom.xml test
+{%- else %}
+mvn install
+mvn test
+{%- endif %}
+```
+
+## Project Structure
+
+```
+{{ repo_name or project_name or '.' }}/
+{%- if aggregator_path is defined and aggregator_path %}
+├── {{ aggregator_path }}/pom.xml         # Aggregator POM
+{%- if java_modules is defined and java_modules %}
+{%- for m in java_modules.split(",") | map("trim") | list %}
+├── {{ m }}/{% if loop.last %}             # Module{% endif %}
+{%- endfor %}
+{%- endif %}
+{%- if java_extra_modules is defined and java_extra_modules %}
+{%- for m in java_extra_modules.split(",") | map("trim") | list %}
+├── {{ m }}/{% if loop.last %}             # Independent module{% endif %}
+{%- endfor %}
+{%- endif %}
+{%- else %}
+├── pom.xml                     # Root POM
+{%- if java_modules is defined and java_modules %}
+{%- for m in java_modules.split(",") | map("trim") | list %}
+├── {{ m }}/{% if loop.last %}                    # Module{% endif %}
+{%- endfor %}
+{%- endif %}
+{%- endif %}
+├── design/                    # Design docs
+├── docs/                      # Documentation
+└── .github/workflows/         # CI/CD
+```
+
+## Modules
+
+{%- if java_modules is defined and java_modules %}
+{% for m in java_modules.split(",") | map("trim") | list %}
+- **{{ m }}**{% if java_group_id is defined %} — `{{ java_group_id }}:{{ m.split("/")[-1] }}`{% endif %}
+{% endfor %}
+{%- endif %}
+{%- if java_extra_modules is defined and java_extra_modules %}
+{% for m in java_extra_modules.split(",") | map("trim") | list %}
+- **{{ m }}** — 独立模块，`mvn -f {{ m }}/pom.xml install`
+{% endfor %}
+{%- endif %}
+
+## Commands
+
+{%- if aggregator_path is defined and aggregator_path %}
+- Build: `mvn -f {{ aggregator_path }}/pom.xml install`
+- Test: `mvn -f {{ aggregator_path }}/pom.xml test`
+- Lint: `mvn -f {{ aggregator_path }}/pom.xml spotless:check` 或 `pre-commit run`
+- Format: `mvn -f {{ aggregator_path }}/pom.xml spotless:apply`
+{%- else %}
+- Build: `mvn install`
+- Test: `mvn test`
+- Lint: `mvn spotless:check` 或 `pre-commit run`
+- Format: `mvn spotless:apply`
+{%- endif %}
+
+## Tech Stack
+
+{%- if language %}- Language: {{ language }}
+{% endif -%}
+{%- if java_version is defined and java_version %}- JDK: {{ java_version }}{% if detected_java_version is defined and detected_java_version and detected_java_version != java_version %}（编译目标 {{ detected_java_version }}）{% endif %}
+{% elif detected_java_version is defined and detected_java_version %}- Java 编译目标: {{ detected_java_version }}
+{% endif -%}
+{%- if detected_spring_boot_version is defined and detected_spring_boot_version %}
+- Spring Boot: {{ detected_spring_boot_version }}
+{% endif %}
+- Build: {{ java_build_tool or 'Maven' }}
+{%- if ci_platform and ci_platform != 'none' %}
+- CI: {{ ci_platform }}
+{% endif %}
